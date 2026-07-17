@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+# Minimal visual baseline
+xsetroot -solid '#0d1117'
+
+# Launch terminal as the only intended user-facing app.
+xterm -fa 'Monospace' -fs 12 -geometry 160x50+0+0 &
+
+# Keep WM in foreground.
+exec openbox
