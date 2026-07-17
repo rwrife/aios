@@ -17,6 +17,10 @@ Phase 1 scaffolding in progress (live ISO pipeline + terminal-only session wirin
 
 ## Build quickstart
 
+Simple scripts (x86 default):
+- `./scripts/build.sh`
+- `./scripts/run.sh`
+
 Native Alpine host build:
 - `./scripts/build-iso.sh`
 
@@ -27,3 +31,7 @@ Portable containerized build (recommended on Ubuntu/ARM64 hosts):
 Useful overrides:
 - `ARCH=aarch64 ./scripts/build-iso-container.sh`
 - `ARCH=x86_64 ./scripts/build-iso-container.sh` (requires amd64 container emulation on ARM hosts)
+
+QEMU runtime notes:
+- `scripts/run.sh` auto-selects the newest `*-x86_64.iso` in `distro/alpine/out`
+- set `AIOS_QEMU_HEADLESS=1` for serial/headless run mode

@@ -12,7 +12,10 @@ for f in \
   "$ROOT_DIR/distro/alpine/overlay/etc/X11/xinit/xinitrc" \
   "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/rc.xml" \
   "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/menu.xml" \
-  "$ROOT_DIR/scripts/build-iso-container.sh"; do
+  "$ROOT_DIR/scripts/build-iso-container.sh" \
+  "$ROOT_DIR/scripts/build.sh" \
+  "$ROOT_DIR/scripts/run.sh" \
+  "$ROOT_DIR/scripts/run-qemu-live.sh"; do
   [ -f "$f" ] || { echo "missing: $f"; exit 1; }
 done
 
