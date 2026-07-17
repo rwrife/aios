@@ -11,6 +11,9 @@ profile_aios() {
 	initfs_cmdline="modules=loop,squashfs,sd-mod,usb-storage,virtio_blk,virtio_scsi,ahci,nvme quiet"
 	kernel_cmdline="quiet loglevel=3 vt.global_cursor_default=0"
 
+	# Keep signing optional for local/dev builds.
+	modloop_sign="${AIOS_MODLOOP_SIGN:-no}"
+
 	if [ -n "$AIOS_WORLD_BASE" ] && [ -f "$AIOS_WORLD_BASE" ]; then
 		apks="$apks $(tr '\n' ' ' < "$AIOS_WORLD_BASE")"
 	fi

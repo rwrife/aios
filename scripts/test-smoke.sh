@@ -11,7 +11,8 @@ for f in \
   "$ROOT_DIR/distro/alpine/overlay/etc/inittab" \
   "$ROOT_DIR/distro/alpine/overlay/etc/X11/xinit/xinitrc" \
   "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/rc.xml" \
-  "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/menu.xml"; do
+  "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/menu.xml" \
+  "$ROOT_DIR/scripts/build-iso-container.sh"; do
   [ -f "$f" ] || { echo "missing: $f"; exit 1; }
 done
 
