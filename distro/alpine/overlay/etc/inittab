@@ -1,0 +1,14 @@
+# /etc/inittab for AI OS live session
+# autologin root on tty1 for single-user/no-auth MVP behavior
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# terminal logins
+tty1::respawn:/sbin/agetty --autologin root --noclear tty1 linux
+tty2::respawn:/sbin/agetty 38400 tty2 linux
+tty3::respawn:/sbin/agetty 38400 tty3 linux
+
+# reboot/shutdown handling
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown

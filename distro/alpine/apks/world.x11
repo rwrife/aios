@@ -1,0 +1,9 @@
+xorg-server
+xinit
+xauth
+xterm
+openbox
+xf86-input-libinput
+xf86-video-fbdev
+xf86-video-vesa
+mesa-dri-gallium

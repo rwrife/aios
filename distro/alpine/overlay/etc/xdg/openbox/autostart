@@ -1,0 +1,3 @@
+# AI OS Openbox autostart
+# Keep this minimal and terminal-only.
+# xterm is launched by /usr/local/bin/aios-session.

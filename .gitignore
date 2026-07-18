@@ -1,0 +1,11 @@
+# build artifacts
+/tmp/
+*.qcow2
+
+# Alpine mkimage working dirs
+distro/alpine/aports/
+distro/alpine/out/
+distro/alpine/.work/
+
+# local throwaway VM disk used by run script
+.tmp-aios-live.qcow2

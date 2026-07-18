@@ -1,0 +1,13 @@
+alpine-base
+busybox
+e2fsprogs
+dhcpcd
+iproute2
+iputils
+parted
+dosfstools
+util-linux
+openssh
+wget
+ca-certificates
+bash

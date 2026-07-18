@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc"
+                xmlns:xi="http://www.w3.org/2001/XInclude">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+
+  <keyboard>
+    <!-- Intentionally no custom app-launch/power keybinds. -->
+  </keyboard>
+
+  <mouse>
+    <!-- Disable root menu on right-click. -->
+    <context name="Root">
+      <mousebind button="Right" action="Press" />
+    </context>
+  </mouse>
+
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <names>
+      <name>terminal</name>
+    </names>
+  </desktops>
+
+  <applications>
+    <application class="XTerm">
+      <maximized>yes</maximized>
+      <decor>no</decor>
+    </application>
+  </applications>
+
+  <menu>
+    <file>/etc/xdg/openbox/menu.xml</file>
+  </menu>
+</openbox_config>

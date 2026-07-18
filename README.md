@@ -7,10 +7,31 @@ A minimal Linux distribution project focused on:
 - terminal-first UX with no general desktop app bundle
 
 ## Current status
-Planning and architecture phase.
+Phase 1 scaffolding in progress (live ISO pipeline + terminal-only session wiring).
 
 ## Initial goals
 1. Build reproducible image pipeline.
 2. Boot to WM + terminal automatically.
 3. Keep package surface extremely small.
 4. Validate in QEMU before hardware targets.
+
+## Build quickstart
+
+Simple scripts (x86 default):
+- `./scripts/build.sh`
+- `./scripts/run.sh`
+
+Native Alpine host build:
+- `./scripts/build-iso.sh`
+
+Portable containerized build (recommended on Ubuntu/ARM64 hosts):
+- `./scripts/build-iso-container.sh --simulate`
+- `./scripts/build-iso-container.sh`
+
+Useful overrides:
+- `ARCH=aarch64 ./scripts/build-iso-container.sh`
+- `ARCH=x86_64 ./scripts/build-iso-container.sh` (requires amd64 container emulation on ARM hosts)
+
+QEMU runtime notes:
+- `scripts/run.sh` auto-selects the newest `*-x86_64.iso` in `distro/alpine/out`
+- set `AIOS_QEMU_HEADLESS=1` for serial/headless run mode
