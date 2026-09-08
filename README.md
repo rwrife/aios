@@ -19,7 +19,8 @@ Build caches use the Docker volume `aios-build-cache`; images are written to
 The Settings button beside Terminal and Power opens AI models, Sound, Camera,
 Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.md).
 
-Every click on Chat opens a new window and conversation. Use the ellipsis menu
+The softly animated blob at the bottom center opens a new chat window and
+conversation with every click. Use the ellipsis menu
 to download the small starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.

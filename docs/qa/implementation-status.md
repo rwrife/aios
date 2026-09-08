@@ -122,3 +122,19 @@ Final r13 interactive QA also confirmed that saving a remote endpoint in desktop
 Settings appears in the existing chat window's shared model editor. The final
 frameless window opened successfully in UEFI; the QA harness used a USB tablet
 for absolute pointer events.
+
+
+## Ambient chat launcher
+
+Replaced the central labeled chat button with an unlabeled Canvas blob at bottom
+center, aligned with the smaller settings/terminal/power buttons. Its silhouette
+and inner contours change on a 14-second cycle, with hover/press/focus feedback.
+Keyboard activation retains normal Button behavior and an accessible name.
+Reduced motion renders a static shape. Inactive activityLevel/awakened properties
+provide a future integration point; no wake-word detector or microphone listener
+is enabled by this change. Each click retains the existing new-session callback.
+
+Validation: native shell compiled; actual desktop and chat rendered using the
+software backend; a 70-frame animation was captured; a runtime check confirmed
+phase advancement and freezing when reduced motion is enabled. This UI-only
+checkpoint has not been rebuilt into an ISO; the last boot-tested ISO is r13.
