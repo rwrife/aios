@@ -20,8 +20,8 @@ jobs:
       - name: Boot offline with BIOS and UEFI
         run: |
           iso=$(find distro/alpine/out -name '*-x86_64.iso' -print -quit)
-          sudo python3 scripts/test-boot.py "$iso" --timeout 600
-          sudo python3 scripts/test-boot.py "$iso" --uefi /usr/share/OVMF/OVMF_CODE_4M.fd --timeout 600
+          sudo python3 scripts/test-boot.py "$iso" --timeout 600 --log distro/alpine/out/boot-bios.log
+          sudo python3 scripts/test-boot.py "$iso" --uefi /usr/share/OVMF/OVMF_CODE_4M.fd --timeout 600 --log distro/alpine/out/boot-uefi.log
       - uses: actions/upload-artifact@v4
         with:
           name: aios-x86_64

@@ -5,7 +5,7 @@ This is a development candidate, not a hardware-certified release.
 ## Executed
 
 - Built an x86_64 Alpine 3.23 ISO with the native Qt desktop, developer packages,
-  and pinned llama.cpp CLI/server. The current r9 voice image is approximately 1.13 GiB.
+  and pinned llama.cpp CLI/server. The current voice image is approximately 1.13 GiB.
 - The `20260908-r5` ISO booted with **no network device**, using both QEMU BIOS and
   OVMF UEFI. The automated check found `aios-shell` owned by `aios` and compiled
   the Qt desktop example from source using the default packages.
@@ -59,6 +59,11 @@ This is a development candidate, not a hardware-certified release.
 - r9 also contains the validated speech-model downloader correction, CLI voice
   commands and a font-independent copy icon. USB/Bluetooth microphones and real
   speaker hardware remain untested.
+- r9 failed the 4 GiB offline boot gate: the live tmpfs root filled before package
+  installation finished, leaving login binaries missing. A 6 GiB diagnostic boot
+  measured 2,014 MiB used on `/`. r10 increases only the live-root ceiling from
+  Alpine's default half of RAM to 75%; it also explicitly lists `agetty` and makes
+  boot checks fail immediately on installation/login errors, saving full logs.
 
 ## Release gates still open
 

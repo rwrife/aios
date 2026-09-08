@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("iso", type=Path)
 parser.add_argument("--uefi", type=Path, help="OVMF_CODE firmware file")
 parser.add_argument("--timeout", type=int, default=240)
+parser.add_argument("--log", type=Path, help="Write the complete guest serial log")
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
     serial_path = str(Path(directory) / "serial.sock")
@@ -27,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
         command += ["-drive", f"if=pflash,format=raw,readonly=on,file={args.uefi}"]
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     deadline = time.monotonic() + args.timeout
+    output = ""
     try:
         while not Path(serial_path).exists():
             if process.poll() is not None:
@@ -55,6 +57,8 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                 if not data:
                     break
                 output += data.decode(errors="replace")
+                if "No space left on device" in output or "can't run '/sbin/agetty'" in output:
+                    raise RuntimeError("Guest package installation/login failed. Last output:\n" + output[-6000:])
                 if "aios login:" in output and not logged_in:
                     serial.sendall(b"root\n")
                     logged_in = True
@@ -72,6 +76,9 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
             if "\nAIOS_QA_READY" not in output:
                 raise RuntimeError("Guest exited before verification. Last output:\n" + output[-4000:])
     finally:
+        if args.log:
+            args.log.parent.mkdir(parents=True, exist_ok=True)
+            args.log.write_text(output)
         process.terminate()
         try:
             process.wait(timeout=10)

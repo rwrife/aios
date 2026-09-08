@@ -8,6 +8,7 @@ parted
 dosfstools
 util-linux
 util-linux-login
+agetty
 doas
 dbus
 eudev
