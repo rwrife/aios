@@ -65,9 +65,9 @@ Window {
                     var y0 = wave(x / width, layer), y1 = wave(nextX / width, layer)
                     var top = (y0 + y1) / 2
                     var fade = ctx.createLinearGradient(0, top, 0, top + fadeDepth)
-                    fade.addColorStop(0, "rgba(158,199,216,0.24)")
-                    fade.addColorStop(0.25, "rgba(158,199,216,0.12)")
-                    fade.addColorStop(0.65, "rgba(158,199,216,0.025)")
+                    fade.addColorStop(0, "rgba(158,199,216,0.18)")
+                    fade.addColorStop(0.25, "rgba(158,199,216,0.09)")
+                    fade.addColorStop(0.65, "rgba(158,199,216,0.02)")
                     fade.addColorStop(1, "rgba(158,199,216,0)")
                     ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(nextX, y1)
                     ctx.lineTo(nextX, y1 + fadeDepth); ctx.lineTo(x, y0 + fadeDepth); ctx.closePath()
@@ -81,8 +81,9 @@ Window {
                     var u = i / 160, y = wave(u, crest)
                     if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(u * width, y)
                 }
-                ctx.strokeStyle = "rgba(167,199,213,0.72)"; ctx.lineWidth = 2
-                ctx.lineJoin = "round"; ctx.stroke()
+                ctx.lineJoin = "round"
+                ctx.strokeStyle = "rgba(167,199,213,0.08)"; ctx.lineWidth = 3.5; ctx.stroke()
+                ctx.strokeStyle = "rgba(167,199,213,0.50)"; ctx.lineWidth = 1.3; ctx.stroke()
             }
         }
     }
