@@ -48,8 +48,13 @@ try:
         name, text = read_attachment(request["path"])
         emit("attached", name=name, text=text)
     elif action == "chat":
-        for text in chat(request["messages"]):
-            emit("token", text=text)
+        if request.get("browser_socket"):
+            from .agent import chat as agent_chat
+            for event in agent_chat(request["messages"], request["browser_socket"]):
+                print(json.dumps(event), flush=True)
+        else:
+            for text in chat(request["messages"]):
+                emit("token", text=text)
         emit("done")
     else:
         raise ValueError("Unknown action")

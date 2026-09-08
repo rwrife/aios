@@ -26,7 +26,9 @@ remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
-The starter model has limited reasoning ability; larger models can be imported.
+Chromium is available through chat with a tool-capable model, without a desktop
+browser icon. See [browser tools](docs/browser.md). The starter model has limited
+reasoning ability and is not a reliable browser agent; larger models can be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.
 Secure Boot and physical hardware have not yet been validated.
