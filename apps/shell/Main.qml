@@ -56,28 +56,15 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
-    Column {
-        anchors.centerIn: parent; spacing: 20
-        Button {
-            id: launcher; width: 96; height: 96; anchors.horizontalCenter: parent.horizontalCenter
-            Accessible.name: "Start a new chat"
-            background: Rectangle {
-                color: launcher.hovered ? theme.input : "transparent"; radius: 48
-                border.width: launcher.activeFocus ? 2 : 0; border.color: theme.accent
-                Behavior on color { ColorAnimation { duration: 150 } }
-            }
-            contentItem: Item {
-                Rectangle { width: 44; height: 34; radius: 10; anchors.centerIn: parent; color: "transparent"; border.color: theme.ink; border.width: 2
-                    Rectangle { x: 9; y: 29; width: 11; height: 2; rotation: -40; color: theme.ink }
-                    Row { anchors.centerIn: parent; spacing: 5; Repeater { model: 3; Rectangle { width: 3; height: 3; radius: 2; color: theme.ink } } }
-                }
-            }
-            onClicked: desktop.openChat()
-        }
-        Text { text: "Chat"; color: theme.ink; font.pixelSize: 18; anchors.horizontalCenter: parent.horizontalCenter; font.letterSpacing: 1 }
+    ChatOrb {
+        id: launcher
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 8
+        theme: theme; reducedMotion: desktop.reducedMotion
+        onClicked: desktop.openChat()
     }
     Row {
-        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 32; spacing: 12
+        anchors.right: parent.right; anchors.rightMargin: 32; anchors.verticalCenter: launcher.verticalCenter; spacing: 12
         QuietButton { tip: "Settings"; implicitWidth: 44; onClicked: desktop.openSettings()
             contentItem: Canvas { onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
