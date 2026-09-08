@@ -46,6 +46,21 @@ class CoreTests(unittest.TestCase):
     def test_sse_comments_multiline_and_final_event(self):
         self.assertEqual(list(core.sse_events(io.BytesIO(b": ping\r\ndata: first\r\ndata: second\r\n\r\ndata: last"))), ["first\nsecond", "last"])
 
+    def test_bundled_model_default_preserves_user_choices(self):
+        model = Path(self.tmp.name) / "starter.gguf"
+        with patch.object(core, "BUNDLED_MODEL", model):
+            self.assertEqual(core.load_config()["model_path"], "")
+            model.touch()
+            self.assertEqual(core.load_config()["model_path"], str(model))
+            custom = Path(self.tmp.name) / "custom.gguf"
+            custom.touch()
+            core.save_config({"model_path": str(custom)})
+            self.assertEqual(core.load_config()["model_path"], str(custom))
+            core.save_config({"mode": "remote", "url": "https://example.com/v1", "model_path": ""})
+            config = core.load_config()
+            self.assertEqual(config["mode"], "remote")
+            self.assertEqual(config["model_path"], "")
+
     def test_config_preserves_key_and_rejects_insecure_remote(self):
         core.save_config({"mode": "remote", "url": "https://example.com/v1", "api_key": "private"})
         core.save_config({"model": "test"})

@@ -65,11 +65,13 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                 if "aios:~#" in output and not sent_test:
                     # The success marker does not occur literally in the echoed command.
                     check = "for n in 1 2 3 4 5 6 7 8 9 10; do pgrep -u aios -x aios-shell >/dev/null && break; sleep 1; done; "
-                    check += "pgrep -u aios -x aios-shell >/dev/null && su aios -c 'cd; aios-new-app smoke; cmake -S smoke -B smoke/build -G Ninja && cmake --build smoke/build' && printf '\\nAIOS_QA_%s\\n' READY\n"
+                    check += "pgrep -u aios -x aios-shell >/dev/null && su aios -c 'cd; aios-new-app smoke; cmake -S smoke -B smoke/build -G Ninja && cmake --build smoke/build' && "
+                    check += "{ for n in $(seq 1 60); do wget -qO /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; "
+                    check += "su aios -c 'aios-llm chat \"Say hello in one sentence.\"'; } && printf '\\nAIOS_QA_%s\\n' READY\n"
                     serial.sendall(check.encode())
                     sent_test = True
                 if "\nAIOS_QA_READY" in output:
-                    print("PASS: offline boot, ordinary-user shell, desktop example compilation")
+                    print("PASS: offline boot, ordinary-user shell, desktop example compilation, bundled model reply")
                     break
             else:
                 raise TimeoutError("Boot/toolchain test timed out. Last output:\n" + output[-4000:])

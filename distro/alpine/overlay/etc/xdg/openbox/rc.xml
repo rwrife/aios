@@ -13,6 +13,27 @@
   </keyboard>
 
   <mouse>
+    <context name="Close">
+      <mousebind button="Left" action="Click"><action name="Close"/></mousebind>
+    </context>
+    <context name="Iconify">
+      <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
+    </context>
+    <context name="Maximize">
+      <mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Titlebar">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+    <context name="Top Bottom Left Right TLCorner TRCorner BLCorner BRCorner">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
     <!-- Disable root menu on right-click. -->
     <context name="Root">
       <mousebind button="Right" action="Press" />

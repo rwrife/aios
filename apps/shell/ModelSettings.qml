@@ -58,7 +58,7 @@ Item {
                         visible: settingsTab.currentIndex === 0; Layout.fillWidth: true; spacing: 10
                         Choice { id: mode; model: ["On this computer", "Remote service"]; Layout.fillWidth: true }
                         Field { id: modelPath; visible: mode.currentIndex === 0; placeholderText: "GGUF model path"; Layout.fillWidth: true }
-                        QuietButton { visible: mode.currentIndex === 0; text: backend.busy ? "Cancel download" : "Download starter model · 101 MiB"; onClicked: backend.busy ? backend.stop() : backend.setupLocal() }
+                        QuietButton { visible: mode.currentIndex === 0; text: backend.busy ? "Cancel" : "Use starter model"; onClicked: backend.busy ? backend.stop() : backend.setupLocal() }
                         Text { visible: mode.currentIndex === 0; text: "SmolLM2 135M · Apache-2.0\nA small model for trying chat. Browser actions need a tool-capable model."; color: theme.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
                         Field { id: endpoint; visible: mode.currentIndex === 1; placeholderText: "Service URL · https://…/v1"; Layout.fillWidth: true }
                         Field { id: modelId; visible: mode.currentIndex === 1; placeholderText: "Model ID"; Layout.fillWidth: true }
