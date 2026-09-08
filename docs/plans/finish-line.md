@@ -17,6 +17,7 @@ Updated 2026-09-08. Detailed execution evidence is in
 | T10 Default developer tools | Done; default image compiles a Qt app offline | Complete app launch/window-switch QA |
 | T11 Installer | BIOS/UEFI installs and disk boots passed; UEFI persistence tested | Repeat install smoke for final release package |
 | T13 Voice | Remote-first settings plus local STT/TTS, illuminated waveform control, reviewed transcription | Real microphone/speaker hardware and provider coverage |
+| T14 Desktop settings | Sectioned panel, shared AI settings, sound/network/display tools, opt-in camera preview | Physical Wi-Fi/camera/audio, multi-monitor and resolution persistence QA |
 | T12 Release validation | Backend tests, BIOS/UEFI offline smoke automation, manifests | CI build execution, ten cold boots, VMware/hardware, release publication |
 
 Next order: complete interaction and audio hardware QA, execute the clean CI image

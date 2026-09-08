@@ -1,7 +1,14 @@
 alpine-base
 busybox
 e2fsprogs
-dhcpcd
+networkmanager
+networkmanager-openrc
+networkmanager-tui
+networkmanager-wifi
+wpa_supplicant
+wpa_supplicant-openrc
+polkit-elogind
+polkit-openrc
 iproute2
 iputils
 parted

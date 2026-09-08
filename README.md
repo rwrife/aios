@@ -1,7 +1,7 @@
 # aios (AI OS)
 
 AIOS is a small chat-first Linux desktop: an ambient wave background, one chat
-launcher, and understated terminal/power controls. It includes native desktop
+launcher, and understated settings/terminal/power controls. It includes native desktop
 development tools and local/remote LLM command-line tools by default.
 
 The chat desktop is under active development. See
@@ -15,6 +15,9 @@ On Linux with Docker: `bash scripts/build.sh`, then `bash scripts/run.sh`.
 On Windows, run the commands inside WSL with a working Linux Docker daemon.
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`. The initial VM setting is 4 GiB RAM.
+
+The Settings button beside Terminal and Power opens AI models, Sound, Camera,
+Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.md).
 
 Every click on Chat opens a new window and conversation. Use the ellipsis menu
 to download the small starter model, import a GGUF, or configure a compatible

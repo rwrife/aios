@@ -10,3 +10,5 @@ mesa-dri-gallium
 xsetroot
 xset
 xf86-video-modesetting
+pavucontrol
+arandr

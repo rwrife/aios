@@ -91,3 +91,34 @@ python3 scripts/test-boot.py path/to/aios.iso --uefi /usr/share/OVMF/OVMF_CODE_4
 The boot checks use disposable VMs with 4 GiB RAM and no host-disk passthrough.
 The manual GitHub image workflow runs both firmware checks before uploading
 the ISO, checksums, package manifest and source pins.
+
+
+## Desktop settings checkpoint (2026-09-08)
+
+Added a reusable desktop settings window alongside terminal and power. Its AI
+model/voice editor is shared with chat; sections cover sound, camera, network,
+display and appearance, with a simple extension point for future pages.
+Sound uses pavucontrol, networking uses NetworkManager/nmtui plus wpa_supplicant,
+and display configuration uses ARandR. Camera preview is explicitly activated
+and stops when leaving its section or closing the window.
+
+Executed against r11/r12: native C++ build, QML render, eight backend tests and
+shell/XML checks; offline 4 GiB BIOS/UEFI boots and default Qt example compilation.
+Interactive VM checks confirmed the settings launcher, automatic Ethernet DHCP
+and HTTPS connectivity, ordinary-user network connection edits saved to disk,
+and a sound slider change verified at 51% through PulseAudio. ARandR changed
+1280x800 to 1024x768 and the desktop/panel repositioned correctly. Camera showed
+an explicit no-device state and disabled preview. r13 contains the final matching
+frameless panel and minor layout cleanup. The final r13 ISO also passed offline
+4 GiB BIOS and UEFI boots and default Qt example compilation.
+
+Physical webcam capture, Wi-Fi association, hardware audio, multi-monitor layouts,
+and installed-system display-layout persistence still need target-hardware QA.
+System sound/network/display controls open dedicated tools from the panel; these
+are not yet embedded native controls. The panel itself and camera preview are
+native Qt Quick. No real camera or microphone was activated for these checks.
+
+Final r13 interactive QA also confirmed that saving a remote endpoint in desktop
+Settings appears in the existing chat window's shared model editor. The final
+frameless window opened successfully in UEFI; the QA harness used a USB tablet
+for absolute pointer events.
