@@ -138,3 +138,40 @@ Validation: native shell compiled; actual desktop and chat rendered using the
 software backend; a 70-frame animation was captured; a runtime check confirmed
 phase advancement and freezing when reduced motion is enabled. This UI-only
 checkpoint has not been rebuilt into an ISO; the last boot-tested ISO is r13.
+
+
+## Agent browser checkpoint
+
+Chromium/ChromeDriver are included, with no new desktop icon and a hidden desktop
+entry. Desktop chat now supports bounded structured browser tool calls. Each chat
+owns a private broker and an isolated temporary Chromium profile. Model prose is
+never executed, page content is marked untrusted, and tool arguments cannot name
+arbitrary commands or JavaScript. Local llama-server enables Jinja tool templates.
+
+Thirteen backend tests passed, including fragmented tool calls, incomplete calls
+that execute nothing, non-execution of prose, URL restrictions and loop limits.
+Native shell compilation passed. In the r14 AIOS VM, Chromium with its sandbox
+intact passed real open/read/type/click/back/tab/switch operations. The final
+viewport snapshot code also passed scrolling to previously offscreen text and
+controls. The reproducible browser smoke test is scripts/test-browser.py.
+
+A native chat request was exercised end to end against a scripted local model
+endpoint: structured tool calls opened real Chromium, filled/submitted a local
+form, read the result and returned the final answer to chat. This tests the real
+transport/worker/broker/UI path; it does not establish a particular LLM's browser
+reasoning quality. Two chat windows created two drivers/profiles. Closing one
+removed only its driver/profile; closing the other left neither behind. The
+standard Chromium frame is intentionally retained for now.
+
+The build-container browser test could not start Chromium in its sandbox; the
+real browser checks above were run successfully as the ordinary user in AIOS.
+A real tool-capable local/remote model matrix, broader websites, frames/canvas
+applications and hardware performance remain release validation work.
+
+The real SmolLM2 starter model also returned a normal greeting through the new
+agent transport with browser tool schemas and Jinja enabled. This verifies plain
+chat compatibility, not reliable browser planning by that small model.
+
+Final r17 ISO: offline BIOS and UEFI boots both passed with 4 GiB RAM, including
+ordinary-user desktop startup and compilation of the included Qt example. This
+image includes Chromium, the current settings panel and the muted chat blob.

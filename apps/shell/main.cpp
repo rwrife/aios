@@ -17,6 +17,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QUuid>
+#include <QTemporaryDir>
 #include "voice.h"
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
@@ -60,6 +61,7 @@ public:
             m_busy = true; m_status = "Transcribing…"; emit changed(); run({{"action", "transcribe"}, {"path", path}});
         });
         tieToDesktop(local);
+        tieToDesktop(browser);
         readiness.setInterval(500);
         connect(&readiness, &QTimer::timeout, this, [this] {
             if (checkingReady) return;
@@ -99,6 +101,7 @@ public:
     }
     ~Backend() {
         voice.cancel();
+        browser.terminate(); if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
         for (auto p : findChildren<QProcess *>(QString(), Qt::FindDirectChildrenOnly)) {
             p->disconnect(this); p->kill(); p->waitForFinished(1000);
         }
@@ -156,6 +159,10 @@ public:
     Q_INVOKABLE void stop() {
         voice.cancel();
         if (active) { active->disconnect(this); active->kill(); active->deleteLater(); active = nullptr; }
+        if (browser.state() != QProcess::NotRunning) {
+            browser.terminate();
+            if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
+        }
         m_busy = false; m_status = "Stopped"; persist(); emit changed();
     }
     Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
@@ -207,6 +214,8 @@ private:
     bool m_busy = false;
     QProcess *active = nullptr;
     QProcess local;
+    QProcess browser;
+    QTemporaryDir browserDirectory;
     QNetworkAccessManager network;
     QTimer readiness;
     bool checkingReady = false;
@@ -226,12 +235,12 @@ private:
         }
         if (m_config.value("mode") == "local" && !m_config.value("model_path").toString().isEmpty()) {
             local.start("llama-server", {"--model", m_config.value("model_path").toString(), "--alias", "local",
-                "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "4096"});
+                "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja"});
             m_status = "Local model starting. You can chat when it is ready.";
             readiness.start();
         }
     }
-    void run(const QJsonObject &request) {
+    void run(QJsonObject request) {
         auto p = new QProcess(this);
         tieToDesktop(*p);
         auto buffer = new QByteArray;
@@ -240,6 +249,17 @@ private:
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         if (env.value("AIOS_PYTHONPATH").isEmpty()) env.insert("PYTHONPATH", "/usr/local/share/aios");
         else env.insert("PYTHONPATH", env.value("AIOS_PYTHONPATH"));
+        if (action == "chat" && browserDirectory.isValid()) {
+            const auto socket = browserDirectory.path() + "/browser.sock";
+            if (browser.state() == QProcess::NotRunning) {
+                browser.setProcessEnvironment(env);
+                browser.setStandardOutputFile(QProcess::nullDevice());
+                browser.setStandardErrorFile(QProcess::nullDevice());
+                QFile::remove(socket);
+                browser.start("python3", {"-m", "aios.browser", socket});
+            }
+            request.insert("browser_socket", socket);
+        }
         p->setProcessEnvironment(env);
         connect(p, &QObject::destroyed, [buffer] { delete buffer; });
         connect(p, &QProcess::started, this, [p,request] {

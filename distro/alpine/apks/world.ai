@@ -13,3 +13,5 @@ pulseaudio-utils
 alsa-utils
 espeak-ng
 poppler-utils
+chromium
+chromium-chromedriver
