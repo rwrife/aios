@@ -5,3 +5,11 @@ libcurl
 qt6-qtbase-x11
 qt6-qtdeclarative
 font-dejavu
+qt6-qtmultimedia
+qt6-qtmultimedia-ffmpeg
+pulseaudio
+pulseaudio-alsa
+pulseaudio-utils
+alsa-utils
+espeak-ng
+poppler-utils

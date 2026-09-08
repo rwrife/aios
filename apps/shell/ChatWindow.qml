@@ -1,0 +1,203 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
+import QtQuick.Dialogs
+
+Window {
+    id: chat
+    required property var backend
+    required property var session
+    required property var theme
+    title: "AIOS Chat"
+    visible: true
+    flags: Qt.Window | Qt.FramelessWindowHint
+    width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
+    x: (Screen.width - width)/2; y: (Screen.height - height)/2
+    color: theme.panel
+    onClosing: { session.closeSession(); Qt.callLater(chat.destroy) }
+    Component.onCompleted: composer.forceActiveFocus()
+    function submit() {
+        if (session.busy || session.recording) return;
+        if (!composer.text.trim() && !session.attachments.length) return;
+        if (backend.config.mode !== "remote" && !backend.config.model_path) { options.open(); return }
+        session.send(composer.text); composer.clear()
+    }
+    component QuietButton: Button {
+        id: button
+        property string tip: text
+        Accessible.name: tip
+        implicitWidth: Math.max(36, implicitContentWidth + 16); implicitHeight: 36
+        contentItem: Text { text: button.text; color: button.enabled ? theme.ink : theme.muted; opacity: button.enabled ? 0.8 : 0.4; font.pixelSize: 17; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+        background: Rectangle { color: button.hovered || button.down ? theme.input : "transparent"; radius: 7; border.width: button.activeFocus ? 1 : 0; border.color: theme.accent }
+        ToolTip.visible: hovered || activeFocus; ToolTip.text: tip; ToolTip.delay: 600
+    }
+    component Field: TextField {
+        color: theme.ink; placeholderTextColor: theme.muted; selectByMouse: true
+        font.pixelSize: 13; padding: 10
+        background: Rectangle { color: theme.input; radius: 5; border.color: parent.activeFocus ? theme.accent : theme.line }
+    }
+    component Choice: ComboBox {
+        id: choice
+        contentItem: Text { text: choice.displayText; color: theme.ink; leftPadding: 10; verticalAlignment: Text.AlignVCenter; font.pixelSize: 13 }
+        background: Rectangle { color: theme.input; radius: 5; border.color: theme.line; implicitHeight: 38 }
+        indicator: Text { text: "⌄"; color: theme.muted; x: choice.width - 24; y: 6; font.pixelSize: 17 }
+        delegate: ItemDelegate {
+            required property string modelData
+            width: choice.width; text: modelData
+            contentItem: Text { text: parent.text; color: theme.ink; padding: 8 }
+            background: Rectangle { color: parent.highlighted || parent.hovered ? theme.horizon : theme.input }
+        }
+        popup.background: Rectangle { color: theme.input; border.color: theme.line }
+    }
+    ColumnLayout {
+        anchors.fill: parent; anchors.margins: 24; spacing: 10
+        RowLayout {
+            Layout.fillWidth: true
+            Item {
+                Layout.fillWidth: true; implicitHeight: 36
+                Text { text: "Chat"; color: theme.muted; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
+                MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
+            }
+            QuietButton { text: "⋯"; tip: "Model and voice settings"; onClicked: options.open() }
+            QuietButton { text: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
+            QuietButton { text: "×"; tip: "Close this chat"; onClicked: chat.close() }
+        }
+        Item {
+            Layout.fillWidth: true; Layout.fillHeight: true
+            Text { visible: session.messages.length === 0; anchors.centerIn: parent; text: "What’s on your mind?"; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
+            ListView {
+                id: conversation; anchors.fill: parent; clip: true; spacing: 24; model: session.messages
+                onCountChanged: Qt.callLater(positionViewAtEnd)
+                ScrollBar.vertical: ScrollBar {}
+                delegate: Column {
+                    required property var modelData
+                    width: conversation.width - 12; spacing: 7
+                    Text { text: modelData.role === "user" ? "You" : "AI"; color: theme.muted; opacity: 0.65; font.pixelSize: 11 }
+                    TextEdit { id: reply; width: parent.width; text: modelData.display_text || modelData.content || "…"; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText }
+                    Row {
+                        visible: modelData.role === "assistant" && modelData.content.length > 0 && !session.busy
+                        spacing: 2; opacity: reply.activeFocus || replyActions.containsMouse ? 1 : 0.45
+                        HoverHandler { id: replyHover }
+                        property bool containsMouse: replyHover.hovered
+                        id: replyActions
+                        QuietButton { tip: "Copy reply"; onClicked: session.copy(modelData.content)
+                            contentItem: Item {
+                                Rectangle { x: (parent.width-12)/2; y: (parent.height-14)/2; width: 9; height: 11; radius: 1; color: "transparent"; border.color: theme.muted }
+                                Rectangle { x: (parent.width-12)/2+3; y: (parent.height-14)/2+3; width: 9; height: 11; radius: 1; color: theme.panel; border.color: theme.muted }
+                            }
+                        }
+                        QuietButton { text: session.speaking ? "■" : "♪"; tip: session.speaking ? "Stop spoken reply" : "Read aloud · synthesized voice"; onClicked: session.readReply(modelData.content) }
+                    }
+                }
+            }
+        }
+        Text { Layout.fillWidth: true; visible: text.length > 0; text: session.recording ? "Listening… tap the microphone to finish" : session.status; color: session.recording ? theme.accent : theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+        Flow {
+            Layout.fillWidth: true; visible: session.attachments.length > 0; spacing: 6
+            Repeater {
+                model: session.attachments
+                Rectangle {
+                    required property string modelData; required property int index
+                    width: Math.min(230, chip.implicitWidth + 42); height: 28; radius: 6; color: theme.input
+                    Text { id: chip; text: modelData; color: theme.muted; font.pixelSize: 11; anchors.left: parent.left; anchors.leftMargin: 8; anchors.right: remove.left; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideMiddle }
+                    QuietButton { id: remove; text: "×"; tip: "Remove " + modelData; anchors.right: parent.right; width: 28; height: 28; onClicked: session.removeAttachment(index) }
+                }
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true; implicitHeight: Math.min(180, Math.max(112, composer.contentHeight + 62))
+            color: theme.input; radius: 12; border.color: composer.activeFocus ? theme.line : "transparent"
+            ScrollView {
+                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: tools.top; anchors.margins: 12
+                TextArea {
+                    id: composer; placeholderText: "Message…"; placeholderTextColor: theme.muted; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; selectByMouse: true; background: null
+                    Keys.onReturnPressed: function(event) { if (!(event.modifiers & Qt.ShiftModifier)) { chat.submit(); event.accepted = true } else event.accepted = false }
+                }
+            }
+            RowLayout {
+                id: tools; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 8; spacing: 3
+                QuietButton { text: "+"; tip: "Attach text, source code or PDF"; enabled: !session.busy && !session.recording; onClicked: attachmentDialog.open() }
+                VoiceButton {
+                    theme: chat.theme; active: session.recording; enabled: !session.busy
+                    onClicked: {
+                        if (!session.recording && backend.config.voice_mode !== "local" && !backend.config.voice_url) { settingsTab.currentIndex = 1; options.open() }
+                        else session.setVoiceActive(!session.recording)
+                    }
+                }
+                QuietButton { visible: session.recording; text: "×"; tip: "Discard recording"; onClicked: session.cancelRecording() }
+                Item { Layout.fillWidth: true }
+                QuietButton { text: session.busy ? "■" : "↑"; tip: session.busy ? "Stop" : "Send message"; enabled: session.busy || (!session.recording && (composer.text.trim().length > 0 || session.attachments.length > 0)); onClicked: session.busy ? session.stop() : chat.submit() }
+            }
+        }
+        Text { visible: backend.config.live === true; text: "Live session · Chats are lost after reboot"; color: theme.muted; opacity: 0.5; font.pixelSize: 10 }
+    }
+    FileDialog {
+        id: attachmentDialog; title: "Attach a file"; fileMode: FileDialog.OpenFile
+        nameFilters: ["Text, source code and PDF (*.txt *.md *.csv *.json *.py *.cpp *.h *.js *.ts *.qml *.html *.css *.sh *.log *.pdf)", "All files (*)"]
+        onAccepted: session.attach(selectedFile)
+    }
+    Popup {
+        id: options; parent: chat.contentItem; anchors.centerIn: parent; width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24); modal: true; padding: 20
+        background: Rectangle { color: theme.panel; border.color: theme.line; radius: 10 }
+        onOpened: {
+            mode.currentIndex = backend.config.mode === "remote" ? 1 : 0; endpoint.text = backend.config.url || ""; modelId.text = backend.config.model || "local"; modelPath.text = backend.config.model_path || ""; apiKey.text = ""
+            voiceMode.currentIndex = backend.config.voice_mode === "local" ? 1 : 0; voiceUrl.text = backend.config.voice_url || ""; voiceKey.text = ""; sttModel.text = backend.config.stt_model || "whisper-1"; ttsModel.text = backend.config.tts_model || "tts-1"; voiceName.text = backend.config.voice_name || "alloy"; speechPath.text = backend.config.speech_model_path || ""
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                Choice { id: settingsTab; model: ["Model", "Voice"]; Layout.fillWidth: true }
+                QuietButton { text: "×"; tip: "Close settings"; onClicked: options.close() }
+            }
+            ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true; contentWidth: availableWidth
+                ColumnLayout {
+                    width: parent.width; spacing: 10
+                    ColumnLayout {
+                        visible: settingsTab.currentIndex === 0; Layout.fillWidth: true; spacing: 10
+                        Choice { id: mode; model: ["On this computer", "Remote service"]; Layout.fillWidth: true }
+                        Field { id: modelPath; visible: mode.currentIndex === 0; placeholderText: "GGUF model path"; Layout.fillWidth: true }
+                        QuietButton { visible: mode.currentIndex === 0; text: backend.busy ? "Cancel download" : "Download starter model · 101 MiB"; onClicked: backend.busy ? backend.stop() : backend.setupLocal() }
+                        Text { visible: mode.currentIndex === 0; text: "SmolLM2 135M · Apache-2.0\nA small model for trying chat, with limited reasoning ability."; color: theme.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Field { id: endpoint; visible: mode.currentIndex === 1; placeholderText: "Service URL · https://…/v1"; Layout.fillWidth: true }
+                        Field { id: modelId; visible: mode.currentIndex === 1; placeholderText: "Model ID"; Layout.fillWidth: true }
+                        Field { id: apiKey; visible: mode.currentIndex === 1; placeholderText: "API key · blank keeps saved key"; echoMode: TextInput.Password; Layout.fillWidth: true }
+                        QuietButton { text: backend.config.reduced_motion ? "Enable background motion" : "Reduce background motion"; onClicked: backend.configure({reduced_motion: !backend.config.reduced_motion}) }
+                    }
+                    ColumnLayout {
+                        visible: settingsTab.currentIndex === 1; Layout.fillWidth: true; spacing: 10
+                        Choice { id: voiceMode; model: ["Remote voice service", "On-device voice"]; Layout.fillWidth: true }
+                        Text { text: voiceMode.currentIndex === 0 ? "Recordings go to this voice service when you finish recording. Transcripts stay in the composer until you send them." : "Speech stays on this computer. The small speech model recognizes English; replies use a synthesized local voice."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Field { id: voiceUrl; visible: voiceMode.currentIndex === 0; placeholderText: "Voice URL · https://…/v1"; Layout.fillWidth: true }
+                        Field { id: voiceKey; visible: voiceMode.currentIndex === 0; placeholderText: "Voice API key · blank keeps saved key"; echoMode: TextInput.Password; Layout.fillWidth: true }
+                        Field { id: sttModel; visible: voiceMode.currentIndex === 0; placeholderText: "Transcription model"; Layout.fillWidth: true }
+                        Field { id: ttsModel; visible: voiceMode.currentIndex === 0; placeholderText: "Speech model"; Layout.fillWidth: true }
+                        Field { id: voiceName; visible: voiceMode.currentIndex === 0; placeholderText: "Voice name"; Layout.fillWidth: true }
+                        Field { id: speechPath; visible: voiceMode.currentIndex === 1; placeholderText: "Whisper speech model path"; Layout.fillWidth: true }
+                        QuietButton { visible: voiceMode.currentIndex === 1; text: backend.busy ? "Cancel download" : "Download English speech model · 75 MiB"; onClicked: backend.busy ? backend.stop() : backend.setupVoice() }
+                        Text { visible: voiceMode.currentIndex === 1; text: "Whisper tiny.en · MIT · Checksum verified"; color: theme.muted; font.pixelSize: 11 }
+                    }
+                }
+            }
+            Text { text: backend.status; visible: text.length > 0; color: theme.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            RowLayout {
+                Item { Layout.fillWidth: true }
+                QuietButton { text: "Done"; enabled: !backend.busy; onClicked: {
+                    var config
+                    if (settingsTab.currentIndex === 0) {
+                        config = {mode: mode.currentIndex === 0 ? "local" : "remote", url: endpoint.text || "http://127.0.0.1:8080/v1", model: modelId.text || "local", model_path: modelPath.text}
+                        if (apiKey.text) config.api_key = apiKey.text
+                    } else {
+                        config = {voice_mode: voiceMode.currentIndex === 0 ? "remote" : "local", voice_url: voiceUrl.text, stt_model: sttModel.text, tts_model: ttsModel.text, voice_name: voiceName.text, speech_model_path: speechPath.text}
+                        if (voiceKey.text) config.voice_key = voiceKey.text
+                    }
+                    backend.configure(config)
+                } }
+            }
+        }
+    }
+    Connections { target: backend; function onConfigured() { options.close() } }
+    Connections { target: session; function onTranscribed(text) { composer.text += (composer.text ? " " : "") + text; composer.forceActiveFocus() } }
+}

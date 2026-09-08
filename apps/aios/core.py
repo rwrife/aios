@@ -32,7 +32,10 @@ def write_json(path, value):
 
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "reduced_motion": False}
+                "model_path": "", "api_key": "", "reduced_motion": False,
+                "voice_mode": "remote", "voice_url": "", "voice_key": "",
+                "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
+                "speech_model_path": ""}
     path = config_dir() / "config.json"
     if path.exists():
         defaults.update(json.loads(path.read_text()))
@@ -54,12 +57,21 @@ def save_config(values):
     config = load_config()
     if "url" in values and values["url"].rstrip("/") != config["url"].rstrip("/") and "api_key" not in values:
         config["api_key"] = ""
-    for key in ("mode", "url", "model", "model_path", "api_key", "reduced_motion"):
+    if "voice_url" in values and values["voice_url"].rstrip("/") != config["voice_url"].rstrip("/") and "voice_key" not in values:
+        config["voice_key"] = ""
+    for key in defaults_keys():
         if key in values:
             config[key] = values[key]
     if config["mode"] not in ("local", "remote"):
         raise ValueError("Choose local or remote.")
     config["url"] = validate_url(str(config["url"]))
+    if config["voice_mode"] not in ("local", "remote"):
+        raise ValueError("Choose local or remote voice.")
+    if config["voice_url"]:
+        config["voice_url"] = validate_url(str(config["voice_url"]))
+    for key in ("stt_model", "tts_model", "voice_name"):
+        if not isinstance(config[key], str) or not config[key].strip() or any(c in config[key] for c in '\r\n"'):
+            raise ValueError("Enter a valid voice model and voice name.")
     if not str(config["model"]).strip():
         raise ValueError("Enter a model ID.")
     if config["model_path"] and config["mode"] == "local":
@@ -69,6 +81,11 @@ def save_config(values):
         config["model_path"] = str(path)
     write_json(config_dir() / "config.json", config)
     return config
+
+
+def defaults_keys():
+    return ("mode", "url", "model", "model_path", "api_key", "reduced_motion",
+            "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -88,6 +105,7 @@ def request(route, body=None, timeout=90):
     try:
         return urllib.request.build_opener(NoRedirect).open(req, timeout=timeout)
     except urllib.error.HTTPError as exc:
+        exc.close()
         reasons = {401: "Authentication failed. Check your API key.", 403: "This model is not permitted.",
                    404: "Endpoint or model not found. Check the URL and model ID.",
                    429: "The provider is busy or rate limited. Try again shortly.",
@@ -118,6 +136,7 @@ def chat(messages):
                            not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Invalid conversation.")
     model = "local" if config["mode"] == "local" else config["model"]
+    messages = [{"role": m["role"], "content": m["content"]} for m in messages]
     finished = False
     with request("/chat/completions", {"model": model, "messages": messages, "stream": True}) as response:
         for event in sse_events(response):
@@ -145,15 +164,15 @@ def save_history(messages):
     write_json(data_dir() / "conversation.json", messages)
 
 
-def download_model(url, expected_hash, destination, progress=lambda n: None):
+def download_model(url, expected_hash, destination, progress=lambda n: None, suffix=".gguf"):
     validate_url(url)
     if not url.startswith("https://") or len(expected_hash) != 64 or any(c not in "0123456789abcdef" for c in expected_hash.lower()):
         raise ValueError("Model downloads require HTTPS and a SHA-256 checksum.")
     destination = Path(destination).expanduser()
-    if destination.suffix.lower() != ".gguf" or destination.exists():
-        raise ValueError("Choose a new .gguf destination file.")
+    if suffix not in (".gguf", ".bin") or destination.suffix.lower() != suffix or destination.exists():
+        raise ValueError("Choose a new " + suffix + " destination file.")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    partial = destination.with_suffix(".gguf.part")
+    partial = destination.with_suffix(suffix + ".part")
     digest = hashlib.sha256()
     try:
         with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as output:

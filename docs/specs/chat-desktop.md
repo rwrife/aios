@@ -4,14 +4,32 @@ This specification supersedes the terminal-only requirements in the older plans.
 
 AIOS boots into Alpine/OpenRC, Xorg, Openbox, and an ordinary local `aios` user.
 The desktop has an original slow wave animation, one prominent Chat launcher,
-and understated terminal and power icons. Chat opens one centered window;
-closing it returns to the desktop. Other development applications remain usable.
+and understated terminal and power icons. Every launcher activation creates a
+new centered chat window and independent conversation. Existing windows retain
+their own drafts, attachments and generation state. Closing one stops only that
+session. Other development applications remain usable.
 
 Chat supports a local GGUF model through llama.cpp or a remote OpenAI-compatible
 HTTPS endpoint. Replies stream as plain text, can be stopped, and never execute
 commands. Model configuration and the current conversation live under the user's
-XDG config/data directories. API keys are stored in a mode-0600 config file and
+XDG config/data directories. Conversations use unique files under
+`~/.local/share/aios/conversations/`; a new window never loads an old session.
+API keys are stored in a mode-0600 config file and
 are not returned to the UI. Autologin assumes a personally controlled machine.
+
+The composer has discreet attachment and waveform/Voice controls. Model and voice
+configuration lives behind an ellipsis menu. Text/source files and text-bearing
+PDFs can be attached; image understanding and scanned PDFs are not implemented.
+The Voice control illuminates while recording, driven by the actual recording
+state. Clicking it and the programmatic `setVoiceActive(bool)` entry point share
+the same behavior. Recordings are limited to 60 seconds and can be discarded.
+Transcriptions populate the composer for review; they are not automatically sent.
+Spoken replies are opt-in per reply and are identified as synthesized speech.
+
+Remote voice is the initial settings default and requires a separately configured
+compatible speech endpoint and credential. On-device recognition uses a downloaded
+Whisper tiny.en model and local synthesis uses eSpeak NG. Neither route is enabled
+by pretending a microphone or voice service is available.
 
 The default ISO includes a C/C++ compiler, CMake, Ninja, pkg-config, Git, GDB,
 Python, Qt development libraries, a desktop example, and llama-cli/llama-server.

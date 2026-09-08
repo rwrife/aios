@@ -12,15 +12,25 @@ def main():
     parser = argparse.ArgumentParser(description="Configure and run local or remote AIOS models")
     commands = parser.add_subparsers(dest="command", required=True)
     configure = commands.add_parser("configure")
-    configure.add_argument("--mode", choices=("local", "remote"), required=True)
+    configure.add_argument("--mode", choices=("local", "remote"))
     configure.add_argument("--url")
     configure.add_argument("--model")
     configure.add_argument("--model-path")
     configure.add_argument("--ask-key", action="store_true")
+    configure.add_argument("--voice-mode", choices=("local", "remote"))
+    for name in ("voice-url", "stt-model", "tts-model", "voice-name", "speech-model-path"):
+        configure.add_argument("--" + name)
+    configure.add_argument("--ask-voice-key", action="store_true")
     commands.add_parser("status")
     commands.add_parser("models")
     commands.add_parser("serve")
     commands.add_parser("setup-local")
+    commands.add_parser("setup-voice")
+    transcription = commands.add_parser("transcribe")
+    transcription.add_argument("file")
+    speech = commands.add_parser("speak")
+    speech.add_argument("text")
+    speech.add_argument("--output", required=True)
     prompt = commands.add_parser("chat")
     prompt.add_argument("prompt", nargs="?")
     download = commands.add_parser("download")
@@ -30,11 +40,26 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "configure":
-            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path") and v is not None}
+            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path", "voice_mode", "voice_url", "stt_model", "tts_model", "voice_name", "speech_model_path") and v is not None}
             if args.ask_key:
                 values["api_key"] = getpass.getpass("API key: ")
+            if args.ask_voice_key:
+                values["voice_key"] = getpass.getpass("Voice API key: ")
             save_config(values)
             print("Configuration saved.")
+        elif args.command == "setup-voice":
+            from .voice import setup_local_voice
+            print("Whisper tiny.en · MIT · English speech recognition")
+            print(setup_local_voice(lambda n: print(f"\r{n // 1048576} MiB", end="", file=sys.stderr)))
+        elif args.command == "transcribe":
+            from .voice import transcribe
+            print(transcribe(args.file))
+        elif args.command == "speak":
+            from .voice import synthesize
+            destination = Path(args.output).expanduser()
+            if destination.exists():
+                raise ValueError("Choose a new output file.")
+            print(synthesize(args.text, destination))
         elif args.command == "setup-local":
             model = json.loads(Path(__file__).with_name("models.json").read_text())["smollm2-135m"]
             print(model["name"] + " — " + model["license"])

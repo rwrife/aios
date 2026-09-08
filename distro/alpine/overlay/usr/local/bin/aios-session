@@ -10,6 +10,7 @@ wm=$!
 trap 'kill "$wm" 2>/dev/null || true' EXIT INT TERM
 # Software rendering is a predictable baseline on virtual machines.
 export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
+pulseaudio --start --exit-idle-time=-1 >>"$HOME/.local/state/aios/audio.log" 2>&1 || true
 aios-shell >>"$HOME/.local/state/aios/session.log" 2>&1 || {
   xterm -e sh -c 'printf "Desktop failed. Logs: ~/.local/state/aios/session.log\n"; exec bash'
 }

@@ -16,8 +16,12 @@ On Windows, run the commands inside WSL with a working Linux Docker daemon.
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`. The initial VM setting is 4 GiB RAM.
 
-Click Chat, choose Model, then download the small starter model, import a GGUF,
-or configure an OpenAI-compatible remote endpoint. Live sessions are ephemeral.
+Every click on Chat opens a new window and conversation. Use the ellipsis menu
+to download the small starter model, import a GGUF, or configure a compatible
+remote endpoint. The composer keeps attachments and Voice understated. Voice
+lights up while recording, and transcription fills the draft before sending.
+Remote speech and on-device speech are supported; see
+[`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
 The starter model has limited reasoning ability; larger models can be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.

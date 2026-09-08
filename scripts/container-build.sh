@@ -2,7 +2,7 @@
 set -eu
 apk add --no-cache abuild apk-tools alpine-conf busybox fakeroot xorriso squashfs-tools \
   mtools grub grub-efi syslinux git bash coreutils tar findutils build-base cmake ninja \
-  qt6-qtbase-dev qt6-qtdeclarative-dev curl-dev linux-headers python3 font-dejavu
+  qt6-qtbase-dev qt6-qtdeclarative-dev qt6-qtmultimedia-dev curl-dev linux-headers python3 font-dejavu
 mkdir -p /build/home /build/signing /build/work /workspace/distro/alpine/out
 id builder >/dev/null 2>&1 || adduser -D -h /build/home builder
 addgroup builder abuild

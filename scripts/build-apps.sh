@@ -26,6 +26,22 @@ cmake --build "$BUILD/llama-build" --target llama-cli llama-server -j "${JOBS:-4
 cp "$BUILD/llama-build/bin/llama-cli" "$BUILD/llama-build/bin/llama-server" "$DEST/usr/local/bin/"
 cp "$BUILD/llama/LICENSE" "$DEST/usr/local/share/aios/LLAMA-LICENSE"
 printf '%s\n' "$LLAMA_REF" > "$DEST/usr/local/share/aios/llama-revision"
+git config --global --add safe.directory "$BUILD/whisper"
+if [ ! -d "$BUILD/whisper/.git" ]; then
+  git init "$BUILD/whisper"
+  git -C "$BUILD/whisper" remote add origin https://github.com/ggml-org/whisper.cpp.git
+fi
+if ! git -C "$BUILD/whisper" cat-file -e "$WHISPER_REF^{commit}" 2>/dev/null; then
+  git -C "$BUILD/whisper" fetch --depth 1 origin "$WHISPER_REF"
+fi
+git -C "$BUILD/whisper" checkout --detach "$WHISPER_REF"
+cmake -S "$BUILD/whisper" -B "$BUILD/whisper-build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF \
+  -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+cmake --build "$BUILD/whisper-build" --target whisper-cli -j "${JOBS:-4}"
+cp "$BUILD/whisper-build/bin/whisper-cli" "$DEST/usr/local/bin/"
+cp "$BUILD/whisper/LICENSE" "$DEST/usr/local/share/aios/WHISPER-LICENSE"
+printf '%s\n' "$WHISPER_REF" > "$DEST/usr/local/share/aios/whisper-revision"
 # Copy application files after the long compiler step so incremental builds use
 # the current frontend/backend together.
 mkdir -p "$DEST/usr/local/share/aios/aios"

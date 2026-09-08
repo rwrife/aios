@@ -15,6 +15,7 @@ try:
     if action == "load":
         config = load_config()
         config["has_key"] = bool(config.pop("api_key"))
+        config["has_voice_key"] = bool(config.pop("voice_key"))
         mode_file = Path("/etc/aios-mode")
         config["live"] = mode_file.exists() and mode_file.read_text().strip() == "live"
         emit("loaded", config=config, messages=load_history())
@@ -32,6 +33,20 @@ try:
     elif action == "history":
         save_history(request["messages"])
         emit("saved")
+    elif action == "transcribe":
+        from .voice import transcribe
+        emit("transcribed", text=transcribe(request["path"]))
+    elif action == "speak":
+        from .voice import synthesize
+        emit("spoken", path=synthesize(request["text"], request["path"]))
+    elif action == "setup-voice":
+        from .voice import setup_local_voice
+        path = setup_local_voice(lambda n: emit("progress", text=f"Downloading speech model: {n // 1048576} / 75 MiB"))
+        emit("voice-installed", path=path)
+    elif action == "attachment":
+        from .attachments import read_attachment
+        name, text = read_attachment(request["path"])
+        emit("attached", name=name, text=text)
     elif action == "chat":
         for text in chat(request["messages"]):
             emit("token", text=text)
