@@ -1,0 +1,11 @@
+build-base
+cmake
+ninja
+pkgconf
+gdb
+git
+python3
+curl
+nano
+qt6-qtbase-dev
+qt6-qtdeclarative-dev

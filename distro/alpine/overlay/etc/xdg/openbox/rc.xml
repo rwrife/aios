@@ -7,7 +7,9 @@
   </resistance>
 
   <keyboard>
-    <!-- Intentionally no custom app-launch/power keybinds. -->
+    <keybind key="W-Return"><action name="Execute"><command>xterm</command></action></keybind>
+    <keybind key="A-Tab"><action name="NextWindow"/></keybind>
+    <keybind key="A-F4"><action name="Close"/></keybind>
   </keyboard>
 
   <mouse>
@@ -21,14 +23,22 @@
     <number>1</number>
     <firstdesk>1</firstdesk>
     <names>
-      <name>terminal</name>
+      <name>aios</name>
     </names>
   </desktops>
 
   <applications>
-    <application class="XTerm">
-      <maximized>yes</maximized>
-      <decor>no</decor>
+    <application title="AIOS Desktop">
+      <position force="yes"><x>0</x><y>0</y></position>
+      <decor>no</decor><layer>below</layer><skip_taskbar>yes</skip_taskbar><skip_pager>yes</skip_pager>
+    </application>
+    <application title="AIOS Chat">
+      <position force="yes"><x>center</x><y>center</y></position>
+      <focus>yes</focus>
+    </application>
+    <application title="AIOS Power">
+      <decor>no</decor><layer>above</layer><focus>yes</focus>
+      <skip_taskbar>yes</skip_taskbar><skip_pager>yes</skip_pager>
     </application>
   </applications>
 

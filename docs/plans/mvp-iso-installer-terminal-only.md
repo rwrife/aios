@@ -1,5 +1,8 @@
 # AI OS ISO + Installer MVP Implementation Plan
 
+> Historical plan, superseded by `docs/specs/chat-desktop.md`. The current product
+> includes chat, default development tools, and visible secondary power controls.
+
 > For Hermes: execute this plan task-by-task; implementation target is VM-first (QEMU + VMware).
 
 Goal: Build a bootable ISO that starts with a branded loading splash, then auto-enters a single-user X11 session running only a terminal in a minimal window manager, plus an installer path to install onto local SSD.

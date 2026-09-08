@@ -1,5 +1,8 @@
 # AI OS MVP behavior spec (Phase 1 in progress)
 
+> Superseded: use [chat-desktop.md](chat-desktop.md). The following describes the
+> original scaffold, not the current product acceptance criteria.
+
 Current target behavior in this branch:
 - Boot live ISO in VM
 - autologin on tty1

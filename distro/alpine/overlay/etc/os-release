@@ -1,0 +1,6 @@
+NAME="AIOS"
+ID=aios
+ID_LIKE=alpine
+PRETTY_NAME="AIOS 0.1 development"
+VERSION_ID=0.1
+HOME_URL="https://github.com/rwrife/aios"

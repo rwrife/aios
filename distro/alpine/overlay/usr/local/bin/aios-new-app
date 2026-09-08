@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+target=${1:-hello}
+if [ -e "$target" ]; then echo "Destination already exists: $target" >&2; exit 1; fi
+mkdir -p "$target"
+cp /usr/local/share/aios/examples/hello/* "$target/"
+printf 'Created %s\nBuild: cmake -S "%s" -B "%s/build" -G Ninja && cmake --build "%s/build"\nRun: "%s/build/hello"\n' "$target" "$target" "$target" "$target" "$target"

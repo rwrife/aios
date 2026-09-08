@@ -1,0 +1,12 @@
+{
+  "smollm2-135m": {
+    "name": "SmolLM2 135M Instruct (small starter model)",
+    "url": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+    "sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
+    "bytes": 105454432,
+    "license": "Apache-2.0",
+    "source": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct",
+    "quantization": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF",
+    "note": "A small model for trying local chat. Limited reasoning and coding ability; import a larger model for substantive work."
+  }
+}

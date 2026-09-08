@@ -1,6 +1,0 @@
-# /etc/profile additions for AI OS
-
-# Start X automatically only on primary console and only once.
-if [ -z "${DISPLAY:-}" ] && [ "$(tty 2>/dev/null || true)" = "/dev/tty1" ]; then
-  exec startx
-fi

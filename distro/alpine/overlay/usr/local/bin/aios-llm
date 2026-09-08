@@ -1,0 +1,3 @@
+#!/bin/sh
+export PYTHONPATH=/usr/local/share/aios${PYTHONPATH:+:$PYTHONPATH}
+exec python3 -m aios.cli "$@"
