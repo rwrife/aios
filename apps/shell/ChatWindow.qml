@@ -16,12 +16,13 @@ Window {
     x: (Screen.width - width)/2; y: (Screen.height - height)/2
     color: theme.panel
     onClosing: { session.closeSession(); Qt.callLater(chat.destroy) }
-    Component.onCompleted: composer.forceActiveFocus()
+    Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
     function submit() {
         if (session.busy || session.recording) return;
         if (!composer.text.trim() && !session.attachments.length) return;
         if (backend.config.mode !== "remote" && !backend.config.model_path) { options.open(); return }
-        session.send(composer.text); composer.clear()
+        conversation.cancelFlick(); conversation.followLatest = true
+        session.send(composer.text); composer.clear(); conversation.scrollToLatest()
     }
     component QuietButton: Button {
         id: button
@@ -49,12 +50,45 @@ Window {
             Layout.fillWidth: true; Layout.fillHeight: true
             Text { visible: session.messages.length === 0; anchors.centerIn: parent; text: "What’s on your mind?"; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
             ListView {
-                id: conversation; anchors.fill: parent; clip: true; spacing: 24; model: session.messages
-                onCountChanged: Qt.callLater(positionViewAtEnd)
-                ScrollBar.vertical: ScrollBar {}
+                id: conversation; objectName: "conversation"
+                anchors.fill: parent; clip: true; spacing: 24
+                model: ListModel { id: messageRows; dynamicRoles: true }
+                property bool followLatest: true
+                function syncMessages() {
+                    // A QVariantList replacement resets ListView on every token.
+                    // Update rows in place so streaming preserves layout and position.
+                    var messages = session.messages
+                    while (messageRows.count > messages.length) messageRows.remove(messageRows.count - 1)
+                    for (var i = 0; i < messages.length; ++i) {
+                        if (i >= messageRows.count) messageRows.append({message: messages[i]})
+                        else if (JSON.stringify(messageRows.get(i).message) !== JSON.stringify(messages[i]))
+                            messageRows.setProperty(i, "message", messages[i])
+                    }
+                    scrollToLatest()
+                }
+                function scrollToLatest() {
+                    Qt.callLater(function() {
+                        if (!conversation.followLatest || conversation.moving || scrollBar.pressed) return
+                        conversation.forceLayout()
+                        conversation.positionViewAtEnd()
+                    })
+                }
+                onContentHeightChanged: scrollToLatest()
+                onHeightChanged: scrollToLatest()
+                onMovementStarted: followLatest = false
+                onMovementEnded: { followLatest = atYEnd; if (followLatest) scrollToLatest() }
+                ScrollBar.vertical: ScrollBar {
+                    id: scrollBar
+                    onPressedChanged: {
+                        conversation.followLatest = !pressed && conversation.atYEnd
+                        if (conversation.followLatest) conversation.scrollToLatest()
+                    }
+                }
                 delegate: Column {
-                    required property var modelData
+                    required property var message
+                    readonly property var modelData: message
                     width: conversation.width - 12; spacing: 7
+                    onHeightChanged: conversation.scrollToLatest()
                     Text { text: modelData.role === "user" ? "You" : "AI"; color: theme.muted; opacity: 0.65; font.pixelSize: 11 }
                     TextEdit { id: reply; width: parent.width; text: modelData.display_text || modelData.content || "…"; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText }
                     Row {
@@ -93,7 +127,7 @@ Window {
             ScrollView {
                 anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: tools.top; anchors.margins: 12
                 TextArea {
-                    id: composer; placeholderText: "Message…"; placeholderTextColor: theme.muted; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; selectByMouse: true; background: null
+                    id: composer; objectName: "composer"; placeholderText: "Message…"; placeholderTextColor: theme.muted; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; selectByMouse: true; background: null
                     Keys.onReturnPressed: function(event) { if (!(event.modifiers & Qt.ShiftModifier)) { chat.submit(); event.accepted = true } else event.accepted = false }
                 }
             }
@@ -127,5 +161,9 @@ Window {
         onOpened: modelSettings.reload()
         contentItem: ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
     }
-    Connections { target: session; function onTranscribed(text) { composer.text += (composer.text ? " " : "") + text; composer.forceActiveFocus() } }
+    Connections {
+        target: session
+        function onChanged() { conversation.syncMessages() }
+        function onTranscribed(text) { composer.text += (composer.text ? " " : "") + text; composer.forceActiveFocus() }
+    }
 }
