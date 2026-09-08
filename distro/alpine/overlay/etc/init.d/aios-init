@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+description="Prepare the AIOS local desktop account"
+depend() { need localmount; after udev; }
+start() {
+    ebegin "Preparing AIOS desktop"
+    if ! id aios >/dev/null 2>&1; then
+        adduser -D -s /bin/bash aios || return 1
+        passwd -d aios >/dev/null
+    fi
+    for group in video audio input; do addgroup aios "$group" 2>/dev/null || true; done
+    install -d -o aios -g aios -m 700 /home/aios/.config /home/aios/.config/aios \
+        /home/aios/.local /home/aios/.local/share /home/aios/.local/share/aios
+    eend 0
+}

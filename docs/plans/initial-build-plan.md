@@ -1,5 +1,8 @@
 # Minimal Terminal-Only Linux Distro Implementation Plan
 
+> Historical plan, superseded by `docs/specs/chat-desktop.md`. Do not implement
+> terminal-only restrictions or rebase to Buildroot from this document.
+
 > For Hermes: this is planning only; no implementation in this step.
 
 Goal: Build a small, reproducible Linux distro image that boots directly into a lightweight X11 window manager and exposes only a terminal app (no browser, file manager, office apps, etc.).

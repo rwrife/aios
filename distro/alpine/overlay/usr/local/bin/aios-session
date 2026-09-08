@@ -4,8 +4,14 @@ set -eu
 # Minimal visual baseline
 xsetroot -solid '#0d1117'
 
-# Launch terminal as the only intended user-facing app.
-xterm -fa 'Monospace' -fs 12 -geometry 160x50+0+0 &
-
-# Keep WM in foreground.
-exec openbox
+mkdir -p "$HOME/.local/state/aios"
+openbox &
+wm=$!
+trap 'kill "$wm" 2>/dev/null || true' EXIT INT TERM
+# Software rendering is a predictable baseline on virtual machines.
+export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
+pulseaudio --start --exit-idle-time=-1 >>"$HOME/.local/state/aios/audio.log" 2>&1 || true
+aios-shell >>"$HOME/.local/state/aios/session.log" 2>&1 || {
+  xterm -e sh -c 'printf "Desktop failed. Logs: ~/.local/state/aios/session.log\n"; exec bash'
+}
+wait "$wm"

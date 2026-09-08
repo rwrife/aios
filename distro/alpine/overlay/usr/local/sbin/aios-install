@@ -1,0 +1,65 @@
+#!/bin/sh
+# Guided install. Destructive operations happen only after exact disk confirmation.
+set -eu
+[ "$(id -u)" = 0 ] || { echo 'Run doas /usr/local/sbin/aios-install'; exit 1; }
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+unset APKOVL ERASE_DISKS ROOT SYSROOT BOOTLOADER_DISKS
+echo 'AIOS installation — all data on the selected disk will be erased.'
+lsblk -d -o NAME,SIZE,MODEL,TYPE
+printf 'Full disk path (or Enter to cancel): '
+read -r disk
+[ -n "$disk" ] || exit 0
+case "$disk" in /dev/sd[a-z]|/dev/vd[a-z]|/dev/nvme[0-9]n[0-9]) ;; *) echo 'Unsupported disk path'; exit 1;; esac
+[ -b "$disk" ] && [ "$(lsblk -dnro TYPE "$disk")" = disk ] || { echo 'Select a whole disk'; exit 1; }
+# Refuse live media, mounted filesystems, swap and active mapped devices.
+if lsblk -nro MOUNTPOINTS "$disk" | grep -q '[^[:space:]]'; then
+    echo 'Disk is in use. Unmount its filesystems first.'; exit 1
+fi
+if lsblk -nro TYPE "$disk" | grep -Ev '^(disk|part)$' | grep -q .; then
+    echo 'Disk contains active mapped devices.'; exit 1
+fi
+lsblk -d -o PATH,SIZE,MODEL,SERIAL "$disk"
+printf 'Type ERASE %s to permanently erase this disk: ' "$disk"
+read -r confirmation
+[ "$confirmation" = "ERASE $disk" ] || { echo 'Cancelled'; exit 0; }
+# Recheck immediately before partitioning.
+if lsblk -nro MOUNTPOINTS "$disk" | grep -q '[^[:space:]]'; then echo 'Disk became busy'; exit 1; fi
+mountdir=$(mktemp -d /mnt/aios-install.XXXXXX)
+cleanup() {
+    mountpoint -q "$mountdir/boot/efi" && umount "$mountdir/boot/efi" || true
+    mountpoint -q "$mountdir" && umount "$mountdir" || true
+    rmdir "$mountdir" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+parted -s "$disk" mklabel gpt
+if [ -d /sys/firmware/efi ]; then
+    parted -s "$disk" mkpart ESP fat32 1MiB 513MiB set 1 esp on
+else
+    parted -s "$disk" mkpart BIOS 1MiB 3MiB set 1 bios_grub on
+fi
+parted -s "$disk" mkpart root ext4 513MiB 100%
+partprobe "$disk"
+udevadm settle
+case "$disk" in *[0-9]) prefix="${disk}p";; *) prefix="$disk";; esac
+mkfs.ext4 -F "${prefix}2"
+mount "${prefix}2" "$mountdir"
+if [ -d /sys/firmware/efi ]; then
+    mkfs.vfat -F 32 "${prefix}1"
+    mkdir -p "$mountdir/boot/efi"
+    mount "${prefix}1" "$mountdir/boot/efi"
+fi
+# setup-disk installs Alpine into an already mounted root and generates fstab,
+# initramfs and the appropriate GRUB bootloader. Its version comes from Alpine.
+BOOTLOADER=grub setup-disk -m sys "$mountdir"
+if [ -d /sys/firmware/efi ]; then
+    grub-install --target=x86_64-efi --efi-directory="$mountdir/boot/efi" \
+        --boot-directory="$mountdir/boot" --removable --no-nvram
+else
+    grub-install --target=i386-pc --boot-directory="$mountdir/boot" "$disk"
+fi
+mkdir -p "$mountdir/usr/local" "$mountdir/home"
+cp -a /usr/local/. "$mountdir/usr/local/"
+cp -a /home/aios "$mountdir/home/"
+printf 'installed\n' > "$mountdir/etc/aios-mode"
+sync
+echo 'Installation complete. Shut down, remove the ISO/USB, then boot from disk.'

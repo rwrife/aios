@@ -1,37 +1,49 @@
 # aios (AI OS)
 
-A minimal Linux distribution project focused on:
-- small footprint
-- simple setup
-- booting straight into a lightweight window manager
-- terminal-first UX with no general desktop app bundle
+AIOS is a small chat-first Linux desktop: an ambient wave background, one chat
+launcher, and understated terminal/power controls. It includes native desktop
+development tools and local/remote LLM command-line tools by default.
 
-## Current status
-Phase 1 scaffolding in progress (live ISO pipeline + terminal-only session wiring).
+The chat desktop is under active development. See
+[`docs/specs/chat-desktop.md`](docs/specs/chat-desktop.md) for the current target
+and [`docs/architecture.md`](docs/architecture.md) for implementation decisions.
+See `docs/qa/implementation-status.md` for executed checks and remaining release gates.
 
-## Initial goals
-1. Build reproducible image pipeline.
-2. Boot to WM + terminal automatically.
-3. Keep package surface extremely small.
-4. Validate in QEMU before hardware targets.
+## Try the development image
 
-## Build quickstart
+On Linux with Docker: `bash scripts/build.sh`, then `bash scripts/run.sh`.
+On Windows, run the commands inside WSL with a working Linux Docker daemon.
+Build caches use the Docker volume `aios-build-cache`; images are written to
+`distro/alpine/out`. The initial VM setting is 4 GiB RAM.
 
-Simple scripts (x86 default):
-- `./scripts/build.sh`
-- `./scripts/run.sh`
+Every click on Chat opens a new window and conversation. Use the ellipsis menu
+to download the small starter model, import a GGUF, or configure a compatible
+remote endpoint. The composer keeps attachments and Voice understated. Voice
+lights up while recording, and transcription fills the draft before sending.
+Remote speech and on-device speech are supported; see
+[`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
+The starter model has limited reasoning ability; larger models can be imported.
+The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
+and a 32 GiB disposable disk; larger models need more memory and storage.
+Secure Boot and physical hardware have not yet been validated.
 
-Native Alpine host build:
-- `./scripts/build-iso.sh`
+CLI examples:
 
-Portable containerized build (recommended on Ubuntu/ARM64 hosts):
-- `./scripts/build-iso-container.sh --simulate`
-- `./scripts/build-iso-container.sh`
+```sh
+aios-llm setup-local
+aios-llm serve
+# In another terminal:
+aios-llm chat 'Hello'
+aios-llm configure --mode remote --url https://your-provider.example/v1 --model MODEL --ask-key
+aios-new-app hello
+cmake -S hello -B hello/build -G Ninja
+cmake --build hello/build
+./hello/build/hello
+```
 
-Useful overrides:
-- `ARCH=aarch64 ./scripts/build-iso-container.sh`
-- `ARCH=x86_64 ./scripts/build-iso-container.sh` (requires amd64 container emulation on ARM hosts)
+Installer: `doas /usr/local/sbin/aios-install`. It requires selecting an unused
+whole disk and typing its exact erase confirmation. Use a disposable VM disk
+until the release QA matrix has been completed.
 
-QEMU runtime notes:
-- `scripts/run.sh` auto-selects the newest `*-x86_64.iso` in `distro/alpine/out`
-- set `AIOS_QEMU_HEADLESS=1` for serial/headless run mode
+Run backend and source validation with `bash scripts/test.sh`. Image CI is
+available through the Validate workflow's manual dispatch.

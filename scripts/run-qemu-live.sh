@@ -24,7 +24,7 @@ fi
 
 DISK_PATH="${AIOS_VM_DISK:-$ROOT_DIR/.tmp-aios-live.qcow2}"
 DISK_SIZE="${AIOS_VM_DISK_SIZE:-16G}"
-MEM_MB="${AIOS_VM_MEM_MB:-2048}"
+MEM_MB="${AIOS_VM_MEM_MB:-4096}"
 CPU_COUNT="${AIOS_VM_CPUS:-2}"
 
 if [ "$DRY_RUN" != "1" ] && [ ! -f "$DISK_PATH" ]; then
@@ -44,6 +44,10 @@ QEMU_ARGS=(
   -drive "if=virtio,file=$DISK_PATH,format=qcow2"
   -nic user,model=virtio-net-pci
 )
+if [ "${AIOS_QEMU_UEFI:-0}" = 1 ]; then
+  : "${AIOS_OVMF_CODE:?Set AIOS_OVMF_CODE to your OVMF_CODE firmware file}"
+  QEMU_ARGS+=( -drive "if=pflash,format=raw,readonly=on,file=$AIOS_OVMF_CODE" )
+fi
 
 if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
   QEMU_ARGS+=( -display none -serial mon:stdio )
@@ -51,6 +55,8 @@ fi
 
 if [ "$(uname -m)" = "x86_64" ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
   QEMU_ARGS+=( -enable-kvm -cpu host )
+else
+  QEMU_ARGS+=( -cpu max )
 fi
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
