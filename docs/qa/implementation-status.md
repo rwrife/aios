@@ -64,6 +64,9 @@ This is a development candidate, not a hardware-certified release.
   measured 2,014 MiB used on `/`. r10 increases only the live-root ceiling from
   Alpine's default half of RAM to 75%; it also explicitly lists `agetty` and makes
   boot checks fail immediately on installation/login errors, saving full logs.
+- **r10 passed both offline BIOS and UEFI boot checks with 4 GiB RAM**, including
+  the ordinary-user desktop process and compiling the default Qt example. This
+  confirms the live-root correction; complete serial logs were retained.
 
 ## Release gates still open
 
