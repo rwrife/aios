@@ -7,7 +7,7 @@ start() {
         adduser -D -s /bin/bash aios || return 1
         passwd -d aios >/dev/null
     fi
-    for group in video audio input; do addgroup aios "$group" 2>/dev/null || true; done
+    for group in video audio input plugdev; do addgroup aios "$group" 2>/dev/null || true; done
     install -d -o aios -g aios -m 700 /home/aios/.config /home/aios/.config/aios \
         /home/aios/.local /home/aios/.local/share /home/aios/.local/share/aios
     eend 0

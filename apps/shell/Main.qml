@@ -23,6 +23,12 @@ Window {
     }
     property bool reducedMotion: backend.config.reduced_motion === true
     function openChat() { var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    property var settingsWindow: null
+    function openSettings() {
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme})
+        if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
+    }
+    Component { id: settingsComponent; SettingsWindow {} }
     property real phase: 0
     NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 26000; loops: Animation.Infinite; running: !desktop.reducedMotion && backend.sessionCount === 0 }
     onPhaseChanged: waves.requestPaint()
@@ -72,6 +78,16 @@ Window {
     }
     Row {
         anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 32; spacing: 12
+        QuietButton { tip: "Settings"; implicitWidth: 44; onClicked: desktop.openSettings()
+            contentItem: Canvas { onPaint: {
+                var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
+                for (var i = 0; i < 3; i++) {
+                    var x = width/2 - 7 + i*7; var y = height/2 + (i === 1 ? -3 : 3);
+                    c.beginPath(); c.moveTo(x,height/2-9); c.lineTo(x,height/2+9); c.stroke();
+                    c.fillStyle = theme.panel; c.fillRect(x-2,y-2,4,4); c.strokeRect(x-2,y-2,4,4);
+                }
+            } }
+        }
         QuietButton { text: ">_"; tip: "Terminal"; onClicked: backend.terminal() }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {

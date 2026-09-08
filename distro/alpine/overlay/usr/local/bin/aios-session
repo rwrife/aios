@@ -5,6 +5,11 @@ set -eu
 xsetroot -solid '#0d1117'
 
 mkdir -p "$HOME/.local/state/aios"
+# ARandR saves a user-owned layout script here. A disconnected display must
+# not prevent the desktop from starting.
+if [ -f "$HOME/.screenlayout/default.sh" ]; then
+    sh "$HOME/.screenlayout/default.sh" >>"$HOME/.local/state/aios/display.log" 2>&1 || true
+fi
 openbox &
 wm=$!
 trap 'kill "$wm" 2>/dev/null || true' EXIT INT TERM

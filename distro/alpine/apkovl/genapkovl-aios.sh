@@ -22,7 +22,7 @@ rc_add() {
 }
 for svc in devfs dmesg udev udev-trigger hwdrivers modloop; do rc_add "$svc" sysinit; done
 for svc in modules sysctl hostname bootmisc syslog networking; do rc_add "$svc" boot; done
-for svc in dbus elogind dhcpcd aios-init; do rc_add "$svc" default; done
+for svc in dbus elogind polkit wpa_supplicant networkmanager aios-init; do rc_add "$svc" default; done
 for svc in mount-ro killprocs savecache; do rc_add "$svc" shutdown; done
 # Windows bind mounts do not preserve Unix permission bits. Normalize them so
 # configuration (especially doas rules) is never shipped world-writable.
