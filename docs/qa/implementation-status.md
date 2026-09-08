@@ -193,3 +193,17 @@ controls also work.
 Fourteen backend tests pass. The r18 ISO passes offline BIOS and UEFI boots at
 4 GiB, including ordinary-user shell startup, desktop example compilation,
 and an actual reply from the bundled model without setup or network access.
+
+## Streaming chat scrolling (r19)
+
+Chat now updates a stable QML message model instead of resetting ListView on
+every backend notification/token. Following the latest message waits for row
+layout and tracks growing replies and viewport changes. Wheel scrolling or
+dragging the scrollbar pauses following; returning to the bottom resumes it.
+Sending a new message cancels any remaining flick and returns to the latest row.
+
+Three Qt Quick regression cases pass with the shipped Qt runtime: a streamed
+reply grows without recreating its row and stays visible, wheel scrolling keeps
+the history position across new tokens and can resume following, and sending
+while scrolled up returns to the latest message. Reply completion and window
+resizing are also covered. Image builds now run this UI suite before compiling.

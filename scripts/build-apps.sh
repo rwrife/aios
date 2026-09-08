@@ -5,6 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD=${BUILD_DIR:-$ROOT/distro/alpine/.work/apps}
 DEST=${DESTDIR:-$ROOT/distro/alpine/.work/stage}
 mkdir -p "$BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
 git config --global --add safe.directory "$BUILD/llama"
 cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
