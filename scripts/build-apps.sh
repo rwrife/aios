@@ -46,3 +46,4 @@ printf '%s\n' "$WHISPER_REF" > "$DEST/usr/local/share/aios/whisper-revision"
 # the current frontend/backend together.
 mkdir -p "$DEST/usr/local/share/aios/aios"
 cp "$ROOT/apps/aios/"*.py "$ROOT/apps/aios/models.json" "$DEST/usr/local/share/aios/aios/"
+python3 "$ROOT/scripts/stage-model.py" "$BUILD" "$DEST"

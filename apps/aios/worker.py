@@ -2,7 +2,7 @@
 import json
 import sys
 from pathlib import Path
-from .core import chat, load_config, load_history, save_config, save_history, data_dir, download_model
+from .core import chat, load_config, load_history, save_config, save_history, data_dir, download_model, BUNDLED_MODEL
 
 
 def emit(kind, **values):
@@ -24,7 +24,7 @@ try:
         emit("saved")
     elif action == "setup-local":
         model = json.loads(Path(__file__).with_name("models.json").read_text())["smollm2-135m"]
-        destination = data_dir() / "models" / "smollm2-135m.gguf"
+        destination = BUNDLED_MODEL if BUNDLED_MODEL.is_file() else data_dir() / "models" / "smollm2-135m.gguf"
         if not destination.exists():
             download_model(model["url"], model["sha256"], destination,
                            lambda n: emit("progress", text=f"Downloading starter model: {n // 1048576} / 101 MiB"))

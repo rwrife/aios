@@ -20,8 +20,9 @@ The Settings button beside Terminal and Power opens AI models, Sound, Camera,
 Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.md).
 
 The softly animated blob at the bottom center opens a new chat window and
-conversation with every click. Use the ellipsis menu
-to download the small starter model, import a GGUF, or configure a compatible
+conversation with every click. SmolLM2 135M is bundled and starts automatically
+for offline chat on first boot. Use the ellipsis menu
+to switch back to the starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see

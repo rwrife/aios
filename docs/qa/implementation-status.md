@@ -175,3 +175,21 @@ chat compatibility, not reliable browser planning by that small model.
 Final r17 ISO: offline BIOS and UEFI boots both passed with 4 GiB RAM, including
 ordinary-user desktop startup and compilation of the included Qt example. This
 image includes Chromium, the current settings panel and the muted chat blob.
+
+## First-boot chat and window controls (r18)
+
+SmolLM2 135M Q4_K_M is now bundled with its Apache-2.0 license and provenance.
+The build verifies its pinned SHA-256, including cached weights. A fresh local
+configuration uses the bundled model automatically; saved custom model paths
+and remote configurations remain unchanged. "Use starter model" reuses the
+bundled weights without downloading another copy.
+
+Reproduced an inert terminal close button: Openbox's custom configuration had
+removed the title-bar mouse bindings. Restored close, minimize, maximize,
+focus/raise, title-bar dragging, and border resizing. Verified that the same
+terminal closes after reconfiguration; the native chat and Settings close
+controls also work.
+
+Fourteen backend tests pass. The r18 ISO passes offline BIOS and UEFI boots at
+4 GiB, including ordinary-user shell startup, desktop example compilation,
+and an actual reply from the bundled model without setup or network access.

@@ -9,6 +9,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
+
 
 def config_dir():
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "aios"
@@ -39,6 +41,8 @@ def load_config():
     path = config_dir() / "config.json"
     if path.exists():
         defaults.update(json.loads(path.read_text()))
+    if defaults["mode"] == "local" and not defaults["model_path"] and BUNDLED_MODEL.is_file():
+        defaults["model_path"] = str(BUNDLED_MODEL)
     return defaults
 
 

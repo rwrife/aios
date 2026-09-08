@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from .core import chat, data_dir, download_model, load_config, request, save_config
+from .core import chat, data_dir, download_model, load_config, request, save_config, BUNDLED_MODEL
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
             model = json.loads(Path(__file__).with_name("models.json").read_text())["smollm2-135m"]
             print(model["name"] + " — " + model["license"])
             print(model["note"])
-            destination = data_dir() / "models" / "smollm2-135m.gguf"
+            destination = BUNDLED_MODEL if BUNDLED_MODEL.is_file() else data_dir() / "models" / "smollm2-135m.gguf"
             if not destination.exists():
                 download_model(model["url"], model["sha256"], destination,
                                lambda n: print(f"\r{n // 1048576} MiB", end="", file=sys.stderr))
