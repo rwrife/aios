@@ -30,8 +30,13 @@ Window {
     }
     Component { id: settingsComponent; SettingsWindow {} }
     property real phase: 0
-    NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 26000; loops: Animation.Infinite; running: !desktop.reducedMotion && backend.sessionCount === 0 }
-    onPhaseChanged: waves.requestPaint()
+    NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 48000; loops: Animation.Infinite; running: !desktop.reducedMotion && desktop.visible }
+    onReducedMotionChanged: waves.requestPaint()
+    Timer {
+        interval: 33; repeat: true
+        running: !desktop.reducedMotion && desktop.visible
+        onTriggered: waves.requestPaint()
+    }
     Rectangle { anchors.fill: parent; gradient: Gradient {
         GradientStop { position: 0; color: theme.night }
         GradientStop { position: 0.68; color: theme.horizon }
@@ -43,15 +48,38 @@ Window {
         onHeightChanged: requestPaint()
         onPaint: {
             var ctx = getContext("2d"); ctx.reset();
-            for (var ribbon = 0; ribbon < 10; ribbon++) {
-                ctx.beginPath();
-                for (var x = 0; x <= width; x += 8) {
-                    var y = height * 0.57 + Math.sin(x / width * 5.2 + desktop.phase + ribbon * 0.07) * height * 0.08
-                        + Math.cos(x / width * 2.8 - desktop.phase) * height * 0.045 + ribbon * 4;
-                    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            // Broad translucent ribbons drift at different rates. Integer
+            // harmonics make the 48-second cycle seamless.
+            function wave(u, layer, edge) {
+                var t = desktop.phase
+                return height * (0.56 + layer * 0.027
+                    + Math.sin(u * 5.0 + t + layer * 1.15) * 0.072
+                    + Math.cos(u * 2.7 - t * 2 + layer * 0.8) * 0.037
+                    + edge * (0.018 + 0.025 * (0.5 + 0.5 * Math.sin(u * 4.0 + t * 2 + layer))))
+            }
+            for (var layer = 2; layer >= 0; --layer) {
+                ctx.beginPath()
+                for (var i = 0; i <= 100; ++i) {
+                    var u = i / 100
+                    if (i === 0) ctx.moveTo(u * width, wave(u, layer, 0))
+                    else ctx.lineTo(u * width, wave(u, layer, 0))
                 }
-                ctx.strokeStyle = theme.accent; ctx.globalAlpha = 0.045 + (9-ribbon)*0.007;
-                ctx.lineWidth = ribbon === 0 ? 2 : 1; ctx.stroke();
+                for (var j = 100; j >= 0; --j) ctx.lineTo(j / 100 * width, wave(j / 100, layer, 1))
+                ctx.closePath()
+                var wash = ctx.createLinearGradient(0, height * 0.4, 0, height * 0.74)
+                wash.addColorStop(0, "#a7cdd2"); wash.addColorStop(1, "#52738e")
+                ctx.fillStyle = wash; ctx.globalAlpha = 0.045; ctx.fill()
+                for (var ribbon = 0; ribbon < 9; ++ribbon) {
+                    ctx.beginPath()
+                    for (var x = 0; x <= 100; ++x) {
+                        var y = wave(x / 100, layer, ribbon / 8)
+                        if (x === 0) ctx.moveTo(0, y)
+                        else ctx.lineTo(x / 100 * width, y)
+                    }
+                    ctx.strokeStyle = theme.accent
+                    ctx.globalAlpha = (ribbon === 0 ? 0.15 : 0.025 + (8-ribbon)*0.004) * (1-layer*0.18)
+                    ctx.lineWidth = ribbon === 0 ? 1.4 : 0.8; ctx.stroke()
+                }
             }
         }
     }
