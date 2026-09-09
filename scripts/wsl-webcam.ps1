@@ -32,14 +32,14 @@ function Require-Admin {
         throw "Run the $Action action in Administrator PowerShell."
     }
 }
-function Invoke-Native([string]$File, [string[]]$NativeArguments) {
+function Invoke-Native([string]$File, [string[]]$NativeArguments, [int[]]$AcceptedExitCodes = @(0)) {
     # Windows PowerShell 5.1 can turn successful native stderr status messages
     # into terminating errors. Decide success from the native exit code.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try { & $File @NativeArguments; $nativeCode = $LASTEXITCODE }
     finally { $ErrorActionPreference = $previous }
-    if ($nativeCode -ne 0) { throw "$File exited with code $nativeCode" }
+    if ($nativeCode -notin $AcceptedExitCodes) { throw "$File exited with code $nativeCode" }
 }
 function Get-SelectedDevice {
     if (-not $BusId) { throw 'Select a bus ID from the Status output using -BusId.' }
@@ -105,7 +105,8 @@ switch ($Action) {
             if ($pdo) {
                 Write-Output "Checking $($candidate.FriendlyName): $pdo"
                 # Search only. Never use Handle's -c option to close driver handles.
-                Invoke-Native $HandlePath @('-accepteula','-nobanner','-a',$pdo)
+                # Handle returns 1 for no match; keep checking video interfaces.
+                Invoke-Native $HandlePath @('-accepteula','-nobanner','-a',$pdo) @(0,1)
             }
         }
         Get-CimInstance Win32_Process -Filter "Name='LogiTuneAgent.exe'" | Select-Object Name,ProcessId,ParentProcessId
