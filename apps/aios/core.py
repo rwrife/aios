@@ -96,6 +96,9 @@ def save_config(values):
             raise ValueError("Choose an existing GGUF model file.")
         config["model_path"] = str(path)
     write_json(config_dir() / "config.json", config)
+    if "theme_color" in values:
+        from .terminal_theme import apply_chrome
+        apply_chrome(config["theme_color"])
     return config
 
 
