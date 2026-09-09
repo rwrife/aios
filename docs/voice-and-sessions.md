@@ -1,11 +1,12 @@
 # Chat windows, attachments and voice
 
-Each launcher click creates a new `Backend` session and QML window. The desktop
-owns shared model configuration and one loopback model server; each session owns
-its conversation, attachment snapshot, worker process and audio capture/playback.
-Closing a window cancels that session's work. Histories use UUID filenames with
-owner-only permissions. Legacy `conversation.json` is retained but never loaded
-into a newly opened chat.
+The launcher restores the most recently minimized QML chat window before
+creating a new `Backend` session and window. The desktop owns shared model
+configuration and one loopback model server; each session owns its conversation,
+attachment snapshot, worker process and audio capture/playback. Closing a window
+cancels that session's work. Histories use UUID filenames with owner-only
+permissions. Legacy `conversation.json` is retained but never loaded into a
+newly opened chat.
 
 The waveform/Voice button has one explicit `active` property bound to recording
 state, plus immediate pressed feedback. `Backend::setVoiceActive(bool)` is the
