@@ -89,7 +89,9 @@ Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
 Chromium is available through chat with a tool-capable model, without a desktop
 browser icon. See [browser tools](docs/browser.md). The starter model has limited
-reasoning ability and is not a reliable browser agent; larger models can be imported.
+reasoning ability and is not a reliable browser agent. Settings and setup offer
+[three downloadable Qwen3 models](docs/local-models.md) with tool capabilities,
+RAM guidance, and disk-space checks; custom GGUF models can also be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.
 Secure Boot and physical hardware have not yet been validated.

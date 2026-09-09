@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from .core import chat, data_dir, download_model, load_config, request, save_config, BUNDLED_MODEL
+from .core import chat, download_model, load_config, request, save_config
 
 
 def main():
@@ -28,7 +28,9 @@ def main():
     subscription.add_argument('--device', action='store_true')
     commands.add_parser("models")
     commands.add_parser("serve")
-    commands.add_parser("setup-local")
+    setup = commands.add_parser("setup-local")
+    setup.add_argument("model_id", nargs="?", default="smollm2-135m")
+    commands.add_parser("local-models")
     commands.add_parser("setup-voice")
     transcription = commands.add_parser("transcribe")
     transcription.add_argument("file")
@@ -68,20 +70,17 @@ def main():
                 raise ValueError("Choose a new output file.")
             print(synthesize(args.text, destination))
         elif args.command == "setup-local":
-            model = json.loads(Path(__file__).with_name("models.json").read_text())["smollm2-135m"]
-            print(model["name"] + " — " + model["license"])
-            print(model["note"])
-            destination = BUNDLED_MODEL if BUNDLED_MODEL.is_file() else data_dir() / "models" / "smollm2-135m.gguf"
-            if not destination.exists():
-                download_model(model["url"], model["sha256"], destination,
-                               lambda n: print(f"\r{n // 1048576} MiB", end="", file=sys.stderr))
-            save_config({"mode": "local", "model_path": str(destination)})
-            print("\nReady. Run aios-llm serve, then aios-llm chat in another terminal.")
+            from .local_models import install
+            install(args.model_id, lambda text: print(text, file=sys.stderr))
+            print("Ready. Run aios-llm serve, then aios-llm chat in another terminal.")
+        elif args.command == "local-models":
+            from .local_models import list_models
+            print(json.dumps(list_models(), indent=2))
         elif args.command == "serve":
             config = load_config()
             if not config["model_path"]:
                 raise ValueError("Import a GGUF model with aios-llm configure --mode local --model-path PATH first.")
-            os.execvp("llama-server", ["llama-server", "--model", config["model_path"], "--alias", "local", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "4096"])
+            os.execvp("llama-server", ["llama-server", "--model", config["model_path"], "--alias", "local", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja", "--chat-template-kwargs", '{"enable_thinking":false}'])
         elif args.command in ("status", "models"):
             if load_config()['mode'] == 'chatgpt':
                 from .subscription import account_action
