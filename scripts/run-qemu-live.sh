@@ -23,7 +23,7 @@ if [ "$DRY_RUN" != "1" ] && ! command -v qemu-system-x86_64 >/dev/null 2>&1; the
 fi
 
 DISK_PATH="${AIOS_VM_DISK:-$ROOT_DIR/.tmp-aios-live.qcow2}"
-DISK_SIZE="${AIOS_VM_DISK_SIZE:-16G}"
+DISK_SIZE="${AIOS_VM_DISK_SIZE:-32G}"
 MEM_MB="${AIOS_VM_MEM_MB:-4096}"
 CPU_COUNT="${AIOS_VM_CPUS:-2}"
 
@@ -41,21 +41,29 @@ QEMU_ARGS=(
   -smp "$CPU_COUNT"
   -boot d
   -cdrom "$ISO_PATH"
-  -drive "if=virtio,file=$DISK_PATH,format=qcow2"
+  -drive "if=virtio,file=${DISK_PATH//,/,,},format=qcow2"
   -nic user,model=virtio-net-pci
+  -audiodev "${AIOS_QEMU_AUDIO:-pa},id=audio0"
+  -device intel-hda
+  -device hda-duplex,audiodev=audio0
 )
 if [ "${AIOS_QEMU_UEFI:-0}" = 1 ]; then
   : "${AIOS_OVMF_CODE:?Set AIOS_OVMF_CODE to your OVMF_CODE firmware file}"
-  QEMU_ARGS+=( -drive "if=pflash,format=raw,readonly=on,file=$AIOS_OVMF_CODE" )
+  QEMU_ARGS+=( -drive "if=pflash,format=raw,readonly=on,file=${AIOS_OVMF_CODE//,/,,}" )
 fi
 
 if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
-  QEMU_ARGS+=( -display none -serial mon:stdio )
+  QEMU_ARGS+=( -display none -serial "${AIOS_QEMU_SERIAL:-mon:stdio}" )
+elif [ -n "${AIOS_QEMU_SERIAL:-}" ]; then
+  QEMU_ARGS+=( -serial "$AIOS_QEMU_SERIAL" )
 fi
 
 if [ "$(uname -m)" = "x86_64" ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
   QEMU_ARGS+=( -enable-kvm -cpu host )
 else
+  if [ "$DRY_RUN" != "1" ]; then
+    echo "[aios] KVM is unavailable; software emulation will be slow. Check /dev/kvm permissions." >&2
+  fi
   QEMU_ARGS+=( -cpu max )
 fi
 
