@@ -40,11 +40,11 @@ to MCP servers, create an application, cache it, or launch it.
 - An online skill or MCP marketplace.
 - Silent remote fallback when the user has not selected a remote agent provider.
 
-The initial application builder targets offline browser applications. This
-covers calculators, timers, converters, games, dashboards, forms, and similar
-small utilities while keeping the execution boundary narrow. Native and backend
-builders can be added later after AIOS has an approval UI and a stronger build
-sandbox.
+The initial application builder targets self-contained offline browser
+applications. This covers calculators, timers, converters, games, dashboards,
+forms, and similar small utilities while keeping the execution boundary narrow.
+Native, backend, and dependency-based builders can be added later after AIOS has
+an approval UI and a stronger build sandbox.
 
 ## Assumptions
 
@@ -210,6 +210,11 @@ tool list. All requests have timeouts, stdout is limited to valid newline-delimi
 JSON-RPC, stderr is drained without entering chat, results are capped, and the
 process is terminated on chat close.
 
+MCP processes inherit only the normal executable path, home/XDG locations, and
+locale. Variables whose names indicate keys, tokens, secrets, or passwords are
+removed. A server that needs a credential must receive it explicitly through
+its configured `env` object.
+
 Only text and structured MCP tool results are passed to the model in this
 release. Image, audio, and embedded-resource results return an unsupported-content
 error. MCP descriptions, annotations, and results are treated as untrusted data.
@@ -222,34 +227,39 @@ function supports:
 
 - `search`: token-match published manifests against a user request.
 - `create`: allocate a new safe workspace and draft manifest.
-- `read`: read a bounded text file from that workspace.
-- `write`: atomically write a bounded text file inside that workspace.
+- `read`: read the bounded application document from that workspace.
+- `write`: atomically write the self-contained `index.html`.
 - `publish`: validate required files and persist searchable metadata.
 - `launch`: start a published application.
 
 Application IDs and relative paths are strictly validated. Symlinks, absolute
-paths, traversal, hidden control files, unsupported extensions, oversized files,
-and excessive total application size are rejected. The first release permits
-HTML, CSS, JavaScript, JSON, and SVG text files, with `index.html` required.
+paths, traversal, hidden control files, extra files, and oversized documents are
+rejected. The first release stores one `index.html` with inline CSS, JavaScript,
+and optional SVG. External scripts, styles, fonts, media, and package
+dependencies are not supported.
 
 Published manifests contain title, summary, normalized source request, search
 keywords, entrypoint, timestamps, and a content digest. `search` ranks exact
 normalized requests first, then keyword overlap. A repeated calculator request
 therefore launches the prior result instead of rebuilding it.
 
-`apps/aios/app_runner.py` serves one published directory on a random loopback
-port and launches Chromium in application mode with a temporary profile and its
-sandbox enabled. The server:
+`apps/aios/app_runner.py` serves a trusted wrapper and one published application
+document on a random loopback port, then launches Chromium in application mode
+with a temporary profile and its sandbox enabled. The runner:
 
-- Serves only regular files below the published application root.
-- Disables directory listing.
-- Adds a restrictive Content Security Policy that blocks network connections,
-  forms, frames, plugins, external scripts, and external media.
+- Embeds generated content in an iframe with only `allow-scripts`; forms,
+  downloads, popups, same-origin privileges, and top-level navigation remain
+  disabled by the iframe sandbox.
+- Adds a restrictive Content Security Policy that permits inline script/style
+  needed by the app but blocks connections, external resources, frames, forms,
+  plugins, and base-URL changes.
+- Serves no arbitrary paths and provides no directory listing.
 - Stops when the Chromium application window exits.
 
 The runner is launched as a separate process so the application can remain open
 after its originating chat turn completes. No generated program is executed as
-a host process.
+a host process. The iframe and CSP are the security boundary for generated
+content; this is not presented as a general-purpose hostile-code sandbox.
 
 ## Data Flow
 
@@ -260,7 +270,8 @@ a host process.
 3. The router selects the explicitly configured agent provider.
 4. The model calls `application.search`.
 5. No matching manifest is found.
-6. The model calls `application.create`, then writes the HTML, CSS, and JavaScript.
+6. The model calls `application.create`, then writes one self-contained HTML
+   document.
 7. The model calls `application.publish`; AIOS validates and hashes the app.
 8. The model calls `application.launch`.
 9. The runner opens the calculator in a Chromium application window.
@@ -310,8 +321,8 @@ Backend tests will cover:
   unsupported server requests, timeouts, oversized output, malformed stdout,
   and process cleanup using a local fixture server.
 - Application path traversal and symlink rejection, atomic writes, size limits,
-  manifest publication, cache ranking, CSP headers, launch cleanup, and
-  persistence.
+  manifest publication, cache ranking, iframe sandboxing, CSP headers, launch
+  cleanup, and persistence.
 - A scripted end-to-end calculator turn that searches, creates, writes,
   publishes, and launches on a cache miss, followed by a cache-hit turn that
   performs no writes.
