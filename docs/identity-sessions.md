@@ -15,6 +15,13 @@ real biometrics or put real secrets into the simulator.
   simulator records launches; it does not execute applications.
 - Separate SQLite journals store titles, messages, lifecycle events and allowlisted
   restoration manifests. Reopening a journal recovers active tasks as suspended.
+- Recent sessions can be browsed without creating a new work session. Bounded
+  conversation pages and searchable summaries survive resume. The document panel
+  atomically saves UTF-8 text/Markdown inside the encrypted workspace; directory
+  traversal, symlinks and special files cannot redirect root reads or writes.
+- Sandboxed processes receive a fixed UID/owner/scope descriptor. Configuration
+  and data helpers use that explicit workspace and reject malformed descriptors
+  instead of falling back to an inherited desktop home.
 - Presence loss revokes capabilities and shields content; the longer timeout stops
   applications, closes the journal and releases storage. Cleanup failures block
   further activation rather than switching users with a live mount.
@@ -71,14 +78,48 @@ printf '%s\n' '{"action":"status"}' |
 
 ## Linux adapter and deployment gates
 
-`aios.isolation.LinuxIsolation` is a root-only adapter for administrator-provisioned
+On an Alpine target with the optional identity dependencies installed, root can
+run `aios-identity-setup`. It creates dedicated identity/anonymous service accounts,
+the broker group, root-private state and a random master key. Existing state is
+never overwritten. It does **not** enable the service or validate a display.
+
+After the display prerequisite is satisfied, **Create profile** provisions a new
+LUKS2 image and unused UID in the reserved 30000–39999 range. Keep that range
+reserved for AIOS workspaces. Only exclusively created UUID directories and new
+regular image files are eligible for formatting; existing devices/images are
+never accepted. Failed allocations remain root-private for administrator review.
+Initial image creation temporarily occupies the serialized broker while no
+personal workspace is active; the shell shows progress and pauses status polling.
+Enrollment interruption/reconciliation still needs production hardening.
+
+**Unlock with PIN** accepts the profile name and rate-limited PIN/passphrase,
+opens Recent without a throwaway session, and grants a two-minute local fallback
+lease. It requires no camera and does not collect biometric templates. It locks
+at expiry, does not extend on Start/Resume, and conflicts revoke it immediately.
+This is explicit PIN verification, not a claim of continued sensor presence.
+Protected resources still require their own operation-scoped challenge. Save the
+one-time recovery code when creating the profile. These controls are also usable
+with fictional profiles in the simulator, without kernel-isolation claims.
+
+In **Unlock your profile**, select **I have a recovery code** to enter the code
+and choose a replacement PIN. Recovery ends that profile's active lease, revokes
+capabilities, and rotates the recovery code. Save the replacement code shown once,
+then unlock normally. It neither enrolls a new identity nor merges workspaces.
+The old recovery code cannot be reused, and recovery uses the same protected
+display gate as PIN entry. Both entered secrets clear on submission or focus loss.
+
+`aios.isolation.LinuxIsolation` is a root-only adapter for broker-provisioned
 LUKS volumes, fixed UID mappings, cgroup v2 scopes and bubblewrap launches. Apps
 receive only the artifact directory, system binaries and a private Wayland socket;
 the journal, broker socket, user homes, host network, X11 socket and credentials
 are not in the sandbox. Application types and arguments are allowlisted.
 
-The adapter has **not passed an actual Alpine VM isolation test**. It is not enabled
-at boot. `world.identity` is an optional dependency list, not part of the default
+The adapter passes headless tests in a disposable Alpine container on the WSL
+Linux kernel: real UID permission denial, namespace filesystem/environment/network
+isolation, cgroup limits and forked-process teardown, LUKS locking/reopening, and
+stale process/mount recovery after broker restart. This is **not an Alpine VM boot
+or display-isolation test**. The adapter is not enabled at boot.
+`world.identity` is an optional dependency list, not part of the default
 ISO; package availability and size still require validation. The OpenRC script
 requires an administrator-created `aios-broker` group and configuration. There
 is intentionally no sample with a real device, UID or disk-formatting command.
@@ -91,7 +132,8 @@ Production configuration is root-owned JSON at `/etc/aios/sessiond.json`:
 | `runtime` | Root-owned workspace mount directory; traversal-only to reach UID-owned artifacts |
 | `socket`, `socket_gid` | Broker socket in a root-owned, group-traversable directory |
 | `shell_uid`, `identity_uid`, `anonymous_uid` | Distinct unprivileged accounts, distinct from all personal UIDs |
-| `principals` | UUID to `{uid, mount, device, key_file}` mapping; preprovisioned LUKS only |
+| `principals` | UUID to `{uid, mount, device, key_file}` mapping; new allocations are persisted atomically |
+| `volume_store`, `workspace_size_mib` | Root-private directory for new image allocations; 512 MiB default |
 | `wayland_sockets` | UID to separately isolated compositor socket mapping |
 | `display_isolation_validated` | Defaults false; blocks personal APIs and GUI launches |
 
@@ -100,17 +142,119 @@ trusted shell/input channel and completed isolation tests are prerequisites. Nev
 point it at a shared desktop or nested compositor controlled by another user.
 The existing X11 desktop is insufficient, including for secure PIN input.
 
+### Embedded private display
+
+Build the shell with `-DAIOS_EMBEDDED_DISPLAY=ON` and Qt Wayland Compositor
+development dependencies to exercise the new path. This optional Qt module is
+available under GPLv3 or a commercial license; the default shell build remains
+unchanged. Setup initializes `embedded_display: true`. The broker creates a new
+UID-private Wayland listener for each lease and passes its listening descriptor
+only to the registered shell process. Applications receive that socket inside
+their mount namespace. Application surfaces are clipped to the shell's application
+area, and PIN UI uses an in-window overlay. Keyboard focus is explicitly removed
+from application surfaces while trusted input is active. Screen-copy and virtual
+input extensions are not instantiated, and the shell clipboard is not bridged.
+
+Only a shell reporting the direct `eglfs` platform can enable personal APIs in
+embedded mode, and the administrator's display-validation gate must also pass.
+X11, WSLg/nested Wayland and offscreen runs remain anonymous even if the validation
+flag was accidentally set. The declaration comes from the dedicated trusted shell
+UID; application UIDs cannot register or request listener descriptors. A changed
+shell process or a lost shell heartbeat suspends existing work. This requires a
+clean appliance startup that does not run untrusted programs under the shell UID;
+it is not a security upgrade for an already-running shared desktop.
+
+`bash scripts/test-identity-display.sh` builds an isolated test container and checks
+real Wayland clients, cross-UID connection denial, listener replacement, rendered
+pixels from a sandboxed synthetic app, and PIN keystroke/clipboard separation.
+The synthetic app replaces the calculator only inside that disposable container.
+No test harness is installed by the shell build. These offscreen checks do not
+validate DRM/input hardware, VT transitions, recovery consoles or device failure.
+
 ## Remaining work by plan phase
+
+### Chat profile bubble
+
+Chat windows now show a centered user bubble. The protected session panel uses
+the same component. A fresh, unambiguous identity candidate produces the greeting
+“Hello, [name]. How may I help you?” and its saved profile portrait. Stale,
+conflicting or unavailable recognition clears the portrait; the fallback is a
+generic head. Explicit PIN unlock can provide the greeting without claiming a
+camera match. An unknown guest sees an invitation to create an account.
+
+Clicking the bubble lists existing profile names and opens masked PIN/password
+entry for the selection, or offers account creation. The broker releases this
+directory only through the protected display gate. It returns no PIN verifiers,
+recovery secrets or biometric templates. Recognition presentation does not
+activate a workspace or assign an existing conversation to a different owner.
+
+Enrollment has an optional **Take profile photo** action. It requests one camera
+snapshot, previews a 64 × 64 crop, and allows retaking or removing it. Capture has
+a five-second timer and uses memory only. The broker accepts only fixed-size RGB
+pixels, generates a metadata-free PNG and stores it with the encrypted identity
+record. No image path, remote URL, full-resolution image or EXIF is retained.
+Camera hardware verification remains paused.
+
+The ordinary desktop chat uses a separate local greeting-profile store. Clicking
+its bubble opens a dropdown beneath the avatar, listing saved accounts and a
+**New account** option. Selecting a saved name opens its PIN/password prompt;
+New account opens name-and-PIN entry. Creating or signing into a profile updates that window's
+greeting. Each window has its own selected greeting profile. PINs are salted
+scrypt verifiers with persistent retry limits; they are never stored as plaintext.
+These profiles personalize the legacy chat; they do not grant broker capabilities,
+encrypt chat history or unlock protected workspace identities. Broker-owned chat
+workers remain required for protected multi-user conversation ownership.
+
+**Settings → Accounts** lists local greeting accounts with sign-in, new-account
+and delete actions. Deletion prompts for that account's PIN/password and requires
+an explicit Delete account submission. Wrong attempts preserve the account and
+use the existing persistent retry limits. The request targets the account UUID;
+success atomically removes its record and clears its greeting from open windows.
+This removes the name, portrait and PIN verifier, not chat messages or protected
+workspace identities. The confirmation explains that scope before submission.
+
+Account creation and selection work with no camera. Name entry gets initial
+keyboard focus; Tab moves to PIN and Enter submits. The account dropdown supports
+arrow keys and Enter to choose an account. A PIN may contain four or more
+ASCII digits, including leading zeros; passphrases require ten or more characters.
+Invalid input produces an inline explanation instead of a disabled submit button.
+The optional photo controls are collapsed by default and never start capture
+unless the user explicitly requests a photo. These PIN lengths also apply to
+protected account creation and recovery; persistent retry limits remain enforced.
+
+For a WSLg preview, run `sh scripts/preview-chat.sh`. Keep that foreground process
+running so WSL does not close the GUI connection. The preview opens only a normal
+chat window, saves local profiles in the `aios-chat-preview-data` Docker volume,
+and caches its build separately. `--windowed` also opens a bounded desktop window;
+normal appliance boot retains its full-screen desktop.
+
+Enrollment now writes an encrypted intent before creating storage. After the
+principal mapping is committed, restart completes the identity record and name
+index idempotently, then atomically clears the intent. The intent stores a PIN
+verifier and recovery hash, never the entered PIN or recovery code. If allocation
+did not commit, new enrollment stops for administrator inspection; existing
+profiles can still open. Orphaned storage is never automatically adopted,
+reformatted or deleted. A crash before the recovery code reaches the user requires
+the profile's PIN to regain access; recovery-code replacement UI remains pending.
+
+For an experimental image containing the embedded compositor and broker runtime
+dependencies, run `AIOS_IDENTITY_BUILD=1 bash scripts/build-iso-container.sh` on
+Linux/WSL. This selects the optional Qt Wayland Compositor build (GPLv3 or commercial
+Qt licensing) and includes `world.identity` in both the installation package set
+and overlay. The default remains `0`. Reusing a build cache explicitly switches
+the compositor option in either direction. This packages the prototype; it does
+not enable personal access, initialize identity storage, or provide a protected
+appliance boot path. Physical display validation is still required.
 
 | Phase | Status and remaining implementation |
 | --- | --- |
 | 0 | Initial ADR/threat model and simulator implemented. Schemas and security review need expansion. |
-| 1 | Socket broker and Linux adapter implemented, unvalidated. Explicit principal migration of chat, browser, model workers and settings remains. |
-| 2 | Journal/lifecycle and reconstruction manifests implemented. Provisioning, encrypted-volume enrollment, artifact claim, complete conversation recall and editor save adapters remain. |
+| 1 | Broker, Linux adapter and explicit process storage context implemented; headless checks pass. Routing chat, browser, model workers and settings through broker-owned scopes remains. |
+| 2 | New encrypted-volume provisioning, PIN-only profile UI, durable history paging, summary search, safe text-document save/resume and committed-enrollment replay implemented. Artifact claim, broader application adapters and administrator recovery of incomplete allocations remain. |
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
-| 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
-| 6 | Private-display launch gate implemented. Actual compositor migration, clipboard/input/notification isolation, deletion workflow, accessibility and hardware security validation remain. |
+| 5 | Scoped capability/PIN/recovery logic, recovery-code PIN reset UI and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
+| 6 | Embedded per-lease Wayland prototype, clipped application surfaces, in-window PIN overlay and protocol/rendering/input checks implemented. Protected appliance startup, physical display/input validation, deletion workflow and accessibility remain. |
 
 No claim is made that the seven-phase definition of done has been achieved.
 
@@ -123,6 +267,18 @@ protocol, actual Unix socket framing/permissions/deadlines, model integrity and
 ciphertext tamper/name-substitution detection. The encryption test skips if the
 optional `cryptography` package is missing. Simulator tests do not demonstrate
 kernel, storage or display isolation.
+
+Run `bash scripts/test-identity-linux.sh` for the separate real-kernel test suite.
+It starts a privileged disposable Alpine container with a private cgroup namespace
+and a read-only repository mount. Only newly created temporary regular files are
+formatted as encrypted volumes; no supplied path or pre-existing disk is formatted.
+The tests verify anonymous namespace isolation, separate-UID filesystem denial,
+cgroup limits/teardown, LUKS lock/resume and recovery of stale scopes and mounts.
+The `identity-isolation` CI job runs these checks independently of the simulator.
+
+See [WSL webcam development](wsl-webcam.md) for USB passthrough and the bounded
+capture diagnostic. Webcam enumeration starts no capture; the explicit probe
+reads and discards frames and saves no media.
 
 Required release tests remain: two-UID filesystem/IPC attacks; fork/daemon escape;
 broker crash/reboot and busy-volume recovery; full compositor input/capture and

@@ -5,13 +5,17 @@ import QtQuick.Window
 
 Window {
     id: desktop
-    visible: true
+    property bool chatPreview: Qt.application.arguments.indexOf("--chat") >= 0
+    property bool windowed: chatPreview || Qt.application.arguments.indexOf("--windowed") >= 0
+    visible: !chatPreview
     title: "AIOS Desktop"
-    width: Screen.width; height: Screen.height
-    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
+    height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
+    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
+    property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
     property var minimizedChats: []
     readonly property int minimizedChatCount: minimizedChats.length
     Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
@@ -54,7 +58,9 @@ Window {
         var window = chatComponent.createObject(desktop, {
             backend: backendApi,
             session: backendApi.createSession(),
-            theme: theme
+            theme: theme,
+            profileControl: sessionControlApi.chatProfile(),
+            ownsProfileControl: true
         })
         if (!window)
             return null
@@ -68,7 +74,7 @@ Window {
     property var settingsWindow: null
     function openSettings() {
         if (sessionControlApi.enabled) return
-        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme})
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
     Component { id: settingsComponent; SettingsWindow {} }
@@ -131,9 +137,28 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
-    IdentityStatus { x: 48; y: 84; visible: sessionControlApi.enabled; control: sessionControlApi }
-    PrivacyShield { control: sessionControlApi }
-    SecurePinPrompt { control: sessionControlApi }
+    Loader {
+        x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
+        active: displayBridgeApi.enabled && sessionControlApi.embeddedDisplay
+        onActiveChanged: {
+            if (active) setSource("PrivateDisplay.qml", {control: sessionControlApi, bridge: displayBridgeApi})
+            else setSource("")
+        }
+    }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
+    SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }
+    Rectangle {
+        anchors.fill: parent; z: 100000; color: "#101b27"
+        visible: displayBridgeApi.enabled && sessionControlApi.enabled && sessionControlApi.shield
+        MouseArea { anchors.fill: parent }
+        Column {
+            anchors.centerIn: parent; spacing: 16
+            Label { text: "Personal work is hidden"; color: "white"; font.pixelSize: 28 }
+            Button { text: "Return to anonymous"; onClicked: sessionControlApi.suspend() }
+        }
+    }
     ChatOrb {
         id: launcher
         anchors.horizontalCenter: parent.horizontalCenter
@@ -178,7 +203,8 @@ Window {
     }
     Component { id: chatComponent; ChatWindow {} }
     Dialog {
-        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360; popupType: Popup.Window
+        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360
+        popupType: displayBridgeApi.enabled ? Popup.Item : Popup.Window
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
         contentItem: Row { spacing: 12
             QuietButton { text: "Cancel"; onClicked: powerDialog.close() }

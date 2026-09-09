@@ -7,13 +7,13 @@ import sys
 
 def request(path, payload):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(2)
+        connection.settimeout(300 if payload.get('action') == 'enroll_manual' else 2)
         connection.connect(str(path))
         connection.sendall(json.dumps(payload).encode() + b'\n')
         data = bytearray()
         while not data.endswith(b'\n'):
             chunk = connection.recv(4096)
-            if not chunk or len(data) + len(chunk) > 65536:
+            if not chunk or len(data) + len(chunk) > 262144:
                 raise RuntimeError("Invalid broker response")
             data.extend(chunk)
         return json.loads(data)

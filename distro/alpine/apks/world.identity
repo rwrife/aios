@@ -2,6 +2,7 @@
 py3-cryptography
 bubblewrap
 cryptsetup
+e2fsprogs
 qt6-qtwayland
 foot
 featherpad

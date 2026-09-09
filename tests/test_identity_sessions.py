@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from aios.authority import Capabilities, pin_record, verify_pin
@@ -51,6 +52,60 @@ class SessionTests(unittest.TestCase):
         self.clock.advance(1.1)
         self.s.evidence([evidence(owner)])
 
+    def test_interrupted_enrollment_reconciles_committed_workspace(self):
+        original = self.store.put
+        def fail_record(key, value):
+            if key.startswith('identity-'):
+                raise OSError('simulated power loss')
+            original(key, value)
+        with patch.object(self.store, 'put', side_effect=fail_record):
+            with self.assertRaises(OSError):
+                self.s.enroll('Carol', '135790', True, None)
+        pending = self.store.get('pending-enrollment')
+        owner = pending['identity']
+        self.assertNotIn('135790', json.dumps(pending))
+        self.assertNotIn(owner, self.store.get('identities'))
+        restarted = Sessions(self.isolation, self.store, self.clock, self.clock)
+        self.assertEqual(self.store.get('identities')[owner], 'Carol')
+        self.assertIsNone(self.store.get('pending-enrollment'))
+        restarted.activate_verified('Carol', '135790')
+        restarted.suspend()
+
+    def test_incomplete_allocation_is_not_adopted_or_reformatted(self):
+        with patch.object(self.isolation, 'provision', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.s.enroll('Carol', '135790', True, None)
+        pending = self.store.get('pending-enrollment')
+        restarted = Sessions(self.isolation, self.store, self.clock, self.clock)
+        self.assertTrue(restarted.enrollment_blocked)
+        with patch.object(self.isolation, 'provision') as provision:
+            with self.assertRaises(PermissionError):
+                restarted.enroll('Dave', '135790', True, None)
+            provision.assert_not_called()
+        self.assertEqual(self.store.get('pending-enrollment'), pending)
+        restarted.activate_verified('Alice', '123456')
+        restarted.suspend()
+
+    def test_recovery_rotates_secret_and_revokes_active_session(self):
+        profile = self.s.enroll('Carol', '135790', True, None)
+        self.s.activate_verified('Carol', '135790', 'Private notes')
+        work = self.s.work
+        challenge = self.s.request_capability('secrets.github.profile', 'github')
+        token = self.s.verify(challenge['id'], '135790', False)
+        replacement = self.s.recover('Carol', profile['recovery'], '246802')
+        self.assertIsNone(self.s.owner)
+        self.assertNotIn(token, self.s.capabilities.tokens)
+        with self.assertRaises(PermissionError):
+            self.s.recover('Carol', profile['recovery'], '999999')
+        self.s.activate_verified('Carol', '246802', session=work)
+        self.assertEqual(self.s.work, work)
+        self.s.suspend()
+        self.assertNotEqual(replacement, profile['recovery'])
+        with self.assertRaises(PermissionError):
+            Service(self.s, 1000, 1001).dispatch(
+                {'action': 'recover', 'owner': 'Carol', 'recovery': replacement, 'pin': '123456'}, 1000)
+        self.s.recover('Carol', replacement, '123456')
+
     def activate(self, owner=None):
         self.recognize(owner or self.a)
         return self.s.activate('Résumé')
@@ -98,6 +153,121 @@ class SessionTests(unittest.TestCase):
         self.s.tick()
         self.assertIn(work, self.isolation.stopped)
         self.assertIsNone(self.s.owner)
+
+    def test_history_survives_resume_and_denies_absent_owner(self):
+        session = self.activate()
+        for index in range(25):
+            self.s.message('user', str(index))
+        self.s.summarize('Résumé drafting history')
+        self.s.suspend()
+        self.recognize(self.a)
+        self.s.activate(session=session)
+        page = self.s.history()
+        self.assertEqual([m['content'] for m in page['messages']], [str(i) for i in range(5, 25)])
+        older = self.s.history(page['before'])
+        self.assertEqual([m['content'] for m in older['messages']], [str(i) for i in range(5)])
+        self.assertIsNone(older['before'])
+        self.assertEqual(self.s.list_work('drafting')[0]['id'], session)
+        self.clock.advance(4)
+        with self.assertRaises(PermissionError):
+            self.s.history()
+
+    def test_recent_sessions_need_no_throwaway_work_session(self):
+        session = self.activate()
+        self.s.suspend()
+        self.recognize(self.a)
+        self.assertEqual([item['id'] for item in self.s.list_work('')], [session])
+        self.assertIsNone(self.s.work)
+        self.assertEqual(self.s.owner, self.a)
+        with self.assertRaises(PermissionError):
+            self.s.launch('calculator', [])
+        self.s.suspend()
+        self.recognize(self.b)
+        self.assertEqual(self.s.list_work(''), [])
+
+    def test_document_save_resume_and_cross_owner_denial(self):
+        session = self.activate()
+        saved = self.s.document('Resume.txt', 'Private résumé')
+        self.s.suspend()
+        self.activate(self.b)
+        with self.assertRaises(FileNotFoundError):
+            self.s.document('Resume.txt')
+        self.s.suspend()
+        self.recognize(self.a)
+        self.s.activate(session=session)
+        self.assertEqual(self.s.document('Resume.txt')['sha256'], saved['sha256'])
+        self.clock.advance(4)
+        with self.assertRaises(PermissionError):
+            self.s.document('Resume.txt', 'overwrite')
+
+    def test_manual_enrollment_and_pin_fallback_without_sensors(self):
+        enrolled = self.s.enroll('Manual user', '456789', True, None)
+        owner = enrolled['identity']
+        self.assertFalse(self.store.get('identity-' + owner)['biometric_consent'])
+        with self.assertRaises(PermissionError):
+            self.s.activate_verified(owner, 'wrong', title='Private document')
+        self.clock.advance(3)
+        session = self.s.activate_verified(owner, '456789', title='Private document')
+        self.assertEqual(self.s.status()['authority'], 'verified')
+        self.s.document('Resume.txt', 'Saved without camera')
+        self.clock.advance(60)
+        self.s.activate(session=session)
+        self.assertEqual(self.s.document('Resume.txt')['content'], 'Saved without camera')
+        self.clock.advance(61)
+        with self.assertRaises(PermissionError):
+            self.s.document('Resume.txt')
+        self.assertTrue(self.s.shield or self.s.owner is None)
+
+    def test_sensor_conflict_revokes_manual_pin_session(self):
+        self.s.activate_verified(self.a, '123456', title='Manual')
+        self.s.evidence([evidence(self.a, self.b)])
+        self.assertTrue(self.s.shield)
+        self.assertIsNone(self.s.manual_owner)
+        with self.assertRaises(PermissionError):
+            self.s.activate_verified(self.a, '123456', title='Conflict cannot be bypassed')
+
+    def test_pin_unlock_opens_catalog_by_name_without_new_session(self):
+        session = self.activate()
+        self.s.suspend()
+        self.s.fusion.feed([])
+        self.assertIsNone(self.s.activate_verified('Alice', '123456'))
+        self.assertEqual([item['id'] for item in self.s.list_work('')], [session])
+        self.assertIsNone(self.s.work)
+
+    def test_lost_trusted_shell_locks_even_with_valid_pin_lease(self):
+        self.s.activate_verified(self.a, '123456', title='Private')
+        with patch('aios.sessiond.time.monotonic', return_value=100):
+            service = Service(self.s, 1000, 1001, personal_enabled=True)
+        with patch('aios.sessiond.time.monotonic', return_value=104):
+            service.tick()
+        self.assertIsNone(self.s.owner)
+
+    def test_embedded_personal_gate_requires_direct_display_and_registered_process(self):
+        self.isolation.requires_display = True
+        service = Service(self.s, 1000, 1001, personal_enabled=True)
+        service.dispatch({'action': 'display_attest', 'platform': 'xcb', 'embedded': True}, 1000, 10)
+        self.assertFalse(service.dispatch({'action': 'status'}, 1000, 10)['personal_available'])
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'enroll_manual', 'name': 'Other', 'pin': '123456', 'consent': True}, 1000, 10)
+        service.dispatch({'action': 'display_attest', 'platform': 'eglfs', 'embedded': True}, 1000, 10)
+        self.assertTrue(service.dispatch({'action': 'status'}, 1000, 10)['personal_available'])
+        self.s.activate_verified(self.a, '123456', title='Protected')
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'history', 'before': None}, 1000, 11)
+        self.assertIsNone(service.dispatch({'action': 'status'}, 1000, 11)['session'])
+        service.dispatch({'action': 'display_attest', 'platform': 'offscreen', 'embedded': True}, 1000, 11)
+        self.assertIsNone(self.s.owner)
+
+    def test_history_unicode_page_fits_response(self):
+        self.activate()
+        for _ in range(3):
+            self.s.message('assistant', '\U0001f642' * 32768)
+        page = self.s.history()
+        self.assertLess(len(json.dumps(page, ensure_ascii=False).encode()), 262000)
+        self.assertEqual(len(page['messages']), 1)
+        self.assertIsNotNone(page['before'])
+        with self.assertRaises(ValueError):
+            self.s.history(True)
 
     def test_conflict_immediately_revokes_and_never_retargets(self):
         self.activate()
@@ -191,10 +361,11 @@ class SessionTests(unittest.TestCase):
 
 class BoundaryTests(unittest.TestCase):
     def test_pin_minimum_length(self):
-        for value in ('12345', 'abcdef', 'abcdefghi', '12345\n'):
+        for value in ('123', 'abcdef', 'abcdefghi', '12345\n'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 pin_record(value)
         self.assertTrue(pin_record('longer passphrase'))
+        self.assertTrue(verify_pin(pin_record('1234'), '1234', 0))
 
     def test_schema_rejects_extra_duplicate_and_nonfinite_fields(self):
         for value in ('{"action":"status","uid":0}', '{"action":"status","action":"status"}',

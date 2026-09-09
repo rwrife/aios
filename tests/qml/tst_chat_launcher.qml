@@ -15,6 +15,20 @@ TestCase {
         property bool enabled: false
         property bool shield: false
         property bool simulator: true
+        property bool busy: false
+        property bool personalAvailable: true
+        property bool greetingOnly: true
+        property bool secureInput: false
+        property var profile: ({})
+        property var profiles: []
+        property var messages: []
+        property bool olderMessages: false
+        signal privacyLost()
+        signal documentLoaded(string content)
+        signal documentSaved()
+        function chatProfile() { return sessionControl }
+        function dispose() {}
+        function setSecureInput(active) { secureInput = active }
         property var challenge: ({})
         property string authority: "Anonymous"
         property var sessions: []

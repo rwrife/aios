@@ -21,6 +21,10 @@
 #include <QDesktopServices>
 #include "voice.h"
 #include "SessionControl.h"
+#include "DisplayBridge.h"
+#ifdef AIOS_EMBEDDED_DISPLAY
+#include "PrivateCompositor.h"
+#endif
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
 #include <signal.h>
@@ -360,6 +364,11 @@ private:
 };
 
 int main(int argc, char **argv) {
+#ifdef AIOS_EMBEDDED_DISPLAY
+    if (!qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET"))
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    qmlRegisterType<PrivateCompositor>("AIOS.Display", 1, 0, "PrivateCompositor");
+#endif
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     QGuiApplication app(argc, argv);
     app.setFont(QFont("DejaVu Sans", 10));
@@ -378,20 +387,30 @@ int main(int argc, char **argv) {
     app.setQuitOnLastWindowClosed(false);
     Backend backend;
     SessionControl sessionControl;
+    DisplayBridge displayBridge;
+    QObject::connect(&sessionControl, &SessionControl::displayRequested, &app, [&] {
+        if (!displayBridge.enabled()) sessionControl.displayFailed();
+    });
     QObject::connect(&sessionControl, &SessionControl::privacyLost, &app, [] {
         QGuiApplication::clipboard()->clear();
     });
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
     engine.rootContext()->setContextProperty("sessionControl", &sessionControl);
+    engine.rootContext()->setContextProperty("displayBridge", &displayBridge);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(QUrl("qrc:/Main.qml"));
     const auto arguments = app.arguments();
+    if (arguments.contains("--prepare-display") && displayBridge.enabled()) {
+        QTimer::singleShot(1500, &sessionControl, [&sessionControl] {
+            emit sessionControl.displayRequested("");
+        });
+    }
     if (arguments.contains("--chat") && !engine.rootObjects().isEmpty())
         QMetaObject::invokeMethod(engine.rootObjects().first(), "openChat");
     const int capture = arguments.indexOf("--capture");
     if (capture >= 0 && capture + 1 < arguments.size()) {
-        QTimer::singleShot(1500, &app, [&app, arguments, capture] {
+        QTimer::singleShot(arguments.contains("--prepare-display") ? 5000 : 1500, &app, [&app, arguments, capture] {
             bool saved = false;
             for (auto window : app.allWindows()) {
                 if (window->isVisible() && (window->title() == "AIOS Chat" || !arguments.contains("--chat"))) {

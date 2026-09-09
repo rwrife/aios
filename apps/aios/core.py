@@ -8,16 +8,23 @@ from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+from .principals import current as current_principal
 
 BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
 THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
 
 
 def config_dir():
+    principal = current_principal()
+    if principal is not None:
+        return principal.directory('config')
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "aios"
 
 
 def data_dir():
+    principal = current_principal()
+    if principal is not None:
+        return principal.directory('data')
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "aios"
 
 

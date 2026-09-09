@@ -14,6 +14,10 @@ cp -a "$AIOS_OVERLAY_DIR"/. "$tmpdir"/
 cp -a "$AIOS_STAGE_DIR"/. "$tmpdir"/
 mkdir -p "$tmpdir/etc/apk"
 cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI" | sort -u > "$tmpdir/etc/apk/world"
+if [ -n "${AIOS_WORLD_IDENTITY:-}" ]; then
+  sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_IDENTITY" >> "$tmpdir/etc/apk/world"
+  sort -u "$tmpdir/etc/apk/world" -o "$tmpdir/etc/apk/world"
+fi
 printf '%s\n' $AIOS_REPOSITORIES > "$tmpdir/etc/apk/repositories"
 printf 'aios\n' > "$tmpdir/etc/hostname"
 rc_add() {
