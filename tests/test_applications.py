@@ -1,12 +1,17 @@
 import json
+import contextlib
+import io
 import os
 import shutil
 import stat
 import sys
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
+from urllib import error, request
 
 import aios.applications as applications
 from aios.applications import APPLICATION_TOOL, ApplicationStore
@@ -14,6 +19,20 @@ from aios.applications import APPLICATION_TOOL, ApplicationStore
 
 def _read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+class _IframeParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.iframes = []
+        self.titles = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "iframe":
+            self.iframes.append(dict(attrs))
+
+    def handle_data(self, data):
+        self.titles.append(data)
 
 
 class ApplicationStoreTests(unittest.TestCase):
@@ -391,6 +410,260 @@ class ApplicationStoreTests(unittest.TestCase):
         store.write({"id": created["id"], "html": "<!doctype html><p>cleanup</p>"})
         store.publish({"id": created["id"], "summary": "Clean", "keywords": ["cleanup"]})
         self.assertEqual({path.name for path in (self.root / created["id"]).iterdir()}, {"index.html", "manifest.json"})
+
+    def test_handler_serves_wrapper_and_app_with_security_headers(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Wrapper", "request": "Build a wrapper page"})
+        html = "<!doctype html><title>App</title><p>hello</p>"
+        store.write({"id": created["id"], "html": html})
+        store.publish({"id": created["id"], "summary": "Wrapper summary", "keywords": ["wrapper"]})
+        document = app_runner.load_document(self.root / created["id"])
+        handler = app_runner.handler_for(document)
+
+        with self._serve(handler) as base_url:
+            wrapper = self._get(base_url + "/")
+            self.assertEqual(wrapper["status"], 200)
+            self.assertEqual(wrapper["headers"]["Content-Type"], "text/html; charset=utf-8")
+            self.assertEqual(wrapper["headers"]["Cache-Control"], "no-store")
+            self.assertEqual(wrapper["headers"]["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(wrapper["headers"]["Referrer-Policy"], "no-referrer")
+            self.assertEqual(
+                wrapper["headers"]["Content-Security-Policy"],
+                "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'",
+            )
+            parser = _IframeParser()
+            parser.feed(wrapper["body"].decode("utf-8"))
+            self.assertEqual(len(parser.iframes), 1)
+            self.assertEqual(parser.iframes[0]["sandbox"], "allow-scripts")
+            self.assertEqual(parser.iframes[0]["src"], "/app")
+            self.assertIn("title", parser.iframes[0])
+            self.assertTrue(parser.iframes[0]["title"].strip())
+
+            app = self._get(base_url + "/app")
+            self.assertEqual(app["status"], 200)
+            self.assertEqual(app["headers"]["Content-Type"], "text/html; charset=utf-8")
+            self.assertEqual(app["headers"]["Cache-Control"], "no-store")
+            self.assertEqual(app["headers"]["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(app["headers"]["Referrer-Policy"], "no-referrer")
+            self.assertEqual(
+                app["headers"]["Content-Security-Policy"],
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'",
+            )
+            self.assertEqual(app["body"].decode("utf-8"), html)
+
+    def test_handler_rejects_unknown_and_query_paths(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Paths", "request": "Build a path page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>paths</p>"})
+        store.publish({"id": created["id"], "summary": "Path summary", "keywords": ["paths"]})
+        document = app_runner.load_document(self.root / created["id"])
+        handler = app_runner.handler_for(document)
+
+        with self._serve(handler) as base_url:
+            for path in ["/missing", "/?x=1", "/app?x=1", "/app/extra"]:
+                with self.subTest(path=path):
+                    result = self._get(base_url + path, expect_error=True)
+                    self.assertEqual(result["status"], 404)
+
+    def test_handler_content_length_uses_utf8_bytes(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Unicode", "request": "Build a unicode page"})
+        html = "<!doctype html><meta charset=\"utf-8\"><p>café — 漢字</p>"
+        store.write({"id": created["id"], "html": html})
+        store.publish({"id": created["id"], "summary": "Unicode summary", "keywords": ["unicode"]})
+        document = app_runner.load_document(self.root / created["id"])
+        handler = app_runner.handler_for(document)
+
+        with self._serve(handler) as base_url:
+            result = self._get(base_url + "/app")
+            self.assertEqual(result["status"], 200)
+            self.assertEqual(result["headers"]["Content-Length"], str(len(result["body"])))
+            self.assertEqual(result["body"].decode("utf-8"), html)
+
+    def test_load_document_accepts_published_app_and_rejects_digest_or_symlinks(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Published", "request": "Build a published page"})
+        html = "<!doctype html><p>published café</p>"
+        store.write({"id": created["id"], "html": html})
+        store.publish({"id": created["id"], "summary": "Published summary", "keywords": ["published"]})
+        folder = self.root / created["id"]
+
+        self.assertEqual(app_runner.load_document(folder), html)
+
+        folder.joinpath("index.html").write_text("<!doctype html><p>tampered</p>", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            app_runner.load_document(folder)
+
+        if hasattr(os, "symlink"):
+            link_root = Path(self.tmp.name) / "links"
+            link_root.mkdir()
+            try:
+                os.symlink(folder, link_root / "folder", target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("environment cannot create symlinks")
+            with self.assertRaises(ValueError):
+                app_runner.load_document(link_root / "folder")
+
+            linked_file_root = Path(self.tmp.name) / "linked-file"
+            linked_file_root.mkdir()
+            shutil.copy(folder / "manifest.json", linked_file_root / "manifest.json")
+            try:
+                os.symlink(folder / "index.html", linked_file_root / "index.html")
+            except (OSError, NotImplementedError):
+                self.skipTest("environment cannot create symlinks")
+            with self.assertRaises(ValueError):
+                app_runner.load_document(linked_file_root)
+
+    def test_run_builds_restricted_chromium_command_and_cleans_up_on_launcher_failure(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Launch", "request": "Build a launch page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>launch</p>"})
+        store.publish({"id": created["id"], "summary": "Launch summary", "keywords": ["launch"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        proc = mock.Mock()
+        proc.wait.return_value = 0
+        proc.pid = 4321
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc) as popen:
+            app_runner.run(folder)
+
+        args = popen.call_args.args[0]
+        self.assertIsNotNone(state["server"])
+        self.assertIn(f"--app=http://127.0.0.1:{state['server'].server_address[1]}/", args)
+        self.assertTrue(any(arg.startswith("--user-data-dir=") for arg in args))
+        self.assertTrue(any(arg.startswith("--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1") for arg in args))
+        self.assertTrue(any(arg.startswith("--host-resolver-rules=") and "::1" in arg for arg in args))
+        self.assertIn("--disable-dev-shm-usage", args)
+        self.assertIn("--no-first-run", args)
+        self.assertIn("--no-default-browser-check", args)
+        self.assertNotIn("--no-sandbox", args)
+
+    def test_run_shuts_down_server_when_chromium_launch_raises(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Boom", "request": "Build a boom page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>boom</p>"})
+        store.publish({"id": created["id"], "summary": "Boom summary", "keywords": ["boom"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.subprocess, "Popen", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                app_runner.run(folder)
+
+        self.assertIsNotNone(state["server"])
+        self.assertTrue(state["server"].shutdown_called)
+        self.assertTrue(state["server"].server_close_called)
+        self.assertTrue(state["server"].joined.is_set())
+
+    def test_run_shuts_down_server_when_wait_is_interrupted(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Interrupt", "request": "Build an interrupt page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>interrupt</p>"})
+        store.publish({"id": created["id"], "summary": "Interrupt summary", "keywords": ["interrupt"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        proc = mock.Mock()
+        proc.pid = 8765
+        proc.wait.side_effect = KeyboardInterrupt
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc):
+            with self.assertRaises(KeyboardInterrupt):
+                app_runner.run(folder)
+
+        self.assertIsNotNone(state["server"])
+        self.assertTrue(state["server"].shutdown_called)
+        self.assertTrue(state["server"].server_close_called)
+        self.assertTrue(state["server"].joined.is_set())
+
+    def test_main_requires_exactly_one_folder_argument(self):
+        from aios import app_runner
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertNotEqual(app_runner.main([]), 0)
+            self.assertNotEqual(app_runner.main(["one", "two"]), 0)
+
+    def _get(self, url, expect_error=False):
+        req = request.Request(url)
+        try:
+            with request.urlopen(req, timeout=5) as response:
+                return {
+                    "status": response.status,
+                    "headers": dict(response.headers.items()),
+                    "body": response.read(),
+                }
+        except error.HTTPError as exc:
+            if not expect_error:
+                raise
+            body = exc.read()
+            return {"status": exc.code, "headers": dict(exc.headers.items()), "body": body}
+
+    def _serve(self, handler):
+        from aios import app_runner
+
+        server = app_runner.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        class _ServeContext:
+            def __enter__(self_nonlocal):
+                for _ in range(50):
+                    try:
+                        request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/", timeout=0.1).close()
+                        break
+                    except Exception:
+                        pass
+                return f"http://127.0.0.1:{server.server_address[1]}"
+
+            def __exit__(self_nonlocal, exc_type, exc, tb):
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+        return _ServeContext()
+
+    def _fake_server_class(self):
+        state = {"server": None}
+
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = ("127.0.0.1", 49152)
+                self.shutdown_called = False
+                self.server_close_called = False
+                self._stop = Event()
+                self.joined = Event()
+                state["server"] = self
+
+            def serve_forever(self):
+                self._stop.wait(timeout=5)
+                self.joined.set()
+
+            def shutdown(self):
+                self.shutdown_called = True
+                self._stop.set()
+
+            def server_close(self):
+                self.server_close_called = True
+                self._stop.set()
+
+        return state, FakeServer
 
 
 if __name__ == "__main__":
