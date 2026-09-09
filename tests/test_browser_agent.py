@@ -70,7 +70,7 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIn("untrusted", bodies[0]["messages"][0]["content"])
         self.assertEqual(bodies[1]["messages"][-1]["role"], "tool")
         self.assertEqual(bodies[1]["messages"][-1]["tool_call_id"], "call_1")
-        self.assertEqual(events[0], {"type": "progress", "text": "Browser · open"})
+        self.assertEqual(events[0], {"type": "progress", "text": "Browser: open"})
         self.assertEqual(events[-1], {"type": "token", "text": "The page is open."})
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
@@ -273,6 +273,27 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIn("Application cache is empty.", prompt)
         self.assertIn("Only approved MCP tools are available.", prompt)
 
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_progress_text_is_single_line_bounded_and_sanitized(self, _list_tools):
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        unsafe_action = "<img src=x onerror=alert(1)>&\n\t\x01\x02 action_123/alpha:beta-gamma. " + ("z" * 200)
+        cases = [
+            ("browser", "Browser"),
+            ("application", "Application"),
+            ("mcp_notes_lookup", "MCP Notes Lookup"),
+            ("activate_skill", "Activate skill"),
+        ]
+
+        for name, prefix in cases:
+            with self.subTest(name=name):
+                status = session.progress(name, {"action": unsafe_action})
+                self.assertTrue(status.startswith(prefix))
+                self.assertIn(": ", status)
+                self.assertLessEqual(len(status), 100)
+                self.assertRegex(status, r"^[A-Za-z0-9 _\-\./:]+$")
+                self.assertNotRegex(status, r"[<>&\r\n\t\x00-\x1f\x7f]")
+                self.assertNotEqual(status.strip(), "")
+
     @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "tool-model"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
     def test_multiple_application_actions_dispatch_in_order_and_preserve_call_ids(self, _list_tools, _load_config):
@@ -316,9 +337,94 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual([message["tool_call_id"] for message in tool_messages], ["call_1", "call_2", "call_3"])
         self.assertEqual(
             [event["text"] for event in events if event["type"] == "progress"],
-            ["Application · search", "Application · create", "Application · launch"],
+            ["Application: search", "Application: create", "Application: launch"],
         )
         self.assertEqual(events[-1], {"type": "token", "text": "Application ready."})
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "tool-model"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_current_round_tool_results_remain_intact_after_compaction(self, _list_tools, _load_config):
+        session = agent.AgentSession([{"role": "user", "content": "calculator"}], "tools.sock", catalog=[])
+        bodies = []
+        results = [{"part": 1}, {"part": 2}, {"part": 3}, {"part": 4}]
+
+        def request(route, body):
+            bodies.append(clone(body))
+            if len(bodies) == 1:
+                return stream([
+                    {"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "application", "arguments": "{\"action\":\"alpha\"}"}}]},
+                    {"tool_calls": [{"index": 1, "id": "call_2", "function": {"name": "application", "arguments": "{\"action\":\"beta\"}"}}]},
+                    {"tool_calls": [{"index": 2, "id": "call_3", "function": {"name": "application", "arguments": "{\"action\":\"gamma\"}"}}]},
+                    {"tool_calls": [{"index": 3, "id": "call_4", "function": {"name": "application", "arguments": "{\"action\":\"delta\"}"}}]},
+                ], "tool_calls")
+            return stream([{"content": "Done."}])
+
+        with patch("aios.agent.core.request", side_effect=request), patch(
+            "aios.agent.toolhost.call",
+            side_effect=results,
+        ) as call:
+            events = list(agent.openai_chat(session))
+
+        self.assertEqual(call.call_count, 4)
+        tool_messages = [message for message in bodies[1]["messages"] if message["role"] == "tool"]
+        self.assertEqual([message["tool_call_id"] for message in tool_messages], ["call_1", "call_2", "call_3", "call_4"])
+        self.assertEqual(
+            [message["content"] for message in tool_messages],
+            [
+                json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+                for result in results
+            ],
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Done."})
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "tool-model"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_previous_round_compaction_keeps_current_round_observations(self, _list_tools, _load_config):
+        session = agent.AgentSession([{"role": "user", "content": "calculator"}], "tools.sock", catalog=[])
+        bodies = []
+        results = [
+            {"round": 1, "part": 1},
+            {"round": 1, "part": 2},
+            {"round": 1, "part": 3},
+            {"round": 2, "part": 1},
+            {"round": 2, "part": 2},
+        ]
+
+        def request(route, body):
+            bodies.append(clone(body))
+            if len(bodies) == 1:
+                return stream([
+                    {"tool_calls": [{"index": 0, "id": "r1_1", "function": {"name": "application", "arguments": "{\"action\":\"alpha\"}"}}]},
+                    {"tool_calls": [{"index": 1, "id": "r1_2", "function": {"name": "application", "arguments": "{\"action\":\"beta\"}"}}]},
+                    {"tool_calls": [{"index": 2, "id": "r1_3", "function": {"name": "application", "arguments": "{\"action\":\"gamma\"}"}}]},
+                ], "tool_calls")
+            if len(bodies) == 2:
+                return stream([
+                    {"tool_calls": [{"index": 0, "id": "r2_1", "function": {"name": "application", "arguments": "{\"action\":\"delta\"}"}}]},
+                    {"tool_calls": [{"index": 1, "id": "r2_2", "function": {"name": "application", "arguments": "{\"action\":\"epsilon\"}"}}]},
+                ], "tool_calls")
+            return stream([{"content": "Finished."}])
+
+        with patch("aios.agent.core.request", side_effect=request), patch(
+            "aios.agent.toolhost.call",
+            side_effect=results,
+        ):
+            events = list(agent.openai_chat(session))
+
+        self.assertEqual(len(bodies), 3)
+        tool_messages = [message for message in bodies[2]["messages"] if message["role"] == "tool"]
+        self.assertEqual([message["tool_call_id"] for message in tool_messages], ["r1_1", "r1_2", "r1_3", "r2_1", "r2_2"])
+        self.assertEqual(tool_messages[0]["content"], agent.TOOL_RESULT_OMITTED)
+        self.assertEqual(
+            [message["content"] for message in tool_messages[1:]],
+            [
+                json.dumps(results[1], ensure_ascii=False, separators=(",", ":")),
+                json.dumps(results[2], ensure_ascii=False, separators=(",", ":")),
+                json.dumps(results[3], ensure_ascii=False, separators=(",", ":")),
+                json.dumps(results[4], ensure_ascii=False, separators=(",", ":")),
+            ],
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Finished."})
 
     def test_legacy_exact_browser_sock_works_but_failed_tools_sock_does_not_fallback(self):
         with patch("aios.agent.toolhost.list_tools") as list_tools, patch(

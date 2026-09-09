@@ -40,6 +40,8 @@ MAX_WARNING_LENGTH = 300
 MAX_CALLS_PER_ROUND = 4
 MAX_CALL_BYTES = 24 * 1024
 MAX_RESULT_BYTES = 64 * 1024
+MAX_PROGRESS_LENGTH = 100
+PROGRESS_SEPARATOR = ": "
 TOOL_RESULT_OMITTED = '{"previous_tool_result_omitted":true}'
 
 
@@ -66,6 +68,41 @@ def _tool_result_json(value: Any) -> str:
     if len(encoded) > MAX_RESULT_BYTES:
         raise RuntimeError("Tool returned too much data.") from None
     return encoded.decode("utf-8")
+
+
+def _sanitize_progress_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned: list[str] = []
+    for char in value:
+        code = ord(char)
+        if code < 32 or code == 127 or char in "<>&":
+            cleaned.append(" ")
+        elif char.isascii() and (char.isalnum() or char in " _-./:"):
+            cleaned.append(char)
+        elif char.isspace():
+            cleaned.append(" ")
+        else:
+            cleaned.append(" ")
+    return " ".join("".join(cleaned).split())
+
+
+def _progress_label(name: str) -> str:
+    if name == "browser":
+        label = "Browser"
+    elif name == "application":
+        label = "Application"
+    elif name == "activate_skill":
+        label = "Activate skill"
+    elif name.startswith("mcp_"):
+        suffix = " ".join(part for part in name[4:].split("_") if part)
+        label = "MCP " + suffix.title() if suffix else "MCP"
+    else:
+        label = name.replace("_", " ").title()
+    cleaned = _sanitize_progress_text(label)
+    if cleaned:
+        return cleaned
+    return "MCP" if name.startswith("mcp_") else "Tool"
 
 
 def _socket_basename(path: os.PathLike[str] | str) -> str:
@@ -235,18 +272,15 @@ class AgentSession:
         return result
 
     def progress(self, name, arguments) -> str:
-        if name == "browser":
-            label = "Browser"
-        elif name == "application":
-            label = "Application"
-        elif name == "activate_skill":
-            label = "Activate skill"
-        elif name.startswith("mcp_"):
-            label = "MCP " + " ".join(part.capitalize() for part in name[4:].split("_"))
-        else:
-            label = name.replace("_", " ").title()
-        action = arguments.get("action") if isinstance(arguments, dict) else None
-        return label + (" · " + action if isinstance(action, str) else "")
+        label = _progress_label(name)
+        action = _sanitize_progress_text(arguments.get("action")) if isinstance(arguments, dict) else ""
+        if action:
+            remaining = MAX_PROGRESS_LENGTH - len(label) - len(PROGRESS_SEPARATOR)
+            if remaining > 0:
+                action = action[:remaining].rstrip()
+                if action:
+                    return f"{label}{PROGRESS_SEPARATOR}{action}"
+        return label[:MAX_PROGRESS_LENGTH]
 
 
 def openai_chat(session: AgentSession):
@@ -329,6 +363,7 @@ def openai_chat(session: AgentSession):
             ordered = [calls[index] for index in sorted(calls)]
             if any(not call["id"] or call["function"]["name"] not in session.advertised_names for call in ordered):
                 raise RuntimeError("The model requested an unsupported tool.")
+            round_start = len(history)
             history.append({"role": "assistant", "content": content or None, "tool_calls": ordered})
             for entry in ordered:
                 try:
@@ -349,7 +384,7 @@ def openai_chat(session: AgentSession):
                         "content": _tool_result_json(result),
                     }
                 )
-            for message in [item for item in history if item["role"] == "tool"][:-2]:
+            for message in [item for item in history[:round_start] if item["role"] == "tool"][:-2]:
                 message["content"] = TOOL_RESULT_OMITTED
             if content:
                 yield {"type": "token", "text": "\n\n"}
