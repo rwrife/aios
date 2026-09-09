@@ -18,11 +18,13 @@ from aios.toolhost import (
     MAX_TOOLS,
     REQUEST_LIMIT,
     RESPONSE_LIMIT,
+    SAFE_INVALID_REQUEST,
     SAFE_MCP_BUDGET_WARNING,
     SAFE_MCP_FILTER_WARNING,
     SAFE_MCP_LIMIT_WARNING,
     SAFE_OPERATION_FAILED,
     SAFE_SERVICE_UNAVAILABLE,
+    SAFE_SOCKET_EXISTS,
     ToolHost,
     call,
     close_service,
@@ -168,6 +170,21 @@ def _large_tool(name, minimum_size=32 * 1024 - 256):
     return best
 
 
+def _frame_payload_with_exact_size(template, limit):
+    payload = json.loads(json.dumps(template))
+    container = payload
+    if "result" in payload:
+        container = payload["result"]
+    elif "arguments" in payload:
+        container = payload["arguments"]
+    base = _json_size(payload) + 1
+    container["blob"] = "x" * (limit - base)
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
+    if len(encoded) != limit:
+        raise AssertionError((len(encoded), limit))
+    return payload, encoded
+
+
 def _wait_until(predicate, timeout=2.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -308,6 +325,23 @@ class ToolHostTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             host.call(omitted, {"value": 2})
 
+    def test_definitions_pack_warnings_only_once_for_large_catalog(self):
+        definitions = [_tool(f"mcp_tool_{index:03d}") for index in range(256)]
+        warnings = [f"warning-{index}" for index in range(17)]
+        host = ToolHost(browser=FakeBrowser(), applications=FakeApplications(), mcp=FakeMcp(definitions=definitions, warnings=warnings))
+
+        with mock.patch("aios.toolhost._pack_definition_warnings", wraps=toolhost._pack_definition_warnings) as pack:
+            started = time.monotonic()
+            result = host.definitions()
+            elapsed = time.monotonic() - started
+
+        encoded = json.dumps({"result": result}, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
+        self.assertLessEqual(pack.call_count, 2)
+        self.assertLess(elapsed, 5.0)
+        self.assertLessEqual(len(encoded), RESPONSE_LIMIT)
+        self.assertEqual(len(result["tools"]), MAX_TOOLS)
+        self.assertEqual(result["warnings"], warnings + [SAFE_MCP_LIMIT_WARNING])
+
     def test_close_is_idempotent_and_attempts_browser_and_mcp_once(self):
         browser = FakeBrowser(close_error=RuntimeError("secret-browser"))
         mcp = FakeMcp(close_error=RuntimeError("secret-mcp"))
@@ -353,6 +387,141 @@ class ToolHostTests(unittest.TestCase):
             self.assertEqual(host.calls, [("browser", {"action": "snapshot"})])
             self.assertEqual(host.closed, 1)
             self.assertFalse(path.exists())
+
+    def test_request_times_out_against_drip_fed_response_with_absolute_deadline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "drip-response.sock"
+            payload = b'{"result":{"ok":true}}\n'
+            accepted = threading.Event()
+
+            def run_server():
+                with socket.socket(socket.AF_UNIX) as server:
+                    server.bind(os.fspath(path))
+                    server.listen(1)
+                    connection, _ = server.accept()
+                    accepted.set()
+                    with connection:
+                        connection.recv(4096)
+                        for byte in payload:
+                            try:
+                                connection.sendall(bytes([byte]))
+                            except (BrokenPipeError, ConnectionResetError, OSError):
+                                return
+                            time.sleep(0.12)
+
+            thread = threading.Thread(target=run_server, daemon=True)
+            thread.start()
+            self.assertTrue(_wait_until(path.exists), "socket was not created")
+
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
+                request(path, {"action": "list"}, timeout=0.35)
+            elapsed = time.monotonic() - started
+
+            thread.join(2)
+            self.assertTrue(accepted.is_set())
+            self.assertLess(elapsed, 0.8)
+
+    def test_drip_fed_request_does_not_block_second_client_past_one_deadline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "drip-request.sock"
+            host = FakeSocketHost()
+            sent_first = threading.Event()
+            stop_drip = threading.Event()
+
+            thread = threading.Thread(target=serve, args=(path, host), kwargs={"connection_timeout": 0.35}, daemon=True)
+            thread.start()
+            self.assertTrue(_wait_until(path.exists), "socket was not created")
+
+            client = socket.socket(socket.AF_UNIX)
+            self.addCleanup(client.close)
+            client.settimeout(1)
+            client.connect(os.fspath(path))
+
+            def drip_request():
+                for index, byte in enumerate(b'{"action":"list"'):
+                    if stop_drip.is_set():
+                        return
+                    try:
+                        client.sendall(bytes([byte]))
+                    except OSError:
+                        return
+                    if index == 0:
+                        sent_first.set()
+                    time.sleep(0.12)
+
+            drip = threading.Thread(target=drip_request, daemon=True)
+            drip.start()
+            self.assertTrue(sent_first.wait(1.0), "drip client did not start")
+            time.sleep(0.05)
+
+            started = time.monotonic()
+            listed = list_tools(path, timeout=1.0)
+            elapsed = time.monotonic() - started
+
+            stop_drip.set()
+            drip.join(2)
+            response = client.recv(4096)
+
+            self.assertEqual(listed, {"tools": [BROWSER_TOOL, APPLICATION_TOOL], "warnings": ["MCP warning."]})
+            self.assertLess(elapsed, 0.8)
+            self.assertEqual(json.loads(response.decode("utf-8")), {"error": SAFE_INVALID_REQUEST})
+
+            self.assertEqual(close_service(path), {"closed": True})
+            thread.join(2)
+            self.assertFalse(thread.is_alive())
+
+    def test_response_and_request_boundary_frames_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            response_path = Path(temp) / "response-boundary.sock"
+            expected_result, response_payload = _frame_payload_with_exact_size({"result": {"blob": ""}}, RESPONSE_LIMIT)
+
+            def run_response_server():
+                with socket.socket(socket.AF_UNIX) as server:
+                    server.bind(os.fspath(response_path))
+                    server.listen(1)
+                    connection, _ = server.accept()
+                    with connection:
+                        connection.recv(4096)
+                        connection.sendall(response_payload)
+
+            response_thread = threading.Thread(target=run_response_server, daemon=True)
+            response_thread.start()
+            self.assertTrue(_wait_until(response_path.exists), "response boundary socket was not created")
+
+            self.assertEqual(request(response_path, {"action": "list"}, timeout=1.0), expected_result["result"])
+            response_thread.join(2)
+
+            request_path = Path(temp) / "request-boundary.sock"
+            host = FakeSocketHost()
+            request_thread = threading.Thread(target=serve, args=(request_path, host), kwargs={"connection_timeout": 0.5}, daemon=True)
+            request_thread.start()
+            self.assertTrue(_wait_until(request_path.exists), "request boundary socket was not created")
+
+            request_value, request_payload = _frame_payload_with_exact_size(
+                {"action": "call", "name": "browser", "arguments": {"blob": ""}},
+                REQUEST_LIMIT,
+            )
+
+            with socket.socket(socket.AF_UNIX) as client:
+                client.settimeout(1)
+                client.connect(os.fspath(request_path))
+                client.sendall(request_payload)
+                raw = toolhost._read_socket_line(
+                    client,
+                    RESPONSE_LIMIT,
+                    time.monotonic() + 1.0,
+                    incomplete_error="test incomplete",
+                )
+
+            self.assertEqual(
+                json.loads(raw.decode("utf-8")),
+                {"result": {"tool": "browser", "arguments": request_value["arguments"]}},
+            )
+            self.assertEqual(host.calls, [("browser", request_value["arguments"])])
+            self.assertEqual(close_service(request_path), {"closed": True})
+            request_thread.join(2)
+            self.assertFalse(request_thread.is_alive())
 
     def test_real_toolhost_round_trip_enforces_advertised_mcp_dispatch(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -478,12 +647,16 @@ class ToolHostTests(unittest.TestCase):
                         connection.recv(4096)
                         connection.sendall(payload)
 
-            for payload in (b'{"result":1}', b"[]\n", b'{"error":5}\n'):
+            for payload, error_text in (
+                (b'{"result":1}', toolhost.SAFE_INCOMPLETE_RESPONSE),
+                (b"[]\n", toolhost.SAFE_INVALID_RESPONSE),
+                (b'{"error":5}\n', toolhost.SAFE_INVALID_RESPONSE),
+            ):
                 with self.subTest(payload=payload):
                     thread = threading.Thread(target=run_server, args=(payload,), daemon=True)
                     thread.start()
                     self.assertTrue(_wait_until(path.exists), "socket was not created")
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaisesRegex(RuntimeError, error_text):
                         request(path, {"action": "list"}, timeout=1)
                     thread.join(2)
                     if path.exists():
@@ -493,16 +666,11 @@ class ToolHostTests(unittest.TestCase):
         first = mock.Mock()
         first.connect.side_effect = BlockingIOError(errno.EAGAIN, "again")
         second = mock.Mock()
-        second_stream = mock.Mock()
-        second_stream.readline.return_value = b'{"result":{"ok":true}}\n'
-        second_file = mock.MagicMock()
-        second_file.__enter__.return_value = second_stream
-        second_file.__exit__.return_value = False
-        second.makefile.return_value = second_file
+        second.recv.return_value = b'{"result":{"ok":true}}\n'
         sockets = [first, second]
 
         with mock.patch("aios.toolhost.socket.socket", side_effect=sockets) as factory, \
-            mock.patch("aios.toolhost.time.monotonic", side_effect=[10.0, 10.01, 10.02, 10.03, 10.04, 10.05, 10.06]), \
+            mock.patch("aios.toolhost.time.monotonic", side_effect=[10.0] * 20), \
             mock.patch("aios.toolhost.time.sleep") as sleep:
             result = request("/missing.sock", {"action": "list"}, timeout=1)
 
@@ -522,7 +690,7 @@ class ToolHostTests(unittest.TestCase):
         second.connect.side_effect = socket.timeout()
 
         with mock.patch("aios.toolhost.socket.socket", side_effect=[first, second]), \
-            mock.patch("aios.toolhost.time.monotonic", side_effect=[100.0, 100.0, 100.2, 100.21, 100.45, 100.51]), \
+            mock.patch("aios.toolhost.time.monotonic", side_effect=[100.0, 100.0, 100.2, 100.21, 100.45, 100.51, 100.52, 100.53]), \
             mock.patch("aios.toolhost.time.sleep") as sleep:
             with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
                 request("/missing.sock", {"action": "list"}, timeout=0.5)
@@ -584,12 +752,13 @@ class ToolHostTests(unittest.TestCase):
             self.assertTrue(_wait_until(path.exists), "socket was not created")
 
             started = time.monotonic()
-            with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
+            with self.assertRaises(RuntimeError) as raised:
                 request(path, {"action": "list"}, timeout=0.5)
             elapsed = time.monotonic() - started
 
             thread.join(2)
             self.assertTrue(accepted.is_set())
+            self.assertIn(str(raised.exception), {SAFE_SERVICE_UNAVAILABLE, toolhost.SAFE_INCOMPLETE_RESPONSE})
             self.assertLess(elapsed, 1.0)
 
     def test_signal_handlers_are_restored_in_main_thread(self):
@@ -644,11 +813,30 @@ class ToolHostTests(unittest.TestCase):
             mock.patch("aios.toolhost.threading.main_thread", return_value=None), \
             mock.patch("aios.toolhost.os.umask", side_effect=[0o027, 0o177]) as umask, \
             mock.patch("aios.toolhost.os.lstat", side_effect=FileNotFoundError):
-            with self.assertRaises(OSError):
+            with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
                 serve("fake.sock", host)
 
         self.assertEqual(host.closed, 1)
         self.assertEqual(umask.call_args_list, [mock.call(0o177), mock.call(0o027)])
+
+    def test_bind_race_returns_safe_socket_exists(self):
+        host = FakeSocketHost()
+        fake_server = mock.Mock()
+        fake_server.__enter__ = mock.Mock(return_value=fake_server)
+        fake_server.__exit__ = mock.Mock(return_value=False)
+        fake_server.bind.side_effect = OSError("boom")
+        current = object()
+
+        with mock.patch("aios.toolhost._existing_socket", side_effect=[False, True]), \
+            mock.patch("aios.toolhost.socket.socket", return_value=fake_server), \
+            mock.patch("aios.toolhost.threading.current_thread", return_value=current), \
+            mock.patch("aios.toolhost.threading.main_thread", return_value=None), \
+            mock.patch("aios.toolhost.os.umask", side_effect=[0o027, 0o177]), \
+            mock.patch("aios.toolhost.os.lstat", side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(RuntimeError, SAFE_SOCKET_EXISTS):
+                serve("fake.sock", host)
+
+        self.assertEqual(host.closed, 1)
 
     def test_stale_socket_is_reclaimed_and_restarted(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -24,6 +24,7 @@ MAX_TOOLS = 256
 RETRY_DELAY_SECONDS = 0.05
 SOCKET_TIMEOUT = 60
 SOCKET_BACKLOG = 8
+SOCKET_READ_CHUNK = 4096
 
 SAFE_INVALID_REQUEST = "Invalid tool request."
 SAFE_INVALID_RESPONSE = "Tool service returned an invalid response."
@@ -125,13 +126,25 @@ def _validate_result_envelope(result: Any) -> None:
         raise RuntimeError(SAFE_RESULT_TOO_LARGE)
 
 
-def _readline(stream: Any, limit: int) -> bytes:
-    raw = stream.readline(limit + 1)
-    if not raw.endswith(b"\n"):
-        raise RuntimeError(SAFE_INCOMPLETE_RESPONSE)
-    if len(raw) > limit:
-        raise RuntimeError(SAFE_INCOMPLETE_RESPONSE)
-    return raw
+def _read_socket_line(connection: socket.socket, limit: int, deadline: float, *, incomplete_error: str) -> bytes:
+    frame = bytearray()
+    while True:
+        remaining = _remaining_time(deadline)
+        if remaining <= 0:
+            raise socket.timeout()
+        connection.settimeout(remaining)
+        chunk = connection.recv(min(SOCKET_READ_CHUNK, limit + 1 - len(frame)))
+        if not chunk:
+            raise RuntimeError(incomplete_error)
+        newline = chunk.find(b"\n")
+        if newline != -1:
+            frame.extend(chunk[:newline + 1])
+            if len(frame) > limit:
+                raise RuntimeError(incomplete_error)
+            return bytes(frame)
+        frame.extend(chunk)
+        if len(frame) > limit:
+            raise RuntimeError(incomplete_error)
 
 
 def _existing_socket(path: str) -> bool:
@@ -347,7 +360,7 @@ class ToolHost:
                 trimmed = True
                 continue
             candidate_tools = tools + [definition]
-            if _pack_definition_warnings(candidate_tools, source_warnings, _MCP_WARNING_RESERVE) is None:
+            if not _definitions_fit(candidate_tools, list(_MCP_WARNING_RESERVE)):
                 budgeted = True
                 continue
             tools = candidate_tools
@@ -369,6 +382,11 @@ class ToolHost:
         return _definitions_result(tools, warnings)
 
     def call(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Call a built-in or MCP tool.
+
+        MCP calls require a preceding definitions() refresh and are limited to
+        the last advertised MCP tool set.
+        """
         if not isinstance(name, str):
             raise ValueError(SAFE_TOOL_NAME)
         if not isinstance(arguments, dict):
@@ -430,9 +448,7 @@ def request(path: os.PathLike[str] | str, value: dict[str, Any], timeout: float 
         remaining = _remaining_time(deadline)
         if remaining <= 0:
             raise _service_unavailable_error() from None
-        client.settimeout(remaining)
-        with client.makefile("rb") as stream:
-            raw = _readline(stream, RESPONSE_LIMIT)
+        raw = _read_socket_line(client, RESPONSE_LIMIT, deadline, incomplete_error=SAFE_INCOMPLETE_RESPONSE)
     except RuntimeError:
         raise
     except (TimeoutError, socket.timeout, BrokenPipeError, ConnectionResetError, OSError):
@@ -493,7 +509,11 @@ def _parse_request(raw: bytes) -> tuple[str, str | None, dict[str, Any] | None]:
     raise ValueError(SAFE_INVALID_REQUEST)
 
 
-def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
+def serve(
+    path: os.PathLike[str] | str,
+    host: ToolHost | None = None,
+    connection_timeout: float = SOCKET_TIMEOUT,
+) -> None:
     host = host if host is not None else ToolHost()
     path_text = os.fspath(path)
     created_socket = False
@@ -504,7 +524,12 @@ def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
         with socket.socket(socket.AF_UNIX) as server:
             old_umask = os.umask(0o177)
             try:
-                server.bind(path_text)
+                try:
+                    server.bind(path_text)
+                except OSError:
+                    if _existing_socket(path_text):
+                        raise RuntimeError(SAFE_SOCKET_EXISTS) from None
+                    raise _service_unavailable_error() from None
             finally:
                 os.umask(old_umask)
             created_socket = True
@@ -512,13 +537,21 @@ def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
             os.chmod(path_text, 0o600)
             server.listen(SOCKET_BACKLOG)
             stop_requested = False
+            connection_timeout = max(0.0, float(connection_timeout))
             while not stop_requested:
                 connection, _ = server.accept()
                 with connection:
-                    connection.settimeout(SOCKET_TIMEOUT)
                     try:
-                        with connection.makefile("rb") as stream:
-                            raw = stream.readline(REQUEST_LIMIT + 1)
+                        deadline = time.monotonic() + connection_timeout
+                        try:
+                            raw = _read_socket_line(
+                                connection,
+                                REQUEST_LIMIT,
+                                deadline,
+                                incomplete_error=SAFE_INVALID_REQUEST,
+                            )
+                        except (TimeoutError, socket.timeout, OSError, RuntimeError):
+                            raise ValueError(SAFE_INVALID_REQUEST) from None
                         action, name, arguments = _parse_request(raw)
                         if action == "list":
                             payload = {"result": host.definitions()}
