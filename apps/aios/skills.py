@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+from . import core
 
 __all__ = [
     "Skill",
@@ -28,7 +29,7 @@ LEADING_SKILL_RE = re.compile(r"^\s*/([a-z0-9]+(?:-[a-z0-9]+)*)\b")
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 BUILTIN_SKILLS_ROOT = Path("/usr/local/share/aios/skills")
-USER_SKILLS_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "aios" / "skills"
+USER_SKILLS_ROOT = core.config_dir() / "skills"
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,13 +177,42 @@ def _parse_skill_text(text: str) -> tuple[dict[str, str], str]:
         raise ValueError("missing frontmatter end") from exc
 
     fields: dict[str, str] = {}
+    in_metadata = False
     for raw_line in lines[1:end]:
         if not raw_line.strip():
             continue
+        if raw_line.startswith("\t"):
+            raise ValueError("invalid frontmatter indentation")
+        if raw_line.startswith(" "):
+            if not in_metadata:
+                raise ValueError("invalid frontmatter indentation")
+            if not raw_line.startswith("  ") or raw_line.startswith("   "):
+                raise ValueError("invalid metadata indentation")
+            nested = raw_line[2:]
+            if not nested or nested[0].isspace() or ":" not in nested:
+                raise ValueError("invalid metadata line")
+            key, raw_value = nested.split(":", 1)
+            key = key.strip()
+            if not key:
+                raise ValueError("invalid metadata line")
+            value = _parse_scalar(raw_value)
+            field_name = f"metadata.{key}"
+            if field_name in fields:
+                raise ValueError("duplicate frontmatter key")
+            fields[field_name] = value
+            continue
+        in_metadata = False
         if ":" not in raw_line:
             raise ValueError("invalid frontmatter line")
         key, raw_value = raw_line.split(":", 1)
         key = key.strip()
+        if not key:
+            raise ValueError("invalid frontmatter line")
+        if key == "metadata":
+            if raw_value.strip():
+                raise ValueError("invalid metadata frontmatter")
+            in_metadata = True
+            continue
         value = _parse_scalar(raw_value)
         if key in fields:
             raise ValueError("duplicate frontmatter key")
@@ -196,6 +226,9 @@ def _parse_scalar(raw_value: str) -> str:
     value = raw_value.strip()
     if not value:
         return ""
+    if value[0] in {'"', "'"}:
+        if len(value) < 2 or value[-1] != value[0]:
+            raise ValueError("unterminated quoted frontmatter value")
     if value.startswith('"') and value.endswith('"'):
         parsed = json.loads(value)
         if not isinstance(parsed, str):

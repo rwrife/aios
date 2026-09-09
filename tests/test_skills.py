@@ -17,17 +17,17 @@ class SkillsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.builtin_root = Path(self.tmp.name) / "builtin"
-        self.user_root = Path(self.tmp.name) / "user"
+        self.user_root = Path(self.tmp.name) / "config" / "skills"
         self.builtin_root.mkdir()
         self.user_root.mkdir(parents=True)
-        self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.user_root.parent)})
+        self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.user_root.parent.parent)})
         self.env.start()
 
     def tearDown(self):
         self.env.stop()
         self.tmp.cleanup()
 
-    def write_skill(self, root, name, *, description="A test skill.", body="Do something useful.", allowed_tools=None, triggers=None, model=None, frontmatter_name=None):
+    def write_skill(self, root, name, *, description="A test skill.", body="Do something useful.", allowed_tools=None, triggers=None, model=None, metadata=None, compatibility=None, frontmatter_name=None):
         skill_dir = Path(root) / name
         skill_dir.mkdir(parents=True)
         lines = ["---"]
@@ -35,17 +35,30 @@ class SkillsTests(unittest.TestCase):
         lines.append(f"description: {description}")
         if allowed_tools is not None:
             lines.append(f"allowed-tools: {allowed_tools}")
+        metadata_lines = dict(metadata or {})
         if triggers is not None:
-            lines.append(f"metadata.aios-triggers: {triggers}")
+            metadata_lines["aios-triggers"] = triggers
         if model is not None:
-            lines.append(f"metadata.aios-model: {model}")
+            metadata_lines["aios-model"] = model
+        if metadata_lines:
+            lines.append("metadata:")
+            for key, value in metadata_lines.items():
+                lines.append(f"  {key}: {value}")
+        if compatibility is not None:
+            lines.append(f"compatibility: {compatibility}")
         lines.extend(["---", body])
         (skill_dir / "SKILL.md").write_text("\n".join(lines), encoding="utf-8")
         return skill_dir
 
-    def load_catalog(self, **kwargs):
+    def write_skill_text(self, root, name, text):
+        skill_dir = Path(root) / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(text, encoding="utf-8")
+        return skill_dir
+
+    def load_catalog(self, *, builtin_root=None, **kwargs):
         skills = load_skills_module()
-        with patch.object(skills, "BUILTIN_SKILLS_ROOT", self.builtin_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
+        with patch.object(skills, "BUILTIN_SKILLS_ROOT", builtin_root or self.builtin_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
             return skills.load_skills(**kwargs)
 
     def test_module_can_be_imported(self):
@@ -65,6 +78,13 @@ class SkillsTests(unittest.TestCase):
         catalog = self.load_catalog()
         activated = load_skills_module().initial_skills(catalog, "I need a calculator")
         self.assertEqual([skill.name for skill in activated], ["application-builder"])
+
+    def test_nested_metadata_parses_triggers_and_model(self):
+        self.write_skill(self.builtin_root, "application-builder", description="calculator builder", body="builds apps", metadata={"aios-triggers": "build an app, need a calculator", "aios-model": "remote-preferred"})
+        catalog = self.load_catalog()
+        skill = catalog[0]
+        self.assertEqual(skill.triggers, ("build an app", "need a calculator"))
+        self.assertEqual(skill.model, "remote-preferred")
 
     def test_explicit_slash_activation_for_notes(self):
         self.write_skill(self.builtin_root, "notes", description="notes skill", body="take notes")
@@ -103,6 +123,73 @@ class SkillsTests(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("model-skill", warnings[0])
 
+    def test_unterminated_double_quote_is_rejected_with_warning(self):
+        self.write_skill_text(
+            self.builtin_root,
+            "quote-skill",
+            '\n'.join([
+                "---",
+                'name: quote-skill',
+                'description: "unterminated',
+                "---",
+                "body",
+            ]),
+        )
+        catalog, warnings = self.load_catalog(include_warnings=True)
+        self.assertEqual(catalog, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("quote-skill", warnings[0])
+
+    def test_unterminated_single_quote_is_rejected_with_warning(self):
+        self.write_skill_text(
+            self.builtin_root,
+            "single-quote-skill",
+            '\n'.join([
+                "---",
+                "name: single-quote-skill",
+                "description: 'unterminated",
+                "---",
+                "body",
+            ]),
+        )
+        catalog, warnings = self.load_catalog(include_warnings=True)
+        self.assertEqual(catalog, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("single-quote-skill", warnings[0])
+
+    def test_malformed_metadata_indentation_is_rejected_with_warning(self):
+        self.write_skill_text(
+            self.builtin_root,
+            "bad-metadata",
+            '\n'.join([
+                "---",
+                "name: bad-metadata",
+                "description: bad metadata",
+                "metadata:",
+                "  aios-triggers: build an app",
+                "    aios-model: remote-preferred",
+                "---",
+                "body",
+            ]),
+        )
+        catalog, warnings = self.load_catalog(include_warnings=True)
+        self.assertEqual(catalog, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("bad-metadata", warnings[0])
+
+    def test_large_skill_is_skipped_with_safe_warning(self):
+        self.write_skill(
+            self.builtin_root,
+            "huge-skill",
+            description="huge",
+            body="x" * (49 * 1024),
+        )
+        catalog, warnings = self.load_catalog(include_warnings=True)
+        self.assertEqual(catalog, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("huge-skill", warnings[0])
+        self.assertNotIn(str(self.tmp.name), warnings[0])
+
     def test_catalog_limit_is_64(self):
         for index in range(65):
             self.write_skill(self.builtin_root, f"skill{index}", description=f"skill {index}", body=f"body {index}")
@@ -114,6 +201,20 @@ class SkillsTests(unittest.TestCase):
         catalog = self.load_catalog()
         activated = load_skills_module().initial_skills(catalog, "application")
         self.assertEqual(activated, [])
+
+    def test_real_application_builder_skill_loads_cleanly(self):
+        skills_root = Path(__file__).resolve().parents[1] / "apps" / "skills"
+        skills = load_skills_module()
+        with patch.object(skills, "BUILTIN_SKILLS_ROOT", skills_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
+            catalog, warnings = skills.load_skills(include_warnings=True)
+        self.assertEqual(warnings, [])
+        skill = next(skill for skill in catalog if skill.name == "application-builder")
+        self.assertEqual(skill.allowed_tools, ("application",))
+        self.assertEqual(skill.model, "remote-preferred")
+        self.assertIn("build an app", skill.triggers)
+        self.assertIn("need a calculator", skill.triggers)
+        self.assertNotIn("Compatibility:", skill.instructions)
+        self.assertIn("Search first for an existing cached app", skill.instructions)
 
 
 if __name__ == "__main__":

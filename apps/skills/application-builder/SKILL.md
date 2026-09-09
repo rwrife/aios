@@ -2,11 +2,11 @@
 name: application-builder
 description: Builds, caches, and launches small offline applications for calculators, timers, converters, trackers, dashboards, games, forms, and similar local utilities.
 allowed-tools: application
-metadata.aios-triggers: build an app, build a calculator, make an app, make a calculator, need an app, need a calculator, calculator, timer, converter, tracker, dashboard, game
-metadata.aios-model: remote-preferred
+metadata:
+  aios-triggers: build an app, build a calculator, make an app, make a calculator, need an app, need a calculator, calculator, timer, converter, tracker, dashboard, game
+  aios-model: remote-preferred
+compatibility: AIOS offline browser applications
 ---
-
-Compatibility: AIOS offline browser applications.
 
 Instructions:
 - Search first for an existing cached app that already solves the request; reuse it when possible instead of rebuilding from scratch.
