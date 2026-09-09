@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,6 +60,12 @@ class SkillsTests(unittest.TestCase):
     def load_catalog(self, *, builtin_root=None, **kwargs):
         skills = load_skills_module()
         with patch.object(skills, "BUILTIN_SKILLS_ROOT", builtin_root or self.builtin_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
+            return skills.load_skills(**kwargs)
+
+    def load_real_builtin_catalog(self, **kwargs):
+        skills_root = Path(__file__).resolve().parents[1] / "apps" / "skills"
+        skills = load_skills_module()
+        with patch.object(skills, "BUILTIN_SKILLS_ROOT", skills_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
             return skills.load_skills(**kwargs)
 
     def test_module_can_be_imported(self):
@@ -202,11 +209,44 @@ class SkillsTests(unittest.TestCase):
         activated = load_skills_module().initial_skills(catalog, "application")
         self.assertEqual(activated, [])
 
+    def test_real_application_builder_negated_phrases_do_not_activate(self):
+        catalog = self.load_real_builtin_catalog()
+        prompts = (
+            "I don't need a calculator",
+            "I do not need a calculator",
+            "never build an app for me",
+            "no need a calculator",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                activated = load_skills_module().initial_skills(catalog, prompt)
+                self.assertEqual(activated, [])
+
+    def test_real_application_builder_without_making_an_app_stays_negated_when_matching(self):
+        catalog = self.load_real_builtin_catalog()
+        application_builder = next(skill for skill in catalog if skill.name == "application-builder")
+        augmented = replace(application_builder, triggers=application_builder.triggers + ("making an app",))
+        activated = load_skills_module().initial_skills([augmented], "without making an app")
+        self.assertEqual(activated, [])
+
+    def test_real_application_builder_positive_intent_still_activates(self):
+        catalog = self.load_real_builtin_catalog()
+        prompts = (
+            "I need a calculator",
+            "please build an app",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                activated = load_skills_module().initial_skills(catalog, prompt)
+                self.assertEqual([skill.name for skill in activated], ["application-builder"])
+
+    def test_real_application_builder_explicit_slash_activation_overrides_negation(self):
+        catalog = self.load_real_builtin_catalog()
+        activated = load_skills_module().initial_skills(catalog, "/application-builder never build an app for me")
+        self.assertEqual([skill.name for skill in activated], ["application-builder"])
+
     def test_real_application_builder_skill_loads_cleanly(self):
-        skills_root = Path(__file__).resolve().parents[1] / "apps" / "skills"
-        skills = load_skills_module()
-        with patch.object(skills, "BUILTIN_SKILLS_ROOT", skills_root), patch.object(skills, "USER_SKILLS_ROOT", self.user_root):
-            catalog, warnings = skills.load_skills(include_warnings=True)
+        catalog, warnings = self.load_real_builtin_catalog(include_warnings=True)
         self.assertEqual(warnings, [])
         skill = next(skill for skill in catalog if skill.name == "application-builder")
         self.assertEqual(skill.allowed_tools, ("application",))

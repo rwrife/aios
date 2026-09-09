@@ -725,6 +725,7 @@ class McpRegistry:
         self._failures = {}
         self._tool_map = {}
         self._lock = threading.RLock()
+        self._closed = False
 
     def _drop_client(self, name):
         client = self._clients.pop(name, None)
@@ -756,6 +757,8 @@ class McpRegistry:
 
     def definitions(self):
         with self._lock:
+            if self._closed:
+                return [], []
             return self._definitions()
 
     def _definitions(self):
@@ -840,6 +843,8 @@ class McpRegistry:
 
     def call(self, exposed_name, arguments):
         with self._lock:
+            if self._closed:
+                raise RuntimeError("MCP registry is closed.")
             return self._call(exposed_name, arguments)
 
     def _call(self, exposed_name, arguments):
@@ -888,5 +893,25 @@ class McpRegistry:
 
     def close(self):
         with self._lock:
-            for name in list(self._clients):
-                self._drop_client(name)
+            if self._closed:
+                return
+            self._closed = True
+            clients = list(self._clients.values())
+            self._clients = {}
+            self._tool_map = {}
+            self._failures = {}
+
+        threads = []
+
+        def close_client(client):
+            try:
+                client.close()
+            except Exception:
+                pass
+
+        for client in clients:
+            thread = threading.Thread(target=close_client, args=(client,), name="mcp-registry-close")
+            thread.start()
+            threads.append(thread)
+        for thread in threads:
+            thread.join()

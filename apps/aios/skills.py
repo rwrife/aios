@@ -27,6 +27,22 @@ ALLOWED_MODELS = {"current", "remote-preferred"}
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 LEADING_SKILL_RE = re.compile(r"^\s*/([a-z0-9]+(?:-[a-z0-9]+)*)\b")
 TOKEN_RE = re.compile(r"[a-z0-9]+")
+NEGATION_WINDOW = 4
+NEGATION_TOKENS = {"no", "not", "never", "without"}
+NEGATION_BIGRAMS = {
+    ("aren", "t"),
+    ("can", "t"),
+    ("couldn", "t"),
+    ("didn", "t"),
+    ("doesn", "t"),
+    ("don", "t"),
+    ("isn", "t"),
+    ("shouldn", "t"),
+    ("wasn", "t"),
+    ("weren", "t"),
+    ("won", "t"),
+    ("wouldn", "t"),
+}
 
 BUILTIN_SKILLS_ROOT = Path("/usr/local/share/aios/skills")
 USER_SKILLS_ROOT = core.config_dir() / "skills"
@@ -271,18 +287,27 @@ def _tokens(text: str) -> tuple[str, ...]:
     return tuple(TOKEN_RE.findall(text.lower()))
 
 
-def _contains_phrase(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+def _phrase_positions(haystack: tuple[str, ...], needle: tuple[str, ...]) -> Iterable[int]:
     if not needle or len(needle) > len(haystack):
-        return False
+        return ()
     window = len(needle)
-    for index in range(len(haystack) - window + 1):
-        if haystack[index : index + window] == needle:
-            return True
-    return False
+    return (
+        index
+        for index in range(len(haystack) - window + 1)
+        if haystack[index : index + window] == needle
+    )
+
+
+def _is_negated_phrase(prompt_tokens: tuple[str, ...], start_index: int) -> bool:
+    preceding = prompt_tokens[max(0, start_index - NEGATION_WINDOW):start_index]
+    if any(token in NEGATION_TOKENS for token in preceding):
+        return True
+    return any(pair in NEGATION_BIGRAMS for pair in zip(preceding, preceding[1:]))
 
 
 def _skill_matches_prompt(skill: Skill, prompt_tokens: tuple[str, ...]) -> bool:
     for trigger in skill.triggers:
-        if _contains_phrase(prompt_tokens, _tokens(trigger)):
+        trigger_tokens = _tokens(trigger)
+        if any(not _is_negated_phrase(prompt_tokens, start) for start in _phrase_positions(prompt_tokens, trigger_tokens)):
             return True
     return False

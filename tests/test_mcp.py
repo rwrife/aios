@@ -1246,6 +1246,67 @@ class McpTests(unittest.TestCase):
         self.assertIsNotNone(process.poll())
         self.assertFalse(thread.is_alive())
 
+    def test_registry_close_closes_clients_concurrently_and_once(self):
+        registry = self.make_registry()
+
+        class BlockingClient:
+            def __init__(self, delay, *, should_raise=False):
+                self.delay = delay
+                self.should_raise = should_raise
+                self.close_calls = 0
+                self.lock = threading.Lock()
+
+            def close(self):
+                with self.lock:
+                    self.close_calls += 1
+                time.sleep(self.delay)
+                if self.should_raise:
+                    raise RuntimeError("boom")
+
+        clients = {
+            f"server-{index}": BlockingClient(0.1, should_raise=index == 0)
+            for index in range(6)
+        }
+        registry._clients = dict(clients)
+        registry._tool_map = {
+            f"mcp_server_{index}_echo": (f"server-{index}", "echo")
+            for index in range(6)
+        }
+
+        started = time.monotonic()
+        registry.close()
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.35)
+        self.assertEqual(registry._clients, {})
+        self.assertEqual(registry._tool_map, {})
+        self.assertTrue(registry._closed)
+        for client in clients.values():
+            self.assertEqual(client.close_calls, 1)
+
+        registry.close()
+        for client in clients.values():
+            self.assertEqual(client.close_calls, 1)
+
+    def test_registry_definitions_and_call_stay_closed_after_final_close(self):
+        self.write_config({
+            "fixture": self.server_settings(tools=["echo"], scenario="happy"),
+        })
+        registry = self.make_registry()
+        definitions, warnings = registry.definitions()
+        self.assertEqual(len(definitions), 1)
+        self.assertEqual(warnings, [])
+        log_size_before_close = len(self.read_log())
+
+        registry.close()
+
+        closed_definitions, closed_warnings = registry.definitions()
+        self.assertEqual(closed_definitions, [])
+        self.assertEqual(closed_warnings, [])
+        with self.assertRaises(RuntimeError):
+            registry.call("mcp_fixture_echo", {"value": "after-close"})
+        self.assertEqual(len(self.read_log()), log_size_before_close)
+
     def test_close_does_not_block_closing_stdout_while_reader_is_active(self):
         read_descriptor, write_descriptor = os.pipe()
         stdout = io.BufferedReader(os.fdopen(read_descriptor, "rb", buffering=0))
