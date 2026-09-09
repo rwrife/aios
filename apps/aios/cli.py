@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description="Configure and run local or remote AIOS models")
     commands = parser.add_subparsers(dest="command", required=True)
     configure = commands.add_parser("configure")
-    configure.add_argument("--mode", choices=("local", "remote"))
+    configure.add_argument("--mode", choices=("local", "remote", "chatgpt"))
+    configure.add_argument('--subscription-model')
     configure.add_argument("--url")
     configure.add_argument("--model")
     configure.add_argument("--model-path")
@@ -22,6 +23,9 @@ def main():
         configure.add_argument("--" + name)
     configure.add_argument("--ask-voice-key", action="store_true")
     commands.add_parser("status")
+    subscription = commands.add_parser('subscription')
+    subscription.add_argument('operation', choices=('login', 'logout', 'status'))
+    subscription.add_argument('--device', action='store_true')
     commands.add_parser("models")
     commands.add_parser("serve")
     commands.add_parser("setup-local")
@@ -40,13 +44,16 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "configure":
-            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path", "voice_mode", "voice_url", "stt_model", "tts_model", "voice_name", "speech_model_path") and v is not None}
+            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path", "subscription_model", "voice_mode", "voice_url", "stt_model", "tts_model", "voice_name", "speech_model_path") and v is not None}
             if args.ask_key:
                 values["api_key"] = getpass.getpass("API key: ")
             if args.ask_voice_key:
                 values["voice_key"] = getpass.getpass("Voice API key: ")
             save_config(values)
             print("Configuration saved.")
+        elif args.command == 'subscription':
+            from .subscription import account_action
+            account_action(args.operation, lambda kind, **data: print(json.dumps({'type': kind, **data}), flush=True), args.device)
         elif args.command == "setup-voice":
             from .voice import setup_local_voice
             print("Whisper tiny.en · MIT · English speech recognition")
@@ -76,8 +83,12 @@ def main():
                 raise ValueError("Import a GGUF model with aios-llm configure --mode local --model-path PATH first.")
             os.execvp("llama-server", ["llama-server", "--model", config["model_path"], "--alias", "local", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "4096"])
         elif args.command in ("status", "models"):
-            with request("/models", timeout=5) as response:
-                print(json.dumps(json.load(response), indent=2))
+            if load_config()['mode'] == 'chatgpt':
+                from .subscription import account_action
+                account_action('status', lambda kind, **data: print(json.dumps(data, indent=2)))
+            else:
+                with request("/models", timeout=5) as response:
+                    print(json.dumps(json.load(response), indent=2))
         elif args.command == "download":
             download_model(args.url, args.sha256, args.output, lambda n: print(f"\r{n // 1048576} MiB", end="", file=sys.stderr))
             print("\nModel verified and saved.")

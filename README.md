@@ -18,6 +18,8 @@ Build caches use the Docker volume `aios-build-cache`; images are written to
 
 The Settings button beside Terminal and Power opens AI models, Sound, Camera,
 Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.md).
+AI models also supports [ChatGPT subscription sign-in](docs/chatgpt-subscription.md),
+including device-code login from outside a VM, model selection, and usage status.
 
 The softly animated blob at the bottom center opens a new chat window and
 conversation with every click. SmolLM2 135M is bundled and starts automatically

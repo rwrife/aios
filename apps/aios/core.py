@@ -35,7 +35,7 @@ def write_json(path, value):
 
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "reduced_motion": False, "theme_color": "blue",
+                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": False, "theme_color": "blue",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
                 "speech_model_path": ""}
@@ -67,8 +67,10 @@ def save_config(values):
     for key in defaults_keys():
         if key in values:
             config[key] = values[key]
-    if config["mode"] not in ("local", "remote"):
-        raise ValueError("Choose local or remote.")
+    if config["mode"] not in ("local", "remote", "chatgpt"):
+        raise ValueError("Choose local, remote, or ChatGPT subscription.")
+    if not isinstance(config['subscription_model'], str) or len(config['subscription_model']) > 200:
+        raise ValueError('Choose a valid ChatGPT model.')
     if config["theme_color"] not in THEME_COLORS:
         raise ValueError("Choose one of the available theme colors.")
     config["url"] = validate_url(str(config["url"]))
@@ -91,7 +93,7 @@ def save_config(values):
 
 
 def defaults_keys():
-    return ("mode", "url", "model", "model_path", "api_key", "reduced_motion", "theme_color",
+    return ("mode", "url", "model", "model_path", "api_key", "subscription_model", "reduced_motion", "theme_color",
             "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path")
 
 
@@ -103,6 +105,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def request(route, body=None, timeout=90):
     config = load_config()
+    if config['mode'] == 'chatgpt':
+        raise ValueError('ChatGPT subscriptions use the subscription connection, not an API endpoint.')
     base = "http://127.0.0.1:8080/v1" if config["mode"] == "local" else validate_url(config["url"])
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     if config["mode"] == "remote" and config["api_key"]:
@@ -139,6 +143,12 @@ def sse_events(stream):
 
 def chat(messages):
     config = load_config()
+    if config['mode'] == 'chatgpt':
+        from .subscription import chat as subscription_chat
+        for event in subscription_chat(messages):
+            if event['type'] == 'token':
+                yield event['text']
+        return
     if not messages or any(m.get("role") not in ("user", "assistant", "system") or
                            not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Invalid conversation.")

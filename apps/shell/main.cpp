@@ -18,6 +18,7 @@
 #include <QNetworkReply>
 #include <QUuid>
 #include <QTemporaryDir>
+#include <QDesktopServices>
 #include "voice.h"
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
@@ -46,6 +47,9 @@ class Backend : public QObject {
     Q_PROPERTY(bool recording READ recording NOTIFY changed)
     Q_PROPERTY(bool speaking READ speaking NOTIFY changed)
     Q_PROPERTY(int sessionCount READ sessionCount NOTIFY changed)
+    Q_PROPERTY(QVariantMap subscription READ subscription NOTIFY changed)
+    Q_PROPERTY(QString loginUrl READ loginUrl NOTIFY changed)
+    Q_PROPERTY(QString loginCode READ loginCode NOTIFY changed)
 public:
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
@@ -56,6 +60,9 @@ public:
     bool recording() const { return voice.recording(); }
     bool speaking() const { return voice.speaking(); }
     int sessionCount() const { return openSessions; }
+    QVariantMap subscription() const { return m_subscription; }
+    QString loginUrl() const { return m_loginUrl; }
+    QString loginCode() const { return m_loginCode; }
     explicit Backend(Backend *shared = nullptr) : QObject(shared), owner(shared), voice(this) {
         connect(&voice, &Voice::changed, this, &Backend::changed);
         connect(&voice, &Voice::error, this, [this](const QString &text) { m_status = text; emit changed(); });
@@ -160,7 +167,12 @@ public:
     }
     Q_INVOKABLE void stop() {
         voice.cancel();
-        if (active) { active->disconnect(this); active->kill(); active->deleteLater(); active = nullptr; }
+        if (active) {
+            active->disconnect(this); active->terminate();
+            if (!active->waitForFinished(1500)) { active->kill(); active->waitForFinished(500); }
+            active->deleteLater(); active = nullptr;
+        }
+        m_loginUrl.clear(); m_loginCode.clear();
         if (browser.state() != QProcess::NotRunning) {
             browser.terminate();
             if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
@@ -197,6 +209,18 @@ public:
         emit changed();
         run({{"action", "configure"}, {"config", QJsonObject::fromVariantMap(values)}});
     }
+    Q_INVOKABLE void subscriptionAction(const QString &operation, bool device = false) {
+        if (m_busy || m_configuring || (operation != "login" && operation != "logout" && operation != "status")) return;
+        m_busy = true; m_loginUrl.clear(); m_loginCode.clear();
+        m_status = operation == "login" ? "Starting ChatGPT sign-in…" : "Checking ChatGPT account…";
+        emit changed();
+        run({{"action", "subscription"}, {"operation", operation}, {"device", device}});
+    }
+    Q_INVOKABLE void openSubscriptionLogin() {
+        const QUrl url(m_loginUrl);
+        if (url.scheme() != "https" || (url.host() != "auth.openai.com" && url.host() != "chatgpt.com") || !url.userInfo().isEmpty()) return;
+        if (!QDesktopServices::openUrl(url)) { m_status = "Open the sign-in address in your browser."; emit changed(); }
+    }
     Q_INVOKABLE void setupLocal() {
         if (m_busy) return;
         m_busy = true; m_status = "Downloading starter model…"; emit changed();
@@ -213,7 +237,8 @@ private:
     QStringList attachmentNames, attachmentText;
     Voice voice;
     QVariantList m_messages;
-    QVariantMap m_config, pendingConfig;
+    QVariantMap m_config, pendingConfig, m_subscription;
+    QString m_loginUrl, m_loginCode;
     QString m_status;
     bool m_busy = false;
     bool m_configuring = false;
@@ -284,6 +309,16 @@ private:
                     m_messages.last() = last; m_status = "Replying…";
                 } else if (type == "done") { m_status.clear(); persist(); }
                 else if (type == "progress") { m_status = value.value("text").toString(); }
+                else if (type == "subscription-login") {
+                    m_loginUrl = value.value("url").toString(); m_loginCode = value.value("code").toString();
+                    m_status = "Complete sign-in in your browser.";
+                    if (m_loginCode.isEmpty()) openSubscriptionLogin();
+                }
+                else if (type == "subscription-account") {
+                    m_subscription = value.value("account").toObject().toVariantMap();
+                    m_loginUrl.clear(); m_loginCode.clear();
+                    m_status = m_subscription.value("signed_in").toBool() ? "ChatGPT connected" : "Signed out of ChatGPT";
+                }
                 else if (type == "installed") {
                     m_config["mode"] = "local"; m_config["model_path"] = value.value("path").toString();
                     startLocal(); emit configured();
@@ -313,6 +348,7 @@ private:
             if (active == p) { active = nullptr; m_busy = false; } emit changed();
         });
         connect(p, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this, [this,p,action,request](int, QProcess::ExitStatus) {
+            if (action == "subscription") { m_loginUrl.clear(); m_loginCode.clear(); }
             if (action == "configure") { m_configuring = false; emit changed(); }
             if (action == "transcribe") QFile::remove(request.value("path").toString());
             if (active == p) { active = nullptr; m_busy = false; emit changed(); } p->deleteLater();
