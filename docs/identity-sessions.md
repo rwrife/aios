@@ -77,8 +77,12 @@ receive only the artifact directory, system binaries and a private Wayland socke
 the journal, broker socket, user homes, host network, X11 socket and credentials
 are not in the sandbox. Application types and arguments are allowlisted.
 
-The adapter has **not passed an actual Alpine VM isolation test**. It is not enabled
-at boot. `world.identity` is an optional dependency list, not part of the default
+The adapter passes headless tests in a disposable Alpine container on the WSL
+Linux kernel: real UID permission denial, namespace filesystem/environment/network
+isolation, cgroup limits and forked-process teardown, LUKS locking/reopening, and
+stale process/mount recovery after broker restart. This is **not an Alpine VM boot
+or display-isolation test**. The adapter is not enabled at boot.
+`world.identity` is an optional dependency list, not part of the default
 ISO; package availability and size still require validation. The OpenRC script
 requires an administrator-created `aios-broker` group and configuration. There
 is intentionally no sample with a real device, UID or disk-formatting command.
@@ -105,7 +109,7 @@ The existing X11 desktop is insufficient, including for secure PIN input.
 | Phase | Status and remaining implementation |
 | --- | --- |
 | 0 | Initial ADR/threat model and simulator implemented. Schemas and security review need expansion. |
-| 1 | Socket broker and Linux adapter implemented, unvalidated. Explicit principal migration of chat, browser, model workers and settings remains. |
+| 1 | Socket broker and Linux adapter implemented; headless kernel/storage checks pass. Explicit principal migration of chat, browser, model workers and settings remains. |
 | 2 | Journal/lifecycle and reconstruction manifests implemented. Provisioning, encrypted-volume enrollment, artifact claim, complete conversation recall and editor save adapters remain. |
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
@@ -123,6 +127,18 @@ protocol, actual Unix socket framing/permissions/deadlines, model integrity and
 ciphertext tamper/name-substitution detection. The encryption test skips if the
 optional `cryptography` package is missing. Simulator tests do not demonstrate
 kernel, storage or display isolation.
+
+Run `bash scripts/test-identity-linux.sh` for the separate real-kernel test suite.
+It starts a privileged disposable Alpine container with a private cgroup namespace
+and a read-only repository mount. Only newly created temporary regular files are
+formatted as encrypted volumes; no supplied path or pre-existing disk is formatted.
+The tests verify anonymous namespace isolation, separate-UID filesystem denial,
+cgroup limits/teardown, LUKS lock/resume and recovery of stale scopes and mounts.
+The `identity-isolation` CI job runs these checks independently of the simulator.
+
+See [WSL webcam development](wsl-webcam.md) for USB passthrough and the bounded
+capture diagnostic. Webcam enumeration starts no capture; the explicit probe
+reads and discards frames and saves no media.
 
 Required release tests remain: two-UID filesystem/IPC attacks; fork/daemon escape;
 broker crash/reboot and busy-volume recovery; full compositor input/capture and

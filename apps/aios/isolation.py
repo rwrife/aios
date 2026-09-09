@@ -46,6 +46,9 @@ class LinuxIsolation:
         self.cgroups = Path('/sys/fs/cgroup/aios')
         if not Path('/sys/fs/cgroup/cgroup.controllers').exists():
             raise RuntimeError("cgroup v2 is required")
+        controllers = set(Path('/sys/fs/cgroup/cgroup.subtree_control').read_text().split())
+        if not {'memory', 'pids'} <= controllers:
+            raise RuntimeError("Enable the memory and pids controllers for the broker's cgroup parent")
         self.cgroups.mkdir(exist_ok=True)
         # Reap stale cgroups before recovering encrypted volumes after a crash.
         for group in self.cgroups.iterdir():
@@ -53,6 +56,28 @@ class LinuxIsolation:
                 (group / 'cgroup.kill').write_text('1')
                 self._wait_empty(group)
                 group.rmdir()
+        (self.cgroups / 'cgroup.subtree_control').write_text('+memory +pids')
+        # A broker crash must not leave any previous user's volume unlocked
+        # while a new anonymous context starts. Scope teardown always precedes
+        # storage recovery, including volumes for users who never return.
+        for owner, entry in self.config.get('principals', {}).items():
+            name = 'aios-' + owner
+            mount = Path(entry['mount'])
+            if os.path.ismount(mount):
+                self._run(['/bin/umount', str(mount)])
+            if (Path('/dev/mapper') / name).exists():
+                self._run(['/sbin/cryptsetup', 'close', name])
+        for path in self.root.iterdir():
+            try:
+                if str(uuid.UUID(path.name)) != path.name or path.is_symlink():
+                    continue
+            except ValueError:
+                continue
+            if os.path.ismount(path):
+                self._run(['/bin/umount', str(path)])
+            # Only remove the empty mountpoint, never recursively delete data.
+            if path.is_dir():
+                path.rmdir()
 
     @staticmethod
     def _run(argv):
@@ -113,6 +138,16 @@ class LinuxIsolation:
         socket = Path(endpoint)
         if not socket.is_socket() or socket.stat().st_uid != uid:
             raise PermissionError("Invalid private display socket")
+        return self._spawn(scope, root, uid, command, socket)
+
+    def _spawn(self, scope, root, uid, command, display=None):
+        """Trusted adapter entry point, never exposed as a service action.
+
+        The headless path is also exercised by kernel isolation tests. Callers
+        must select commands in trusted code; the socket API uses launch().
+        """
+        if str(uuid.UUID(scope)) != scope:
+            raise ValueError("Invalid process scope")
         group = self.cgroups / scope
         group.mkdir(exist_ok=True)
         (group / 'pids.max').write_text('128')
@@ -121,13 +156,15 @@ class LinuxIsolation:
                 '--cap-drop', 'ALL', '--clearenv', '--ro-bind', '/usr', '/usr',
                 '--ro-bind', '/lib', '/lib', '--ro-bind', '/bin', '/bin',
                 '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--tmpfs', '/run',
-                '--dir', '/run/user', '--dir', '/run/user/session',
-                '--bind', str(socket), '/run/user/session/wayland-0',
                 '--bind', str(root / 'artifacts'), '/workspace', '--chdir', '/workspace',
                 '--setenv', 'HOME', '/workspace', '--setenv', 'PATH', '/usr/bin:/bin',
-                '--setenv', 'XDG_RUNTIME_DIR', '/run/user/session',
-                '--setenv', 'WAYLAND_DISPLAY', 'wayland-0', '--setenv', 'QT_QPA_PLATFORM', 'wayland',
-                '--setenv', 'GDK_BACKEND', 'wayland', '--setenv', 'LANG', 'C.UTF-8']
+                '--setenv', 'LANG', 'C.UTF-8']
+        if display:
+            argv += ['--dir', '/run/user', '--dir', '/run/user/session',
+                     '--bind', str(display), '/run/user/session/wayland-0',
+                     '--setenv', 'XDG_RUNTIME_DIR', '/run/user/session',
+                     '--setenv', 'WAYLAND_DISPLAY', 'wayland-0',
+                     '--setenv', 'QT_QPA_PLATFORM', 'wayland', '--setenv', 'GDK_BACKEND', 'wayland']
         # The broker is single-threaded. Enter the cgroup before exec, so forked
         # descendants cannot escape tracking even if the launcher exits early.
         def demote():
@@ -140,6 +177,16 @@ class LinuxIsolation:
                                    stderr=subprocess.DEVNULL, close_fds=True,
                                    env={'PATH': '/usr/bin:/bin'})
         self.scopes.setdefault(scope, []).append(process)
+        # Catch missing binaries, unsupported namespace settings and immediate
+        # launcher failures instead of journaling an application that never ran.
+        try:
+            code = process.wait(timeout=.05)
+        except subprocess.TimeoutExpired:
+            return process
+        if code:
+            self.stop(scope)
+            raise RuntimeError("Sandboxed application failed to start")
+        return process
 
     def stop(self, scope):
         group = self.cgroups / scope
@@ -149,7 +196,10 @@ class LinuxIsolation:
                     os.kill(int(pid), signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-            # Apps are reconstruction-based; force termination bounds lock time.
+            deadline = time.monotonic() + .5
+            while time.monotonic() < deadline and 'populated 1' in (group / 'cgroup.events').read_text():
+                time.sleep(.01)
+            # Force termination bounds lock time, including daemonized children.
             (group / 'cgroup.kill').write_text('1')
             self._wait_empty(group)
             group.rmdir()

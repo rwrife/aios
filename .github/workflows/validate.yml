@@ -9,6 +9,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/test.sh
+  identity-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable disposable encrypted-volume test support
+        run: sudo modprobe dm_crypt && sudo modprobe loop
+      - name: Test real namespaces, process teardown and encrypted workspaces
+        run: bash scripts/test-identity-linux.sh
   image:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
