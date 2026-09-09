@@ -13,7 +13,7 @@ Dialog {
     property string photoPreview: ""
     property string validationError: ""
     readonly property bool greetingOnly: control && control.greetingOnly === true
-    title: greetingOnly ? "Your name and PIN" : creating ? "Create a private profile" : recovering ? "Reset your PIN" : "Unlock your profile"
+    title: selectedProfile ? "Sign in to " + selectedProfile : greetingOnly ? "Your name and PIN" : creating ? "Create a private profile" : recovering ? "Reset your PIN" : "Unlock your profile"
     modal: true; width: 440
     standardButtons: control.busy ? Dialog.NoButton : Dialog.Close
     closePolicy: control.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -58,21 +58,22 @@ Dialog {
         spacing: 10
         Label {
             Layout.fillWidth: true; wrapMode: Text.Wrap
-            text: dialog.greetingOnly ? "Create a profile for your greeting, or choose a saved name to sign in." : "PIN access works without a camera and locks after two minutes. Biometric enrollment is separate."
+            text: dialog.selectedProfile ? "Enter this account’s PIN or password." : dialog.greetingOnly ? "Create a profile with your name and PIN." : "PIN access works without a camera and locks after two minutes. Biometric enrollment is separate."
         }
         ComboBox {
             id: savedAccounts; objectName: "savedAccounts"; Accessible.name: "Saved accounts"
-            visible: dialog.greetingOnly && control.profiles && control.profiles.length > 0
+            visible: dialog.greetingOnly && !dialog.creating && !dialog.selectedProfile && control.profiles && control.profiles.length > 0
             Layout.fillWidth: true; textRole: "name"; model: control.profiles || []
             currentIndex: -1; displayText: currentIndex < 0 ? "Choose a saved profile…" : currentText
             onActivated: { profileName.text = currentText; dialog.creating = false; validationError = ""; pin.clear(); pin.forceActiveFocus(); }
         }
         TextField {
             id: profileName; objectName: "profileName"; placeholderText: "Your name"; Accessible.name: "Your name"
+            readOnly: dialog.selectedProfile.length > 0
             maximumLength: 80; Layout.fillWidth: true; KeyNavigation.tab: pin
             onAccepted: pin.forceActiveFocus()
         }
-        Button { visible: dialog.greetingOnly && !dialog.creating; text: "Create a different profile"; onClicked: { dialog.creating = true; profileName.clear(); pin.clear(); } }
+        Button { visible: dialog.greetingOnly && !dialog.creating && !dialog.selectedProfile; text: "Create a different profile"; onClicked: { dialog.creating = true; profileName.clear(); pin.clear(); } }
         CheckBox {
             objectName: "recoverProfile"; visible: !dialog.creating && !dialog.greetingOnly
             text: "I have a recovery code"; checked: dialog.recovering

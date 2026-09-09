@@ -196,8 +196,9 @@ record. No image path, remote URL, full-resolution image or EXIF is retained.
 Camera hardware verification remains paused.
 
 The ordinary desktop chat uses a separate local greeting-profile store. Clicking
-its bubble opens name-and-PIN entry directly, with saved names available in a
-selector. Creating or signing into a profile immediately updates that window's
+its bubble opens a dropdown beneath the avatar, listing saved accounts and a
+**New account** option. Selecting a saved name opens its PIN/password prompt;
+New account opens name-and-PIN entry. Creating or signing into a profile updates that window's
 greeting. Each window has its own selected greeting profile. PINs are salted
 scrypt verifiers with persistent retry limits; they are never stored as plaintext.
 These profiles personalize the legacy chat; they do not grant broker capabilities,
@@ -205,8 +206,8 @@ encrypt chat history or unlock protected workspace identities. Broker-owned chat
 workers remain required for protected multi-user conversation ownership.
 
 Account creation and selection work with no camera. Name entry gets initial
-keyboard focus; Tab moves to PIN and Enter submits. Alt+U focuses the saved-account
-selector, which supports arrow keys and Enter. A PIN may contain four or more
+keyboard focus; Tab moves to PIN and Enter submits. The account dropdown supports
+arrow keys and Enter to choose an account. A PIN may contain four or more
 ASCII digits, including leading zeros; passphrases require ten or more characters.
 Invalid input produces an inline explanation instead of a disabled submit button.
 The optional photo controls are collapsed by default and never start capture
