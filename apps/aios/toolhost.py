@@ -61,6 +61,10 @@ _RETRIABLE_CONNECT_ERRNOS = {errno.EAGAIN, errno.EWOULDBLOCK}
 _MISSING = object()
 
 
+class _ConnectionWriteFailed(Exception):
+    pass
+
+
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
@@ -141,6 +145,7 @@ def _read_socket_line(connection: socket.socket, limit: int, deadline: float, *,
             frame.extend(chunk[:newline + 1])
             if len(frame) > limit:
                 raise RuntimeError(incomplete_error)
+            # Protocol is one request per connection, so bytes after the first newline are ignored.
             return bytes(frame)
         frame.extend(chunk)
         if len(frame) > limit:
@@ -331,6 +336,25 @@ def _response_bytes(payload: dict[str, Any]) -> bytes:
     if len(fallback) > RESPONSE_LIMIT:
         return b'{"error":"Tool operation failed."}\n'
     return fallback
+
+
+def _write_socket_line(connection: socket.socket, payload: dict[str, Any], deadline: float) -> None:
+    encoded = _response_bytes(payload)
+    view = memoryview(encoded)
+    sent = 0
+    while sent < len(view):
+        remaining = _remaining_time(deadline)
+        if remaining <= 0:
+            raise _ConnectionWriteFailed
+        connection.settimeout(remaining)
+        try:
+            chunk = view[sent : min(sent + SOCKET_READ_CHUNK, len(view))]
+            written = connection.send(chunk)
+        except (TimeoutError, socket.timeout, BrokenPipeError, ConnectionResetError, OSError):
+            raise _ConnectionWriteFailed from None
+        if written <= 0:
+            raise _ConnectionWriteFailed
+        sent += written
 
 
 class ToolHost:
@@ -565,8 +589,9 @@ def serve(
                     except Exception:
                         payload = {"error": SAFE_OPERATION_FAILED}
                     try:
-                        connection.sendall(_response_bytes(payload))
-                    except (BrokenPipeError, ConnectionResetError):
+                        write_deadline = time.monotonic() + connection_timeout
+                        _write_socket_line(connection, payload, write_deadline)
+                    except _ConnectionWriteFailed:
                         pass
     finally:
         try:

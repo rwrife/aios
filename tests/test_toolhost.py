@@ -388,6 +388,70 @@ class ToolHostTests(unittest.TestCase):
             self.assertEqual(host.closed, 1)
             self.assertFalse(path.exists())
 
+    def test_stalled_large_response_does_not_kill_the_host(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "stalled-write.sock"
+            large_result, _ = _frame_payload_with_exact_size({"result": {"blob": ""}}, RESPONSE_LIMIT)
+
+            class LargeThenSmallHost(FakeSocketHost):
+                def __init__(self, large_result):
+                    super().__init__()
+                    self.large_result = large_result
+
+                def call(self, name, arguments):
+                    self.calls.append((name, arguments))
+                    if len(self.calls) == 1:
+                        return self.large_result
+                    return {"tool": name, "arguments": arguments}
+
+            host = LargeThenSmallHost(large_result["result"])
+            thread = threading.Thread(
+                target=serve,
+                args=(path, host),
+                kwargs={"connection_timeout": 0.25},
+                daemon=True,
+            )
+            thread.start()
+            self.assertTrue(_wait_until(path.exists), "socket was not created")
+
+            stalled_request = b'{"action":"call","name":"browser","arguments":{"action":"snapshot"}}\n'
+            with socket.socket(socket.AF_UNIX) as stalled_client:
+                stalled_client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+                stalled_client.settimeout(1)
+                stalled_client.connect(os.fspath(path))
+                stalled_client.sendall(stalled_request)
+
+                self.assertTrue(_wait_until(lambda: len(host.calls) == 1), "first request was not handled")
+
+                result_box = {}
+                error_box = {}
+                second_done = threading.Event()
+
+                def second_client():
+                    try:
+                        result_box["value"] = call(path, "browser", {"action": "snapshot"}, timeout=2.0)
+                    except BaseException as error:
+                        error_box["error"] = error
+                    finally:
+                        second_done.set()
+
+                second_thread = threading.Thread(target=second_client, daemon=True)
+                second_thread.start()
+                self.assertTrue(second_done.wait(4.0), "server did not recover from the stalled write")
+                second_thread.join(1)
+                self.assertNotIn("error", error_box)
+                self.assertEqual(result_box["value"], {"tool": "browser", "arguments": {"action": "snapshot"}})
+                self.assertEqual(host.calls, [
+                    ("browser", {"action": "snapshot"}),
+                    ("browser", {"action": "snapshot"}),
+                ])
+                self.assertEqual(close_service(path), {"closed": True})
+
+            thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(host.closed, 1)
+            self.assertFalse(path.exists())
+
     def test_request_times_out_against_drip_fed_response_with_absolute_deadline(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "drip-response.sock"
