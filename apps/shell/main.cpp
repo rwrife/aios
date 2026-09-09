@@ -26,6 +26,8 @@
 #include <unistd.h>
 #endif
 
+static constexpr int ToolHostGracefulWaitMs = 15000;
+
 static void tieToDesktop(QProcess &process) {
 #ifdef Q_OS_LINUX
     const auto parent = getpid();
@@ -110,7 +112,7 @@ public:
     }
     ~Backend() {
         voice.cancel();
-        tools.terminate(); if (!tools.waitForFinished(5000)) { tools.kill(); tools.waitForFinished(1000); }
+        tools.terminate(); if (!tools.waitForFinished(ToolHostGracefulWaitMs)) { tools.kill(); tools.waitForFinished(1000); }
         for (auto p : findChildren<QProcess *>(QString(), Qt::FindDirectChildrenOnly)) {
             p->disconnect(this); p->kill(); p->waitForFinished(1000);
         }
@@ -175,7 +177,7 @@ public:
         m_loginUrl.clear(); m_loginCode.clear();
         if (tools.state() != QProcess::NotRunning) {
             tools.terminate();
-            if (!tools.waitForFinished(5000)) { tools.kill(); tools.waitForFinished(1000); }
+            if (!tools.waitForFinished(ToolHostGracefulWaitMs)) { tools.kill(); tools.waitForFinished(1000); }
         }
         m_busy = false; m_status = "Stopped"; persist(); emit changed();
     }
@@ -352,7 +354,7 @@ private:
         });
         connect(p, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this, [this,p,action,request](int, QProcess::ExitStatus) {
             if (action == "subscription") { m_loginUrl.clear(); m_loginCode.clear(); }
-            if (action == "configure") { m_configuring = false; emit changed(); }
+            if (action == "configure") { pendingConfig.clear(); m_configuring = false; emit changed(); }
             if (action == "transcribe") QFile::remove(request.value("path").toString());
             if (active == p) { active = nullptr; m_busy = false; emit changed(); } p->deleteLater();
         });

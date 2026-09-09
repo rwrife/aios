@@ -289,36 +289,6 @@ class SubscriptionTests(unittest.TestCase):
         turns = [r for r in requests if r.get('method') == 'turn/start']
         self.assertEqual(turns[-1]['params']['input'][0]['text'], 'Second window')
 
-    def test_browser_bridge(self):
-        os.environ['AIOS_FAKE_SCENARIO'] = 'browser'
-        with patch('aios.browser.call', return_value={'text': 'page'}) as call:
-            events = list(subscription.chat([{'role': 'user', 'content': 'browse'}], 'private.sock'))
-        call.assert_called_once_with('private.sock', {'action': 'snapshot'})
-        self.assertEqual(events[-1]['text'], 'Browser done')
-        response = next(r for r in self.requests() if r.get('id') == 'tool-request')
-        self.assertTrue(response['result']['success'])
-
-    def test_legacy_browser_validation_and_safe_error_are_preserved(self):
-        os.environ['AIOS_FAKE_SCENARIO'] = 'unknown-generic'
-        with patch('aios.browser.call') as call, self.assertRaisesRegex(RuntimeError, 'unsupported browser'):
-            list(subscription.chat([{'role': 'user', 'content': 'browse'}], 'private.sock'))
-        call.assert_not_called()
-
-        os.environ['AIOS_FAKE_SCENARIO'] = 'browser'
-        with patch('aios.browser.call', side_effect=OSError('/secret/browser.sock token=abc')):
-            events = list(subscription.chat([{'role': 'user', 'content': 'browse'}], 'private.sock'))
-        self.assertEqual(events[-1]['text'], 'Browser done')
-        response = [r for r in self.requests() if r.get('id') == 'tool-request'][-1]
-        self.assertFalse(response['result']['success'])
-        text = response['result']['contentItems'][0]['text']
-        self.assertIn('Browser action failed', text)
-        self.assertNotIn('secret', text)
-
-    def test_rejects_browser_socket_and_shared_session_together(self):
-        with self.assertRaisesRegex(ValueError, 'both'):
-            list(subscription.chat([{'role': 'user', 'content': 'hello'}], 'socket', session=Mock()))
-        self.assertEqual(self.processes, [])
-
     @patch('aios.agent.toolhost.list_tools')
     def test_shared_agent_session_tools_prompt_and_application_dispatch(self, list_tools):
         list_tools.return_value = {'tools': [clone(APPLICATION_TOOL)], 'warnings': []}

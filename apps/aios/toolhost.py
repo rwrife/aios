@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -23,6 +24,7 @@ MAX_TOOL_NAME_LENGTH = 128
 MAX_TOOLS = 256
 RETRY_DELAY_SECONDS = 0.05
 SOCKET_TIMEOUT = 60
+STARTUP_TIMEOUT = 5
 SOCKET_BACKLOG = 8
 SOCKET_READ_CHUNK = 4096
 
@@ -364,6 +366,7 @@ class ToolHost:
         self.mcp = mcp if mcp is not None else McpRegistry()
         self._advertised_mcp = {}
         self._closed = False
+        self._close_lock = threading.Lock()
 
     def definitions(self) -> dict[str, Any]:
         tools = _static_tools()
@@ -439,19 +442,51 @@ class ToolHost:
         return result
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        for closer in (getattr(self.browser, "close", None), getattr(self.mcp, "close", None)):
-            if closer is None:
-                continue
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+
+        def close_adapter(closer) -> None:
             try:
                 closer()
             except Exception:
                 pass
 
+        threads = []
+        for name, closer in (
+            ("browser", getattr(self.browser, "close", None)),
+            ("mcp", getattr(self.mcp, "close", None)),
+        ):
+            if closer is None:
+                continue
+            thread = threading.Thread(
+                target=close_adapter,
+                args=(closer,),
+                name=f"toolhost-close-{name}",
+            )
+            thread.start()
+            threads.append(thread)
+        for thread in threads:
+            thread.join()
 
-def request(path: os.PathLike[str] | str, value: dict[str, Any], timeout: float = SOCKET_TIMEOUT) -> Any:
+
+def _validated_timeout(value: Any, label: str) -> float:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"Choose a valid tool {label}.") from None
+    if not math.isfinite(duration) or duration < 0:
+        raise ValueError(f"Choose a valid tool {label}.")
+    return duration
+
+
+def request(
+    path: os.PathLike[str] | str,
+    value: dict[str, Any],
+    timeout: float = SOCKET_TIMEOUT,
+    startup_timeout: float = STARTUP_TIMEOUT,
+) -> Any:
     if not isinstance(value, dict):
         raise ValueError(SAFE_INVALID_REQUEST)
     try:
@@ -461,8 +496,12 @@ def request(path: os.PathLike[str] | str, value: dict[str, Any], timeout: float 
     if len(request_bytes) > REQUEST_LIMIT:
         raise ValueError("Tool request is too large.")
 
-    deadline = time.monotonic() + max(0.0, float(timeout))
-    client = _connect_client(os.fspath(path), deadline)
+    operation_timeout = _validated_timeout(timeout, "timeout")
+    connect_timeout = _validated_timeout(startup_timeout, "startup timeout")
+    start = time.monotonic()
+    deadline = start + operation_timeout
+    connect_deadline = min(deadline, start + connect_timeout)
+    client = _connect_client(os.fspath(path), connect_deadline)
     try:
         remaining = _remaining_time(deadline)
         if remaining <= 0:
@@ -496,16 +535,35 @@ def request(path: os.PathLike[str] | str, value: dict[str, Any], timeout: float 
     return response["result"]
 
 
-def list_tools(path: os.PathLike[str] | str, timeout: float = SOCKET_TIMEOUT) -> dict[str, Any]:
-    return request(path, {"action": "list"}, timeout=timeout)
+def list_tools(
+    path: os.PathLike[str] | str,
+    timeout: float = SOCKET_TIMEOUT,
+    startup_timeout: float = STARTUP_TIMEOUT,
+) -> dict[str, Any]:
+    return request(path, {"action": "list"}, timeout=timeout, startup_timeout=startup_timeout)
 
 
-def call(path: os.PathLike[str] | str, name: str, arguments: dict[str, Any], timeout: float = SOCKET_TIMEOUT) -> Any:
-    return request(path, {"action": "call", "name": name, "arguments": arguments}, timeout=timeout)
+def call(
+    path: os.PathLike[str] | str,
+    name: str,
+    arguments: dict[str, Any],
+    timeout: float = SOCKET_TIMEOUT,
+    startup_timeout: float = STARTUP_TIMEOUT,
+) -> Any:
+    return request(
+        path,
+        {"action": "call", "name": name, "arguments": arguments},
+        timeout=timeout,
+        startup_timeout=startup_timeout,
+    )
 
 
-def close_service(path: os.PathLike[str] | str, timeout: float = SOCKET_TIMEOUT) -> Any:
-    return request(path, {"action": "close"}, timeout=timeout)
+def close_service(
+    path: os.PathLike[str] | str,
+    timeout: float = SOCKET_TIMEOUT,
+    startup_timeout: float = STARTUP_TIMEOUT,
+) -> Any:
+    return request(path, {"action": "close"}, timeout=timeout, startup_timeout=startup_timeout)
 
 
 def _parse_request(raw: bytes) -> tuple[str, str | None, dict[str, Any] | None]:

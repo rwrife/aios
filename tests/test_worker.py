@@ -65,21 +65,6 @@ class WorkerTests(unittest.TestCase):
         chat.assert_called_once()
         agent_chat.assert_not_called()
 
-    def test_browser_socket_does_not_activate_agent_tools(self):
-        with mock.patch("aios.worker.chat", return_value=iter(["plain"])) as chat, \
-                mock.patch("aios.agent.chat") as agent_chat:
-            events = self.events({
-                "action": "chat",
-                "messages": [{"role": "user", "content": "hello"}],
-                "browser_socket": "/private/browser.sock",
-            })
-        self.assertEqual(events, [
-            {"type": "token", "text": "plain"},
-            {"type": "done"},
-        ])
-        chat.assert_called_once()
-        agent_chat.assert_not_called()
-
     def test_load_redacts_all_credentials(self):
         config = {
             "mode": "remote",
@@ -126,14 +111,19 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"/tools.sock"', source)
         self.assertIn('{"-m", "aios.toolhost", socket}', source)
         self.assertIn('request.insert("tool_socket", socket)', source)
-        self.assertNotIn('request.insert("browser_socket"', source)
-        self.assertNotIn('"aios.browser"', source)
         self.assertIn("tieToDesktop(tools)", source)
+        self.assertIn("ToolHostGracefulWaitMs", source)
+        self.assertEqual(source.count("waitForFinished(ToolHostGracefulWaitMs)"), 2)
 
     def test_shell_never_caches_plaintext_keys_and_clears_pending_errors(self):
         source = self.read("apps/shell/main.cpp")
         self.assertIn('it.key() != "api_key" && it.key() != "voice_key" && it.key() != "agent_api_key"', source)
         self.assertGreaterEqual(source.count("pendingConfig.clear()"), 3)
+        finished = source[source.index('qOverload<int,QProcess::ExitStatus>(&QProcess::finished)'):]
+        self.assertRegex(
+            finished,
+            r'if \(action == "configure"\) \{ pendingConfig\.clear\(\); m_configuring = false; emit changed\(\); \}',
+        )
 
     def test_agent_controls_and_plain_text_defenses_are_declared(self):
         model = self.read("apps/shell/ModelSettings.qml")
@@ -147,14 +137,19 @@ class DesktopSourceTests(unittest.TestCase):
 
         chat = self.read("apps/shell/ChatWindow.qml")
         self.assertRegex(chat, r"session\.status;[^}]*textFormat:\s*Text\.PlainText")
+        self.assertRegex(chat, r"id:\s*chip;[^}]*textFormat:\s*Text\.PlainText")
         settings = self.read("apps/shell/SettingsWindow.qml")
         note = settings[settings.index("component Note: Text"):settings.index("RowLayout {")]
         self.assertIn("textFormat: Text.PlainText", note)
 
-    def test_build_packages_skills_at_expected_path_without_nesting(self):
+    def test_build_packages_examples_and_skills_at_exact_paths_without_nesting(self):
         source = self.read("scripts/build-apps.sh")
+        self.assertIn('rm -rf "$DEST/usr/local/share/aios/examples"', source)
+        self.assertIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"', source)
         self.assertIn('rm -rf "$DEST/usr/local/share/aios/skills"', source)
         self.assertIn('cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"', source)
+        self.assertNotIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"', source)
+        self.assertEqual(source.count('rm -rf "$DEST/usr/local/share/aios/'), 2)
         self.assertTrue((ROOT / "apps/skills/application-builder/SKILL.md").is_file())
 
 

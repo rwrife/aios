@@ -1,7 +1,6 @@
-"""Private per-chat browser broker. Only fixed WebDriver operations are exposed."""
+"""Private per-chat browser adapter exposing fixed WebDriver operations."""
 import json
 import os
-from pathlib import Path
 import signal
 import socket
 import subprocess
@@ -200,61 +199,3 @@ return {url: location.href, title: document.title, text: text.slice(0,6000), vie
                 raise ValueError('Choose a tab from the tabs result.')
             self.command(self.session + '/window', {'handle': handle})
         return self.snapshot()
-
-
-def call(path, arguments):
-    deadline = time.monotonic() + 5
-    with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(45)
-        while True:
-            try:
-                client.connect(path)
-                break
-            except (FileNotFoundError, ConnectionRefusedError):
-                if time.monotonic() > deadline:
-                    raise RuntimeError('Browser service is unavailable.') from None
-                time.sleep(.05)
-        client.sendall(json.dumps(arguments).encode() + b'\n')
-        with client.makefile('rb') as stream:
-            raw = stream.readline(128 * 1024)
-        if not raw.endswith(b'\n'):
-            raise RuntimeError('Browser response was incomplete.')
-        return json.loads(raw)
-
-
-def serve(path):
-    browser = Browser()
-    def terminate(*_):
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, terminate)
-    try:
-        with socket.socket(socket.AF_UNIX) as server:
-            server.bind(path)
-            os.chmod(path, 0o600)
-            server.listen(1)
-            while True:
-                connection, _ = server.accept()
-                with connection:
-                    connection.settimeout(45)
-                    try:
-                        with connection.makefile('rb') as stream:
-                            raw = stream.readline(32768)
-                        if not raw.endswith(b'\n'):
-                            raise ValueError('Browser request is too large.')
-                        result = browser.act(json.loads(raw))
-                    except (ValueError, RuntimeError) as error:
-                        result = {'error': str(error)}
-                    except Exception:
-                        result = {'error': 'Browser operation failed. Reopen the browser or try a fresh snapshot.'}
-                    try:
-                        connection.sendall(json.dumps(result).encode() + b'\n')
-                    except (BrokenPipeError, ConnectionResetError):
-                        pass
-    finally:
-        browser.close()
-        Path(path).unlink(missing_ok=True)
-
-
-if __name__ == '__main__':
-    import sys
-    serve(sys.argv[1])

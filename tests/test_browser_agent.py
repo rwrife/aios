@@ -143,7 +143,7 @@ class BrowserAgentTests(unittest.TestCase):
                 description="Build local applications.",
                 instructions="Search the cache before creating a new app.",
                 allowed_tools=("application",),
-                triggers=("calculator", "build an app"),
+                triggers=("need a calculator", "build an app"),
                 model="remote-preferred",
             ),
             Skill(
@@ -165,6 +165,44 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIn('Activated skill: "application-builder"', prompt)
         self.assertIn("Search the cache before creating a new app.", prompt)
         self.assertNotIn("Never show this inactive body.", prompt)
+
+    @patch("aios.agent.toolhost.list_tools")
+    def test_builtin_application_builder_requires_multiword_build_intent(self, list_tools):
+        list_tools.return_value = {
+            "tools": [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)],
+            "warnings": [],
+        }
+        warnings = []
+        skill = skills._load_skill_dir(
+            Path(__file__).resolve().parents[1] / "apps/skills/application-builder",
+            warnings,
+        )
+        self.assertEqual(warnings, [])
+        self.assertIsNotNone(skill)
+        self.assertFalse({"calculator", "timer", "converter", "tracker", "dashboard", "game"} & set(skill.triggers))
+
+        for prompt in ("I need a calculator", "Please build a timer", "I want an application"):
+            with self.subTest(prompt=prompt):
+                session = agent.AgentSession([{"role": "user", "content": prompt}], "tools.sock", catalog=[skill])
+                self.assertTrue(session.remote_preferred)
+                self.assertEqual(
+                    [tool["function"]["name"] for tool in session.tools()],
+                    ["activate_skill", "application"],
+                )
+
+        for prompt in (
+            "calculator",
+            "explain how a calculator works internally",
+            "compare game engines",
+            "timer",
+        ):
+            with self.subTest(prompt=prompt):
+                session = agent.AgentSession([{"role": "user", "content": prompt}], "tools.sock", catalog=[skill])
+                self.assertFalse(session.remote_preferred)
+                self.assertEqual(
+                    [tool["function"]["name"] for tool in session.tools()],
+                    ["activate_skill", "browser", "application"],
+                )
 
     @patch("aios.agent.toolhost.list_tools")
     def test_codex_tools_convert_schema_order_advertisement_and_are_independent(self, list_tools):
@@ -229,7 +267,7 @@ class BrowserAgentTests(unittest.TestCase):
                 description="Build apps.",
                 instructions="Use only application tools and search first.",
                 allowed_tools=("application",),
-                triggers=("calculator",),
+                triggers=("need a calculator",),
                 model="remote-preferred",
             ),
         ]
@@ -279,10 +317,10 @@ class BrowserAgentTests(unittest.TestCase):
                 description="Build apps.",
                 instructions="Apps only.",
                 allowed_tools=("application",),
-                triggers=("calculator",),
+                triggers=("need a calculator",),
             )
         ]
-        session = agent.AgentSession([{"role": "user", "content": "calculator"}], "tools.sock", catalog=catalog)
+        session = agent.AgentSession([{"role": "user", "content": "I need a calculator"}], "tools.sock", catalog=catalog)
         session.tools()
 
         with patch("aios.agent.toolhost.call", return_value={"ok": True}) as call:
@@ -363,10 +401,10 @@ class BrowserAgentTests(unittest.TestCase):
                 description="Build apps.",
                 instructions="Use the cached application tools.",
                 allowed_tools=("application",),
-                triggers=("calculator",),
+                triggers=("need a calculator",),
             )
         ]
-        session = agent.AgentSession([{"role": "user", "content": "calculator"}], "tools.sock", catalog=catalog)
+        session = agent.AgentSession([{"role": "user", "content": "I need a calculator"}], "tools.sock", catalog=catalog)
         bodies = []
 
         def request(route, body, **kwargs):
@@ -486,23 +524,28 @@ class BrowserAgentTests(unittest.TestCase):
         )
         self.assertEqual(events[-1], {"type": "token", "text": "Finished."})
 
-    def test_legacy_exact_browser_sock_works_but_failed_tools_sock_does_not_fallback(self):
-        with patch("aios.agent.toolhost.list_tools") as list_tools, patch(
-            "aios.agent.browser.call",
-            return_value={"snapshot": True},
-        ) as browser_call:
-            session = agent.AgentSession([{"role": "user", "content": "hello"}], r"C:\private\browser.sock", catalog=[])
-            self.assertEqual([tool["function"]["name"] for tool in session.tools()], ["activate_skill", "browser"])
-            self.assertEqual(session.dispatch("browser", {"action": "snapshot"}), {"snapshot": True})
-        list_tools.assert_not_called()
-        browser_call.assert_called_once_with(r"C:\private\browser.sock", {"action": "snapshot"})
-
-        with patch("aios.agent.toolhost.list_tools", side_effect=RuntimeError("Tool host unavailable.")), patch(
-            "aios.agent.browser.call"
-        ) as browser_call:
+    def test_failed_toolhost_discovery_does_not_fallback(self):
+        with patch("aios.agent.toolhost.list_tools", side_effect=RuntimeError("Tool host unavailable.")) as list_tools:
             with self.assertRaisesRegex(RuntimeError, "Tool host unavailable"):
                 agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
-        browser_call.assert_not_called()
+        list_tools.assert_called_once_with(
+            "tools.sock", startup_timeout=toolhost.STARTUP_TIMEOUT)
+
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(BROWSER_TOOL)], "warnings": []})
+    def test_dispatch_preserves_supplied_operation_timeout(self, list_tools):
+        session = agent.AgentSession([{"role": "user", "content": "browse"}], "tools.sock", catalog=[])
+        session.tools()
+        list_tools.assert_called_once_with(
+            "tools.sock", startup_timeout=toolhost.STARTUP_TIMEOUT)
+
+        with patch("aios.agent.toolhost.call", return_value={"snapshot": True}) as call:
+            self.assertEqual(
+                session.dispatch("browser", {"action": "snapshot"}, timeout=37),
+                {"snapshot": True},
+            )
+        call.assert_called_once_with(
+            "tools.sock", "browser", {"action": "snapshot"}, timeout=37)
+
 
     def test_select_provider_matrix_includes_chatgpt(self):
         current_local = {"mode": "local", "agent_mode": "remote", "agent_url": "https://agent/v1", "agent_model": "agent"}

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import time
 from typing import Any
 
-from . import browser, core, skills, toolhost
+from . import core, skills, toolhost
 
-TOOL = browser.TOOL
 POLICY = """You are AIOS, a helpful desktop assistant. Use advertised structured tools when needed for the user's request.
 The browser opens only when you call open. Each chat keeps its own browser session across turns.
 Call snapshot to inspect an already-open page, and use only element IDs from its latest result.
@@ -121,10 +119,6 @@ def _progress_label(name: str) -> str:
     return "MCP" if name.startswith("mcp_") else "Tool"
 
 
-def _socket_basename(path: os.PathLike[str] | str) -> str:
-    return os.fspath(path).replace("\\", "/").rsplit("/", 1)[-1]
-
-
 def _validate_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     if not messages:
         raise ValueError("Invalid conversation.")
@@ -208,10 +202,9 @@ def _validate_tool_definition(tool: Any) -> dict[str, Any]:
     return tool
 
 
-def _load_host_definitions(tool_socket: os.PathLike[str] | str) -> tuple[list[dict[str, Any]], list[str], bool]:
-    if _socket_basename(tool_socket) == "browser.sock":
-        return [browser.TOOL], [], True
-    listed = toolhost.list_tools(tool_socket)
+def _load_host_definitions(tool_socket) -> tuple[list[dict[str, Any]], list[str]]:
+    listed = toolhost.list_tools(
+        tool_socket, startup_timeout=toolhost.STARTUP_TIMEOUT)
     if not isinstance(listed, dict) or set(listed) != {"tools", "warnings"}:
         raise _tool_host_error()
     definitions = listed.get("tools")
@@ -227,7 +220,7 @@ def _load_host_definitions(tool_socket: os.PathLike[str] | str) -> tuple[list[di
             raise _tool_host_error()
         tools_by_name.add(name)
         ordered_tools.append(validated)
-    return ordered_tools, warnings, False
+    return ordered_tools, warnings
 
 
 class AgentSession:
@@ -242,7 +235,7 @@ class AgentSession:
             loaded_catalog, catalog_warnings = _validate_catalog(catalog), []
         self.catalog = list(loaded_catalog)
         self.catalog_by_name = {skill.name: skill for skill in self.catalog}
-        self.host_tools, host_warnings, self.legacy_browser = _load_host_definitions(tool_socket)
+        self.host_tools, host_warnings = _load_host_definitions(tool_socket)
         self.host_names = tuple(tool["function"]["name"] for tool in self.host_tools)
         self.host_by_name = {tool["function"]["name"]: tool for tool in self.host_tools}
         self._source_warnings = [*catalog_warnings, *host_warnings]
@@ -344,15 +337,10 @@ class AgentSession:
             return {"activated": skill_name}
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be an object.")
-        if self.legacy_browser:
-            if name != browser.TOOL["function"]["name"]:
-                raise ValueError("The model requested an unavailable tool.")
-            result = browser.call(self.tool_socket, arguments)
+        if timeout is None:
+            result = toolhost.call(self.tool_socket, name, arguments)
         else:
-            if timeout is None:
-                result = toolhost.call(self.tool_socket, name, arguments)
-            else:
-                result = toolhost.call(self.tool_socket, name, arguments, timeout=timeout)
+            result = toolhost.call(self.tool_socket, name, arguments, timeout=timeout)
         _tool_result_json(result)
         return result
 

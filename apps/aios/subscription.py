@@ -542,13 +542,10 @@ def _chat_rpc_result(value, kind):
     return identifier
 
 
-def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
+def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
          clock=time.monotonic):
     from . import agent, toolhost
-    from .browser import ACTIONS, call
 
-    if browser_socket is not None and session is not None:
-        raise ValueError('Supply either a browser socket or an agent session, not both.')
     if (not messages or messages[-1].get('role') != 'user' or
             any(m.get('role') not in ('user', 'assistant', 'system') or
                 not isinstance(m.get('content'), str) for m in messages)):
@@ -574,15 +571,6 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
             base_instructions = session.system_prompt() + '\n\n' + CHATGPT_ACTIVATION_NOTE
             if len(base_instructions.encode('utf-8')) > agent.MAX_SYSTEM_PROMPT_BYTES:
                 raise RuntimeError('The configured agent prompt is too large.')
-        elif browser_socket is not None:
-            function = agent.TOOL['function']
-            tools = [{
-                'type': 'function',
-                'name': 'browser',
-                'description': function['description'],
-                'inputSchema': function['parameters'],
-            }]
-            base_instructions = agent.POLICY
         else:
             tools = []
             base_instructions = agent.POLICY
@@ -647,26 +635,9 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
                 if (count > MAX_TOOL_CALLS or not isinstance(tool, str) or not tool
                         or not isinstance(args, dict) or not encoded_args
                         or len(encoded_args) > MAX_ARGUMENT_BYTES):
-                    if browser_socket is not None:
-                        raise RuntimeError(
-                            'ChatGPT requested an unsupported browser action or reached the action limit.')
                     raise RuntimeError(
                         'ChatGPT requested an invalid tool call or reached the action limit.')
-                if browser_socket is not None:
-                    if tool != 'browser' or args.get('action') not in ACTIONS:
-                        raise RuntimeError(
-                            'ChatGPT requested an unsupported browser action or reached the action limit.')
-                    yield {'type': 'progress', 'text': 'Browser · ' + args['action']}
-                    try:
-                        result = call(browser_socket, args)
-                    except (ValueError, RuntimeError, OSError):
-                        result = {
-                            'error': 'Browser action failed. Take a new snapshot before trying again.'}
-                    response = _chat_result(
-                        result,
-                        'Browser action failed. Take a new snapshot before trying again.',
-                    )
-                elif session is not None:
+                if session is not None:
                     yield {'type': 'progress', 'text': session.progress(tool, args)}
                     try:
                         remaining = _chat_remaining(deadline, clock)

@@ -11,7 +11,8 @@ git config --global --add safe.directory "$BUILD/llama"
 cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
-cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"
+rm -rf "$DEST/usr/local/share/aios/examples"
+cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"
 rm -rf "$DEST/usr/local/share/aios/skills"
 cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"
 if [ ! -d "$BUILD/llama/.git" ]; then

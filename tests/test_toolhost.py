@@ -108,6 +108,18 @@ class FakeMcp:
             raise self.close_error
 
 
+class BlockingCloser:
+    def __init__(self, delay):
+        self.delay = delay
+        self.close_calls = 0
+        self.completed = threading.Event()
+
+    def close(self):
+        self.close_calls += 1
+        time.sleep(self.delay)
+        self.completed.set()
+
+
 class FakeSocketHost:
     def __init__(self):
         self.calls = []
@@ -350,6 +362,21 @@ class ToolHostTests(unittest.TestCase):
         host.close()
         host.close()
 
+        self.assertEqual(browser.close_calls, 1)
+        self.assertEqual(mcp.close_calls, 1)
+
+    def test_close_runs_browser_and_mcp_cleanup_in_parallel_and_joins_both(self):
+        browser = BlockingCloser(0.25)
+        mcp = BlockingCloser(0.25)
+        host = ToolHost(browser=browser, applications=FakeApplications(), mcp=mcp)
+
+        started = time.monotonic()
+        host.close()
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.45)
+        self.assertTrue(browser.completed.is_set())
+        self.assertTrue(mcp.completed.is_set())
         self.assertEqual(browser.close_calls, 1)
         self.assertEqual(mcp.close_calls, 1)
 
@@ -757,11 +784,77 @@ class ToolHostTests(unittest.TestCase):
             mock.patch("aios.toolhost.time.monotonic", side_effect=[100.0, 100.0, 100.2, 100.21, 100.45, 100.51, 100.52, 100.53]), \
             mock.patch("aios.toolhost.time.sleep") as sleep:
             with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
-                request("/missing.sock", {"action": "list"}, timeout=0.5)
+                request("/missing.sock", {"action": "list"}, timeout=60, startup_timeout=0.5)
 
         first.close.assert_called_once()
         second.close.assert_called_once()
         self.assertTrue(sleep.called)
+
+    def test_missing_or_refused_host_uses_short_startup_budget(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / "missing.sock"
+            refused = Path(temp) / "refused.sock"
+            stale = socket.socket(socket.AF_UNIX)
+            stale.bind(os.fspath(refused))
+            stale.close()
+
+            for path in (missing, refused):
+                with self.subTest(path=path.name):
+                    started = time.monotonic()
+                    with self.assertRaisesRegex(RuntimeError, SAFE_SERVICE_UNAVAILABLE):
+                        request(path, {"action": "list"}, timeout=60, startup_timeout=0.2)
+                    self.assertLess(time.monotonic() - started, 0.8)
+
+    def test_startup_and_operation_deadlines_are_separate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "delayed.sock"
+            ready = threading.Event()
+
+            def run_server():
+                time.sleep(0.1)
+                with socket.socket(socket.AF_UNIX) as server:
+                    server.bind(os.fspath(path))
+                    server.listen(1)
+                    ready.set()
+                    connection, _ = server.accept()
+                    with connection:
+                        connection.recv(4096)
+                        time.sleep(0.3)
+                        connection.sendall(b'{"result":{"ok":true}}\n')
+
+            thread = threading.Thread(target=run_server)
+            thread.start()
+            started = time.monotonic()
+            result = request(path, {"action": "list"}, timeout=1.0, startup_timeout=0.3)
+            elapsed = time.monotonic() - started
+            thread.join(2)
+
+            self.assertTrue(ready.is_set())
+            self.assertEqual(result, {"ok": True})
+            self.assertGreater(elapsed, 0.35)
+            self.assertLess(elapsed, 1.0)
+            self.assertFalse(thread.is_alive())
+
+    def test_timeout_values_are_finite_and_nonnegative(self):
+        invalid = (-1, float("nan"), float("inf"), "invalid", object())
+        with mock.patch("aios.toolhost.socket.socket") as socket_factory:
+            for value in invalid:
+                with self.subTest(timeout=value), self.assertRaises(ValueError):
+                    request("/missing.sock", {"action": "list"}, timeout=value)
+                with self.subTest(startup_timeout=value), self.assertRaises(ValueError):
+                    request("/missing.sock", {"action": "list"}, startup_timeout=value)
+        socket_factory.assert_not_called()
+
+    def test_convenience_clients_forward_startup_timeout(self):
+        with mock.patch("aios.toolhost.request", return_value={"ok": True}) as send:
+            self.assertEqual(list_tools("tools.sock", timeout=9, startup_timeout=0.4), {"ok": True})
+            self.assertEqual(call("tools.sock", "browser", {"action": "snapshot"}, timeout=10, startup_timeout=0.5), {"ok": True})
+            self.assertEqual(close_service("tools.sock", timeout=11, startup_timeout=0.6), {"ok": True})
+        self.assertEqual(send.call_args_list, [
+            mock.call("tools.sock", {"action": "list"}, timeout=9, startup_timeout=0.4),
+            mock.call("tools.sock", {"action": "call", "name": "browser", "arguments": {"action": "snapshot"}}, timeout=10, startup_timeout=0.5),
+            mock.call("tools.sock", {"action": "close"}, timeout=11, startup_timeout=0.6),
+        ])
 
     def test_request_times_out_against_stalled_server_with_safe_error_and_bounded_time(self):
         with tempfile.TemporaryDirectory() as temp:
