@@ -8,6 +8,7 @@
 #include <QTimer>
 #include "ProfilePhoto.h"
 #include <QProcess>
+#include <QProcessEnvironment>
 
 // Broker UI has no link to the chat worker or model tool registry. Experimental
 // mode is explicit. The normal desktop retains its existing behavior.
@@ -267,6 +268,12 @@ private:
         if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "delete_profile") return;
         pendingEnrollment = true; m_error.clear(); emit changed();
         auto process = new QProcess(this);
+        auto environment = QProcessEnvironment::systemEnvironment();
+        const auto modulePath = environment.value("AIOS_PYTHONPATH");
+        if (!modulePath.isEmpty()) environment.insert("PYTHONPATH", modulePath);
+        else if (environment.value("PYTHONPATH").isEmpty())
+            environment.insert("PYTHONPATH", "/usr/local/share/aios");
+        process->setProcessEnvironment(environment);
         const auto epoch = generation;
         connect(process, &QProcess::started, process, [process, request] {
             process->write(QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n'); process->closeWriteChannel();
