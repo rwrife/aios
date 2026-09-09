@@ -108,7 +108,7 @@ Window {
                 }
             }
         }
-        Text { Layout.fillWidth: true; visible: text.length > 0; text: session.recording ? "Listening… tap the microphone to finish" : session.status; color: session.recording ? theme.accent : theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+        Text { Layout.fillWidth: true; visible: text.length > 0; text: session.recording ? "Listening… tap the microphone to finish" : session.status; textFormat: Text.PlainText; color: session.recording ? theme.accent : theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
         Flow {
             Layout.fillWidth: true; visible: session.attachments.length > 0; spacing: 6
             Repeater {

@@ -1,7 +1,7 @@
 """One request per process. JSON lines keep UI text separate from commands."""
 import json
-import sys
 import signal
+import sys
 from pathlib import Path
 from .core import chat, load_config, load_history, save_config, save_history, data_dir, download_model, BUNDLED_MODEL
 
@@ -10,12 +10,7 @@ def emit(kind, **values):
     print(json.dumps({"type": kind, **values}), flush=True)
 
 
-# A graceful Stop unwinds account cancellation and subprocess cleanup.
-signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-
-
-try:
-    request = json.loads(sys.stdin.readline())
+def handle(request):
     action = request["action"]
     if action == "load":
         config = load_config()
@@ -57,13 +52,10 @@ try:
         from .subscription import account_action
         account_action(request['operation'], emit, request.get('device', False))
     elif action == "chat":
-        if load_config()['mode'] == 'chatgpt':
-            from .subscription import chat as subscription_chat
-            for event in subscription_chat(request['messages'], request.get('browser_socket')):
-                print(json.dumps(event), flush=True)
-        elif request.get("browser_socket"):
+        tool_socket = request.get("tool_socket")
+        if isinstance(tool_socket, str) and tool_socket:
             from .agent import chat as agent_chat
-            for event in agent_chat(request["messages"], request["browser_socket"]):
+            for event in agent_chat(request["messages"], tool_socket):
                 print(json.dumps(event), flush=True)
         else:
             for text in chat(request["messages"]):
@@ -71,7 +63,18 @@ try:
         emit("done")
     else:
         raise ValueError("Unknown action")
-except Exception as exc:
-    # Network helpers intentionally exclude server bodies and credentials.
-    emit("error", text=str(exc) if isinstance(exc, (ValueError, RuntimeError)) else "Unable to complete the request. Check configuration and available storage.")
-    sys.exit(1)
+
+
+def main():
+    # A graceful Stop unwinds account cancellation and subprocess cleanup.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        handle(json.loads(sys.stdin.readline()))
+    except Exception as exc:
+        # Network helpers intentionally exclude server bodies and credentials.
+        emit("error", text=str(exc) if isinstance(exc, (ValueError, RuntimeError)) else "Unable to complete the request. Check configuration and available storage.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

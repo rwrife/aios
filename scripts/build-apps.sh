@@ -12,6 +12,8 @@ cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Releas
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
 cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"
+rm -rf "$DEST/usr/local/share/aios/skills"
+cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"
 if [ ! -d "$BUILD/llama/.git" ]; then
   git init "$BUILD/llama"
   git -C "$BUILD/llama" remote add origin https://github.com/ggml-org/llama.cpp.git

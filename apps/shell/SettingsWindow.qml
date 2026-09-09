@@ -25,7 +25,7 @@ Window {
         background: Rectangle { color: control.hovered || control.down ? theme.horizon : theme.input; radius: 6; border.color: control.activeFocus ? theme.accent : theme.line }
     }
     component Note: Text {
-        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap
+        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap; textFormat: Text.PlainText
         Layout.fillWidth: true
     }
     RowLayout {
