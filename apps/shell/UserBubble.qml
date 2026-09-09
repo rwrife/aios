@@ -64,6 +64,7 @@ Item {
             delegate: MenuItem {
                 required property var modelData
                 objectName: "chooseProfile"; text: modelData.name
+                implicitHeight: 40
                 background: Rectangle { color: parent.highlighted ? "#405968" : "transparent"; radius: 4 }
                 contentItem: Text { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.ink; verticalAlignment: Text.AlignVCenter }
                 onTriggered: {
@@ -77,6 +78,7 @@ Item {
         }
         MenuItem {
             enabled: false
+            implicitHeight: 40
             visible: !root.control || !root.control.profiles || root.control.profiles.length === 0
             height: visible ? implicitHeight : 0
             text: root.control && root.control.busy ? "Loading accounts…" : "No saved accounts"
@@ -84,6 +86,7 @@ Item {
         MenuSeparator { contentItem: Rectangle { implicitWidth: 240; implicitHeight: 1; color: "#58717e" } }
         MenuItem {
             objectName: "createUser"; text: "New account"
+            implicitHeight: 40
             enabled: root.control && root.control.personalAvailable
             onTriggered: { picker.close(); root.createAccount(); }
         }
