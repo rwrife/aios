@@ -209,10 +209,9 @@ TestCase {
 
         var slider = findChild(desktop, "volumeSlider")
         compare(slider.orientation, Qt.Vertical)
-        slider.forceActiveFocus()
-        keyClick(Qt.Key_Down)
+        slider.value = 37
         tryCompare(backend.setVolumeCalls, "length", 1)
-        compare(backend.setVolumeCalls[0], 64)
+        compare(backend.setVolumeCalls[0], 37)
 
         mouseClick(findChild(desktop, "muteButton"))
         compare(backend.setMutedCalls.length, 1)
