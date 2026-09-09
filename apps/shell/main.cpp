@@ -41,6 +41,7 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantMap config READ config NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool configuring READ configuring NOTIFY changed)
     Q_PROPERTY(QStringList attachments READ attachments NOTIFY changed)
     Q_PROPERTY(bool recording READ recording NOTIFY changed)
     Q_PROPERTY(bool speaking READ speaking NOTIFY changed)
@@ -50,6 +51,7 @@ public:
     QVariantMap config() const { return m_config; }
     QString status() const { return m_status; }
     bool busy() const { return m_busy; }
+    bool configuring() const { return m_configuring; }
     QStringList attachments() const { return attachmentNames; }
     bool recording() const { return voice.recording(); }
     bool speaking() const { return voice.speaking(); }
@@ -189,8 +191,10 @@ public:
         p->start("doas", {"-n", "/sbin/" + action});
     }
     Q_INVOKABLE void configure(const QVariantMap &values) {
-        if (m_busy) return;
+        if (m_busy || m_configuring) return;
+        m_configuring = true;
         pendingConfig = values;
+        emit changed();
         run({{"action", "configure"}, {"config", QJsonObject::fromVariantMap(values)}});
     }
     Q_INVOKABLE void setupLocal() {
@@ -212,6 +216,7 @@ private:
     QVariantMap m_config, pendingConfig;
     QString m_status;
     bool m_busy = false;
+    bool m_configuring = false;
     QProcess *active = nullptr;
     QProcess local;
     QProcess browser;
@@ -302,11 +307,13 @@ private:
                 emit changed();
             }
         });
-        connect(p, &QProcess::errorOccurred, this, [this,p](QProcess::ProcessError) {
+        connect(p, &QProcess::errorOccurred, this, [this,p,action](QProcess::ProcessError) {
+            if (action == "configure") m_configuring = false;
             m_status = "The AIOS backend could not start.";
             if (active == p) { active = nullptr; m_busy = false; } emit changed();
         });
         connect(p, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this, [this,p,action,request](int, QProcess::ExitStatus) {
+            if (action == "configure") { m_configuring = false; emit changed(); }
             if (action == "transcribe") QFile::remove(request.value("path").toString());
             if (active == p) { active = nullptr; m_busy = false; emit changed(); } p->deleteLater();
         });

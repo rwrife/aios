@@ -79,6 +79,19 @@ class CoreTests(unittest.TestCase):
         core.save_history([])
         self.assertEqual(core.load_history(), [])
 
+    def test_theme_colors_persist_without_changing_model_settings(self):
+        self.assertEqual(core.load_config()["theme_color"], "blue")
+        core.save_config({"mode": "remote", "url": "https://example.com/v1", "api_key": "private"})
+        for color in core.THEME_COLORS:
+            core.save_config({"theme_color": color})
+            config = core.load_config()
+            self.assertEqual(config["theme_color"], color)
+            self.assertEqual(config["mode"], "remote")
+            self.assertEqual(config["api_key"], "private")
+        with self.assertRaises(ValueError):
+            core.save_config({"theme_color": "unknown"})
+        self.assertEqual(core.load_config()["theme_color"], "slate")
+
     def test_real_http_stream_and_redacted_error(self):
         server = HTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 
 BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
+THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
 
 
 def config_dir():
@@ -34,7 +35,7 @@ def write_json(path, value):
 
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "reduced_motion": False,
+                "model_path": "", "api_key": "", "reduced_motion": False, "theme_color": "blue",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
                 "speech_model_path": ""}
@@ -68,6 +69,8 @@ def save_config(values):
             config[key] = values[key]
     if config["mode"] not in ("local", "remote"):
         raise ValueError("Choose local or remote.")
+    if config["theme_color"] not in THEME_COLORS:
+        raise ValueError("Choose one of the available theme colors.")
     config["url"] = validate_url(str(config["url"]))
     if config["voice_mode"] not in ("local", "remote"):
         raise ValueError("Choose local or remote voice.")
@@ -88,7 +91,7 @@ def save_config(values):
 
 
 def defaults_keys():
-    return ("mode", "url", "model", "model_path", "api_key", "reduced_motion",
+    return ("mode", "url", "model", "model_path", "api_key", "reduced_motion", "theme_color",
             "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path")
 
 

@@ -10,17 +10,8 @@ Window {
     width: Screen.width; height: Screen.height
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
-    QtObject {
-        id: theme
-        readonly property color night: "#101b27"
-        readonly property color horizon: "#354e60"
-        readonly property color panel: "#172633"
-        readonly property color input: "#203340"
-        readonly property color ink: "#f1f5f6"
-        readonly property color muted: "#b2c3cd"
-        readonly property color accent: "#bde4e6"
-        readonly property color line: "#4c6574"
-    }
+    Theme { id: theme; selected: backend.config.theme_color || "blue" }
+    Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backend.config.reduced_motion === true
     function openChat() { var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
     property var settingsWindow: null
@@ -30,8 +21,13 @@ Window {
     }
     Component { id: settingsComponent; SettingsWindow {} }
     property real phase: 0
-    NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 26000; loops: Animation.Infinite; running: !desktop.reducedMotion && backend.sessionCount === 0 }
-    onPhaseChanged: waves.requestPaint()
+    NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 48000; loops: Animation.Infinite; running: !desktop.reducedMotion && desktop.visible }
+    onReducedMotionChanged: waves.requestPaint()
+    Timer {
+        interval: 33; repeat: true
+        running: !desktop.reducedMotion && desktop.visible
+        onTriggered: waves.requestPaint()
+    }
     Rectangle { anchors.fill: parent; gradient: Gradient {
         GradientStop { position: 0; color: theme.night }
         GradientStop { position: 0.68; color: theme.horizon }
@@ -43,15 +39,42 @@ Window {
         onHeightChanged: requestPaint()
         onPaint: {
             var ctx = getContext("2d"); ctx.reset();
-            for (var ribbon = 0; ribbon < 10; ribbon++) {
-                ctx.beginPath();
-                for (var x = 0; x <= width; x += 8) {
-                    var y = height * 0.57 + Math.sin(x / width * 5.2 + desktop.phase + ribbon * 0.07) * height * 0.08
-                        + Math.cos(x / width * 2.8 - desktop.phase) * height * 0.045 + ribbon * 4;
-                    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            // Three open crests, each with a contour-following fade below it.
+            // All harmonics repeat seamlessly after the 48-second cycle.
+            function wave(u, layer) {
+                var t = desktop.phase
+                return height * (0.54 + layer * 0.028
+                    + Math.sin(u * 5.0 + t + layer * 1.45) * 0.078
+                    + Math.cos(u * 2.7 - t * 2 + layer * 0.85) * 0.035)
+            }
+            var fadeDepth = Math.min(130, height * 0.16)
+            // Short vertical tiles keep the gradient attached to the curve,
+            // rather than filling a closed ribbon with a visible lower edge.
+            for (var layer = 2; layer >= 0; --layer) {
+                for (var x = 0; x < width; x += 10) {
+                    var nextX = Math.min(width, x + 10)
+                    var y0 = wave(x / width, layer), y1 = wave(nextX / width, layer)
+                    var top = (y0 + y1) / 2
+                    var fade = ctx.createLinearGradient(0, top, 0, top + fadeDepth)
+                    fade.addColorStop(0, theme.waveAlpha(0.18))
+                    fade.addColorStop(0.25, theme.waveAlpha(0.09))
+                    fade.addColorStop(0.65, theme.waveAlpha(0.02))
+                    fade.addColorStop(1, theme.waveAlpha(0))
+                    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(nextX, y1)
+                    ctx.lineTo(nextX, y1 + fadeDepth); ctx.lineTo(x, y0 + fadeDepth); ctx.closePath()
+                    ctx.fillStyle = fade; ctx.fill()
                 }
-                ctx.strokeStyle = theme.accent; ctx.globalAlpha = 0.045 + (9-ribbon)*0.007;
-                ctx.lineWidth = ribbon === 0 ? 2 : 1; ctx.stroke();
+            }
+            // Draw crests last so crossing fades never soften their solid edge.
+            for (var crest = 2; crest >= 0; --crest) {
+                ctx.beginPath()
+                for (var i = 0; i <= 160; ++i) {
+                    var u = i / 160, y = wave(u, crest)
+                    if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(u * width, y)
+                }
+                ctx.lineJoin = "round"
+                ctx.strokeStyle = theme.waveAlpha(0.08); ctx.lineWidth = 3.5; ctx.stroke()
+                ctx.strokeStyle = theme.waveAlpha(0.50); ctx.lineWidth = 1.3; ctx.stroke()
             }
         }
     }
