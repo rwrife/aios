@@ -142,6 +142,16 @@ exists but returns no frames, inspect its supported formats with
 `v4l2-ctl -d /dev/video0 --list-formats-ext`. Start with modest resolution/frame rate
 for USB/IP. Successful capture is not proof of recognition accuracy or liveness.
 
+Observed follow-up: stopping the identified Logi Tune watchdog allowed normal
+attachment and exposed four V4L2 nodes. Adding the development account to `video`
+resolved the permission denial. The tested WB7022 stream still failed with
+`uvcvideo: Failed to resubmit video URB (-1)` and delivered no verified frames.
+Treat this as a separate transfer/streaming failure, not another busy-handle
+failure. Do not repeat force-bind or service stops without new evidence. Record
+the supported format, USB connection and kernel/bridge versions when investigating.
+The helper uses `wslpath` with forward slashes and direct execution to preserve
+Windows paths through Windows PowerShell 5.1 argument handling.
+
 ## Return the camera to Windows
 
 ```powershell

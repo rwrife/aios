@@ -157,7 +157,7 @@ switch ($Action) {
         Write-Output 'The diagnostic server is stopped. Run Attach again to keep a successful connection.'
     }
     'Probe' {
-        $linuxRepo = (Invoke-Native wsl.exe @('-d',$Distro,'--','wslpath','-u',$repoRoot) | Out-String).Trim()
+        $linuxRepo = (Invoke-Native wsl.exe @('-d',$Distro,'--exec','wslpath','-u',$repoRoot.Replace('\','/')) | Out-String).Trim()
         Invoke-Native wsl.exe @('-d',$Distro,'--cd',$linuxRepo,'--','env','PYTHONPATH=apps','python3','-m','aios.camera','--probe',$VideoDevice)
     }
 }
