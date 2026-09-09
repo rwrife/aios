@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import aios.applications as applications
 from aios.applications import APPLICATION_TOOL, ApplicationStore
 
 
@@ -79,6 +80,49 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(launch_result, {"launched": True, "id": created["id"], "title": "Hello World"})
         self.assertEqual(launched, [folder])
 
+    def test_publish_cleanup_rejects_follow_up_writes(self):
+        store = self._store()
+        created = store.create({"title": "Published", "request": "Make a published page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>published</p>"})
+        store.publish({"id": created["id"], "summary": "Published", "keywords": ["published"]})
+
+        with self.assertRaises(ValueError):
+            store.write({"id": created["id"], "html": "<!doctype html><p>again</p>"})
+        with self.assertRaises(ValueError):
+            store.publish({"id": created["id"], "summary": "Again", "keywords": ["published"]})
+
+    def test_interrupted_publish_is_self_healed_before_launch_and_search(self):
+        launched = []
+        store = self._store(launcher=lambda folder: launched.append(Path(folder)))
+        created = store.create({"title": "Recover", "request": "Make a recoverable page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>recover</p>"})
+        publish_result = store.publish({"id": created["id"], "summary": "Recoverable", "keywords": ["recover"]})
+
+        folder = self.root / created["id"]
+        draft_path = folder / ".draft.json"
+        draft_path.write_text(
+            json.dumps(
+                {
+                    "id": created["id"],
+                    "title": "Recover",
+                    "request": "Make a recoverable page",
+                    "created_at": _read_json(folder / "manifest.json")["created_at"],
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+        results = store.search({"query": "recover"})
+        self.assertEqual(results[0]["id"], created["id"])
+        self.assertFalse(draft_path.exists())
+
+        launch_result = store.launch({"id": created["id"]})
+        self.assertEqual(launch_result, {"launched": True, "id": created["id"], "title": "Recover"})
+        self.assertEqual(launched, [folder])
+        self.assertEqual(publish_result["sha256"], _read_json(folder / "manifest.json")["sha256"])
+
     def test_exact_request_ranks_above_keyword_overlap(self):
         store = self._store()
         exact = store.create({"title": "Blue Sky", "request": "Make a blue sky gallery"})
@@ -113,12 +157,41 @@ class ApplicationStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ApplicationStore(root=link)
 
+    def test_existing_non_directory_root_rejected(self):
+        root = Path(self.tmp.name) / "applications-root"
+        root.write_text("not a directory", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            ApplicationStore(root=root)
+
+    def test_created_directories_are_hardened(self):
+        original_umask = os.umask(0)
+        try:
+            nested_root = Path(self.tmp.name) / "secure" / "applications"
+            store = ApplicationStore(root=nested_root)
+        finally:
+            os.umask(original_umask)
+
+        self.assertEqual(stat.S_IMODE((Path(self.tmp.name) / "secure").stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(nested_root.stat().st_mode), 0o700)
+
+        created = store.create({"title": "Hardened", "request": "Make a hardened page"})
+        self.assertEqual(stat.S_IMODE((nested_root / created["id"]).stat().st_mode), 0o700)
+
     def test_oversize_html_rejected(self):
         store = self._store()
         created = store.create({"title": "Big", "request": "Make a big page"})
         html = "<!doctype html>" + ("x" * (16 * 1024))
         with self.assertRaises(ValueError):
             store.write({"id": created["id"], "html": html})
+
+    def test_exactly_sixteen_kib_html_is_accepted(self):
+        store = self._store()
+        created = store.create({"title": "Bound", "request": "Make a bounded page"})
+        html = "<!doctype html>" + ("x" * (16 * 1024 - len("<!doctype html>")))
+        result = store.write({"id": created["id"], "html": html})
+        self.assertEqual(result["written"], True)
+        self.assertEqual(result["bytes"], 16 * 1024)
+        self.assertEqual(store.read({"id": created["id"]}), html)
 
     def test_malformed_and_extra_file_rejection(self):
         store = self._store()
@@ -144,6 +217,8 @@ class ApplicationStoreTests(unittest.TestCase):
             store.publish({"id": created["id"], "summary": "Good", "keywords": ["", "ok"]})
         with self.assertRaises(ValueError):
             store.publish({"id": created["id"], "summary": "Good", "keywords": ["x"] * 21})
+        with self.assertRaises(ValueError):
+            store.publish({"id": created["id"], "summary": "Good", "keywords": ["alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi"]})
 
     def test_digest_mismatch_blocks_launch(self):
         launched = []
@@ -156,6 +231,32 @@ class ApplicationStoreTests(unittest.TestCase):
             store.launch({"id": created["id"]})
         self.assertEqual(launched, [])
         self.assertTrue((self.root / created["id"] / "manifest.json").exists())
+
+    def test_search_results_are_capped_at_five(self):
+        store = self._store()
+        for index in range(6):
+            created = store.create({"title": f"Shared App {index}", "request": f"Make shared app {index}"})
+            store.write({"id": created["id"], "html": f"<!doctype html><p>{index}</p>"})
+            store.publish({"id": created["id"], "summary": f"Shared summary {index}", "keywords": ["shared"]})
+
+        results = store.search({"query": "shared"})
+        self.assertEqual(len(results), 5)
+
+    def test_regular_file_reader_rejects_symlinked_index(self):
+        helper = getattr(applications, "_read_regular_file_bytes", None)
+        self.assertIsNotNone(helper)
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlinks unavailable")
+        store = self._store()
+        created = store.create({"title": "Helper", "request": "Make a helper page"})
+        folder = self.root / created["id"]
+        target = folder / "payload.txt"
+        target.write_text("payload", encoding="utf-8")
+        index = folder / "index.html"
+        os.symlink(target, index)
+
+        with self.assertRaises(ValueError):
+            helper(index, 16 * 1024)
 
     def test_launcher_failure_preserves_published_files(self):
         def launcher(_folder):

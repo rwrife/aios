@@ -132,7 +132,7 @@ def _normalize_keywords(values: Iterable[Any]) -> list[str]:
             normalized.add(token)
     ordered = sorted(normalized)
     if len(ordered) > MAX_KEYWORDS:
-        ordered = ordered[:MAX_KEYWORDS]
+        raise ValueError("Keep the keyword list to 20 tokens or fewer.")
     return ordered
 
 
@@ -197,6 +197,50 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     _atomic_write_bytes(path, data)
 
 
+def _ensure_secure_directory(path: Path) -> None:
+    missing: list[Path] = []
+    current = path
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    if not current.is_dir() or current.is_symlink():
+        raise ValueError("Choose a real application root directory.")
+    for directory in reversed(missing):
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        directory.chmod(0o700)
+    path.chmod(0o700)
+
+
+def _read_regular_file_bytes(path: Path, max_bytes: int) -> bytes:
+    if hasattr(os, "O_NOFOLLOW"):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            raise
+        except OSError as error:
+            raise ValueError("Unexpected application files found.") from error
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            stat_result = os.fstat(stream.fileno())
+            if not stat.S_ISREG(stat_result.st_mode):
+                raise ValueError("Unexpected application files found.")
+            if stat_result.st_size > max_bytes:
+                raise ValueError("The file is too large.")
+            data = stream.read(stat_result.st_size)
+        os.close(fd)
+        if len(data) != stat_result.st_size:
+            raise ValueError("Unexpected application files found.")
+        return data
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Unexpected application files found.")
+    data = path.read_bytes()
+    if len(data) > max_bytes:
+        raise ValueError("The file is too large.")
+    return data
+
+
 class ApplicationStore:
     def __init__(self, root: Path | str | None = None, launcher: Callable[[Path], Any] | None = None):
         self.root = Path(root) if root is not None else core.data_dir() / "applications"
@@ -206,9 +250,9 @@ class ApplicationStore:
                 raise ValueError("Choose a real application root directory.")
             if not _is_regular_dir(self.root):
                 raise ValueError("Choose a real application root directory.")
+            self.root.chmod(0o700)
         else:
-            self.root.mkdir(parents=True, exist_ok=True)
-        self.root.chmod(0o700)
+            _ensure_secure_directory(self.root)
         self.launcher = launcher or self._default_launcher
 
     def create(self, payload: dict[str, Any]) -> dict[str, str]:
@@ -224,7 +268,10 @@ class ApplicationStore:
             folder = self.root / app_id
             if folder.exists():
                 continue
-            folder.mkdir(mode=0o700)
+            try:
+                folder.mkdir(mode=0o700)
+            except FileExistsError:
+                continue
             folder.chmod(0o700)
             try:
                 _atomic_write_json(folder / ".draft.json", {
@@ -253,12 +300,16 @@ class ApplicationStore:
     def read(self, payload: dict[str, Any]) -> str:
         folder = self._existing_folder(payload)
         index = folder / "index.html"
-        if not _is_regular_file(index):
-            raise ValueError("The application has no readable HTML document.")
-        if index.stat().st_size > MAX_HTML_BYTES:
-            raise ValueError("The HTML document is too large.")
         try:
-            return index.read_text(encoding="utf-8")
+            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
+        except FileNotFoundError as error:
+            raise ValueError("The application has no readable HTML document.") from error
+        except ValueError as error:
+            if str(error) == "The file is too large.":
+                raise ValueError("The HTML document is too large.") from error
+            raise ValueError("The application has no readable HTML document.") from error
+        try:
+            return html_bytes.decode("utf-8")
         except UnicodeDecodeError as error:
             raise ValueError("The HTML document is not valid UTF-8.") from error
 
@@ -276,9 +327,14 @@ class ApplicationStore:
             raise ValueError("Keep the keyword list to 20 items or fewer.")
         summary = _normalize_summary(summary_value)
         keywords = _normalize_keywords(keywords_value)
-        html_bytes = index.read_bytes()
-        if len(html_bytes) > MAX_HTML_BYTES:
-            raise ValueError("The HTML document is too large.")
+        try:
+            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
+        except FileNotFoundError as error:
+            raise ValueError("Write the HTML document before publishing.") from error
+        except ValueError as error:
+            if str(error) == "The file is too large.":
+                raise ValueError("The HTML document is too large.") from error
+            raise ValueError("Write the HTML document before publishing.") from error
         try:
             if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
                 raise ValueError("HTML must start with <!doctype html>.")
@@ -342,11 +398,14 @@ class ApplicationStore:
         if manifest is None:
             raise ValueError("Publish the application before launching it.")
         index = folder / "index.html"
-        if not _is_regular_file(index):
-            raise ValueError("The application document is missing.")
-        html_bytes = index.read_bytes()
-        if len(html_bytes) > MAX_HTML_BYTES:
-            raise ValueError("The HTML document is too large.")
+        try:
+            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
+        except FileNotFoundError as error:
+            raise ValueError("The application document is missing.") from error
+        except ValueError as error:
+            if str(error) == "The file is too large.":
+                raise ValueError("The HTML document is too large.") from error
+            raise ValueError("The application document is missing.") from error
         if _sha256_bytes(html_bytes) != manifest["sha256"]:
             raise ValueError("The application content changed after publication.")
         try:
@@ -390,16 +449,17 @@ class ApplicationStore:
         folder = self._existing_folder(payload)
         if not _is_regular_file(folder / "manifest.json"):
             raise ValueError("This application is not published.")
-        if _is_regular_file(folder / ".draft.json"):
-            raise ValueError("Published applications must not keep draft metadata.")
-        self._validate_folder_contents(folder, allow_draft=False, allow_manifest=True)
+        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=True)
         return folder
 
     def _load_draft(self, folder: Path) -> dict[str, Any]:
         draft_path = folder / ".draft.json"
-        if not _is_regular_file(draft_path):
+        if not draft_path.exists():
             raise ValueError("This application is no longer a draft.")
-        data = _load_json(draft_path)
+        try:
+            data = _load_json(draft_path)
+        except (FileNotFoundError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("Invalid draft metadata.") from error
         if not isinstance(data, dict):
             raise ValueError("Invalid draft metadata.")
         required = {"id", "title", "request", "created_at"}
@@ -418,13 +478,18 @@ class ApplicationStore:
 
     def _load_manifest(self, folder: Path) -> dict[str, Any] | None:
         manifest_path = folder / "manifest.json"
-        if not _is_regular_file(manifest_path):
+        if not manifest_path.exists():
             return None
-        self._validate_folder_contents(folder, allow_draft=False, allow_manifest=True)
+        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=True)
         index = folder / "index.html"
-        if not _is_regular_file(index) or index.stat().st_size > MAX_HTML_BYTES:
-            raise ValueError("Invalid manifest metadata.")
-        data = _load_json(manifest_path)
+        try:
+            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
+        except (FileNotFoundError, ValueError) as error:
+            raise ValueError("Invalid manifest metadata.") from error
+        try:
+            data = _load_json(manifest_path)
+        except (FileNotFoundError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("Invalid manifest metadata.") from error
         if not isinstance(data, dict):
             raise ValueError("Invalid manifest metadata.")
         required = {"id", "title", "request", "created_at", "updated_at", "summary", "keywords", "entrypoint", "sha256"}
@@ -458,6 +523,17 @@ class ApplicationStore:
         if normalized_keywords != sorted(set(normalized_keywords)):
             raise ValueError("Invalid manifest metadata.")
         data["keywords"] = normalized_keywords
+        if _sha256_bytes(html_bytes) != data["sha256"]:
+            raise ValueError("Invalid manifest metadata.")
+        try:
+            if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
+                raise ValueError("Invalid manifest metadata.")
+        except UnicodeDecodeError as error:
+            raise ValueError("Invalid manifest metadata.") from error
+        draft_path = folder / ".draft.json"
+        if draft_path.exists():
+            self._load_draft(folder)
+            draft_path.unlink()
         return data
 
     def _validate_folder_contents(self, folder: Path, *, allow_draft: bool, allow_manifest: bool) -> None:
@@ -476,5 +552,4 @@ class ApplicationStore:
 
 
 def _load_json(path: Path) -> Any:
-    text = path.read_text(encoding="utf-8")
-    return json.loads(text)
+    return json.loads(_read_regular_file_bytes(path, MAX_HTML_BYTES).decode("utf-8"))
