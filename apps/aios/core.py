@@ -11,6 +11,9 @@ import urllib.request
 
 BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
 THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
+SAFE_AGENT_KEY_ERROR = "Choose a valid agent API key."
+SAFE_AGENT_KEY_CONFIG_ERROR = "The agent API key configuration is invalid."
+SAFE_REQUEST_VALUE_ERROR = "The model request could not be constructed safely."
 
 
 def config_dir():
@@ -59,6 +62,13 @@ def validate_url(url):
     return url.rstrip("/")
 
 
+def _validate_agent_api_key(value, message):
+    if (not isinstance(value, str) or len(value) > 8192
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+        raise ValueError(message)
+    return value
+
+
 def save_config(values):
     config = load_config()
     if "url" in values and isinstance(values["url"], str) and values["url"].rstrip("/") != str(config["url"]).rstrip("/") and "api_key" not in values:
@@ -83,8 +93,7 @@ def save_config(values):
     config["agent_model"] = config["agent_model"].strip()
     if any(char in config["agent_model"] for char in "\r\n\"'"):
         raise ValueError("Choose a valid agent model.")
-    if not isinstance(config["agent_api_key"], str) or len(config["agent_api_key"]) > 8192:
-        raise ValueError("Choose a valid agent API key.")
+    _validate_agent_api_key(config["agent_api_key"], SAFE_AGENT_KEY_ERROR)
     if config["agent_url"]:
         config["agent_url"] = validate_url(config["agent_url"])
     if config["agent_mode"] == "remote" and (not config["agent_url"] or not config["agent_model"]):
@@ -127,8 +136,7 @@ def _remote_agent_settings(config):
     if (not isinstance(model, str) or not model.strip() or len(model) > 200
             or any(char in model for char in "\r\n\"'")):
         raise ValueError("The remote agent profile requires a valid endpoint and model.")
-    if not isinstance(key, str) or len(key) > 8192:
-        raise ValueError("The agent API key configuration is invalid.")
+    _validate_agent_api_key(key, SAFE_AGENT_KEY_CONFIG_ERROR)
     return validate_url(url), model.strip(), key
 
 
@@ -170,10 +178,15 @@ def request(route, body=None, timeout=90, profile="current"):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
-    req = urllib.request.Request(base + route, headers=headers,
-                                 data=json.dumps(body).encode() if body is not None else None)
     try:
+        req = urllib.request.Request(
+            base + route,
+            headers=headers,
+            data=json.dumps(body).encode() if body is not None else None,
+        )
         return urllib.request.build_opener(NoRedirect).open(req, timeout=timeout)
+    except ValueError:
+        raise RuntimeError(SAFE_REQUEST_VALUE_ERROR) from None
     except urllib.error.HTTPError as exc:
         exc.close()
         reasons = {401: "Authentication failed. Check your API key.", 403: "This model is not permitted.",

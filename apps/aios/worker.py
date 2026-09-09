@@ -21,6 +21,7 @@ try:
         config = load_config()
         config["has_key"] = bool(config.pop("api_key"))
         config["has_voice_key"] = bool(config.pop("voice_key"))
+        config["has_agent_key"] = bool(config.pop("agent_api_key"))
         mode_file = Path("/etc/aios-mode")
         config["live"] = mode_file.exists() and mode_file.read_text().strip() == "live"
         emit("loaded", config=config, messages=load_history())

@@ -336,7 +336,7 @@ private:
                 }
                 else if (type == "saved" && action == "configure") {
                     const bool modelChanged = pendingConfig.value("mode", m_config.value("mode")) != m_config.value("mode") || pendingConfig.value("model_path", m_config.value("model_path")) != m_config.value("model_path");
-                    for (auto it = pendingConfig.begin(); it != pendingConfig.end(); ++it) if (it.key() != "api_key" && it.key() != "voice_key") m_config[it.key()] = it.value();
+                    for (auto it = pendingConfig.begin(); it != pendingConfig.end(); ++it) if (it.key() != "api_key" && it.key() != "voice_key" && it.key() != "agent_api_key") m_config[it.key()] = it.value();
                     pendingConfig.clear(); m_status = "Saved"; if (modelChanged) startLocal(); emit configured();
                 }
                 emit changed();

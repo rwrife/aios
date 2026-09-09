@@ -1,10 +1,12 @@
 import io
 import json
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from aios import agent
+from aios import agent, skills, toolhost
 from aios.applications import APPLICATION_TOOL
 from aios.browser import Browser, TOOL as BROWSER_TOOL, web_url
 from aios.skills import Skill
@@ -264,8 +266,6 @@ class BrowserAgentTests(unittest.TestCase):
             {"tools": [host_tool("dup"), host_tool("dup")], "warnings": []},
             {"tools": [host_tool(f"tool-{index}") for index in range(257)], "warnings": []},
             {"tools": [host_tool("ok")], "warnings": [123]},
-            {"tools": [host_tool("ok")], "warnings": ["x" * 301]},
-            {"tools": [host_tool("ok")], "warnings": ["one"] * 17},
             {"tools": [{"type": "function", "function": {"name": 5, "description": "bad", "parameters": {"type": "object"}}}], "warnings": []},
             {"tools": [{"type": "function", "function": {"name": "bad", "description": "bad", "parameters": {"type": object}}}], "warnings": []},
         ]
@@ -504,10 +504,12 @@ class BrowserAgentTests(unittest.TestCase):
             {**base, "agent_url": ""},
             {**base, "agent_model": ""},
             {**base, "agent_url": "http://example.com/v1"},
+            {**base, "agent_api_key": "secret\nheader"},
             {**base, "agent_mode": "invalid"},
         ):
-            with self.subTest(config=config), self.assertRaises(ValueError):
+            with self.subTest(config=config), self.assertRaises(ValueError) as error:
                 agent.select_provider(preferred, config)
+            self.assertNotIn("secret", str(error.exception))
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
     def test_chat_routes_current_and_agent_profiles_explicitly(self, _list_tools):
@@ -588,26 +590,50 @@ class BrowserAgentTests(unittest.TestCase):
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
     def test_catalog_warning_validation_and_combined_cap(self, _list_tools):
-        for warnings in ("bad", [123], [""], ["x" * 301]):
+        for warnings in ("bad", [123]):
             with self.subTest(warnings=warnings), patch(
                 "aios.agent.skills.load_skills", return_value=([], warnings)
             ), self.assertRaisesRegex(RuntimeError, "skill catalog"):
                 agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock")
 
         with patch(
-            "aios.agent.skills.load_skills", return_value=([], ["catalog warning"] * 9)
+            "aios.agent.skills.load_skills",
+            return_value=([], [f"catalog {index}" for index in range(20)]),
         ), patch(
             "aios.agent.toolhost.list_tools",
-            return_value={"tools": [], "warnings": ["host warning"] * 8},
-        ), self.assertRaisesRegex(RuntimeError, "warnings"):
-            agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock")
+            return_value={"tools": [], "warnings": [f"host {index}" for index in range(toolhost.MAX_TOOLS)]},
+        ):
+            session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock")
+        self.assertLessEqual(len(session.warnings), agent.MAX_TOTAL_WARNINGS)
+        self.assertEqual(session.warnings[-1], "Additional capability warnings were omitted.")
+        self.assertIn("catalog 0", session.warnings)
 
         with patch(
-            "aios.agent.skills.load_skills", return_value=([], ["line one\nline two\x00"])
+            "aios.agent.skills.load_skills",
+            return_value=([], ["", "line one\nline two\x00", "x" * (agent.MAX_WARNING_LENGTH + 50)]),
         ):
             session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock")
         self.assertIn('"line one line two"', session.system_prompt())
         self.assertNotIn("\\u0000", session.system_prompt())
+        self.assertNotIn('""', session.system_prompt())
+        self.assertTrue(all(len(warning) <= agent.MAX_WARNING_LENGTH for warning in session.warnings))
+
+    @patch("aios.agent.toolhost.list_tools")
+    def test_many_malformed_skill_directories_degrade_to_bounded_warnings(self, list_tools):
+        list_tools.return_value = {
+            "tools": [],
+            "warnings": [f"host {index}" for index in range(toolhost.MAX_TOOLS)],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index in range(24):
+                (root / f"broken-{index}").mkdir()
+            with patch.object(skills, "BUILTIN_SKILLS_ROOT", root), patch.object(
+                skills, "USER_SKILLS_ROOT", root / "missing"
+            ):
+                session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock")
+        self.assertEqual(len(session.warnings), agent.MAX_TOTAL_WARNINGS)
+        self.assertEqual(session.warnings[-1], "Additional capability warnings were omitted.")
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
     def test_system_prompt_tools_and_request_body_caps(self, _list_tools):
@@ -643,11 +669,53 @@ class BrowserAgentTests(unittest.TestCase):
     @patch("aios.agent.toolhost.list_tools")
     def test_host_tool_count_is_capped_to_leave_activate_slot(self, list_tools):
         list_tools.return_value = {
+            "tools": [host_tool(f"tool-{index}") for index in range(toolhost.MAX_TOOLS)],
+            "warnings": [],
+        }
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        advertised = session.tools()
+        self.assertEqual(len(session.host_tools), toolhost.MAX_TOOLS)
+        self.assertEqual(len(advertised), agent.MAX_HOST_TOOLS + 1)
+        self.assertEqual(advertised[0]["function"]["name"], "activate_skill")
+        self.assertEqual(advertised[-1]["function"]["name"], f"tool-{agent.MAX_HOST_TOOLS - 1}")
+        self.assertIn("Additional host tools were omitted.", session.warnings)
+
+    @patch("aios.agent.toolhost.list_tools")
+    def test_active_skill_can_select_late_host_tool_before_display_cap(self, list_tools):
+        late_name = f"tool-{toolhost.MAX_TOOLS - 1}"
+        list_tools.return_value = {
+            "tools": [host_tool(f"tool-{index}") for index in range(toolhost.MAX_TOOLS)],
+            "warnings": [],
+        }
+        catalog = [
+            Skill(
+                name="late-tool",
+                description="Use a late host tool.",
+                instructions="Use the selected tool.",
+                allowed_tools=(late_name,),
+                triggers=("late",),
+            )
+        ]
+        session = agent.AgentSession([{"role": "user", "content": "late"}], "tools.sock", catalog=catalog)
+        self.assertEqual(
+            [tool["function"]["name"] for tool in session.tools()],
+            ["activate_skill", late_name],
+        )
+        self.assertNotIn("Additional host tools were omitted.", session.warnings)
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local"})
+    @patch("aios.agent.toolhost.list_tools")
+    def test_tool_omission_warning_is_in_same_provider_request(self, list_tools, _load_config):
+        list_tools.return_value = {
             "tools": [host_tool(f"tool-{index}") for index in range(64)],
             "warnings": [],
         }
-        with self.assertRaisesRegex(RuntimeError, "tool host"):
-            agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        with patch("aios.agent.core.request", return_value=stream([{"content": "Done."}])) as request:
+            list(agent.openai_chat(session))
+        body = request.call_args.args[1]
+        self.assertEqual(len(body["tools"]), agent.MAX_HOST_TOOLS + 1)
+        self.assertIn("Additional host tools were omitted.", body["messages"][0]["content"])
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
     @patch("aios.agent.toolhost.list_tools")
@@ -690,7 +758,7 @@ class BrowserAgentTests(unittest.TestCase):
             list(agent.openai_chat(session, turn_timeout=1, clock=iter((0, 2)).__next__))
         request.assert_not_called()
 
-        clock_values = iter((0, 0.1, 0.2, 2.0, 2.1))
+        clock_values = iter((0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 2.0))
         response = stream([
             {"tool_calls": [{"index": 0, "id": "one", "function": {"name": "application", "arguments": "{\"action\":\"one\"}"}}]},
             {"tool_calls": [{"index": 1, "id": "two", "function": {"name": "application", "arguments": "{\"action\":\"two\"}"}}]},
@@ -702,6 +770,51 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual(call.call_count, 1)
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_turn_deadline_is_enforced_between_stream_events(self, _list_tools, _load_config):
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        events = iter([
+            json.dumps({"choices": [{"index": 0, "delta": {
+                "tool_calls": [{"index": 0, "id": "late", "function": {
+                    "name": "application", "arguments": "{\"action\":\"late\"}"
+                }}]
+            }}]}),
+            json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}),
+            "[DONE]",
+        ])
+        clock = iter((0.0, 0.1, 0.2, 1.1)).__next__
+        with patch("aios.agent.core.request", return_value=io.BytesIO()), patch(
+            "aios.agent.core.sse_events", return_value=events
+        ), patch("aios.agent.toolhost.call") as call, self.assertRaisesRegex(RuntimeError, "time limit"):
+            list(agent.openai_chat(session, turn_timeout=1, clock=clock))
+        call.assert_not_called()
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(BROWSER_TOOL)], "warnings": []})
+    def test_model_activated_remote_skill_does_not_switch_provider_mid_turn(self, _list_tools, _load_config):
+        catalog = [
+            Skill(
+                name="remote-skill",
+                description="Prefer a remote model.",
+                instructions="Use browser only.",
+                allowed_tools=("browser",),
+                triggers=(),
+                model="remote-preferred",
+            )
+        ]
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=catalog)
+        responses = [
+            stream([{"tool_calls": [{"index": 0, "id": "activate", "function": {
+                "name": "activate_skill", "arguments": "{\"name\":\"remote-skill\"}"
+            }}]}], "tool_calls"),
+            stream([{"content": "Done."}]),
+        ]
+        with patch("aios.agent.core.request", side_effect=responses) as request:
+            list(agent.openai_chat(session, profile="current"))
+        self.assertTrue(session.remote_preferred)
+        self.assertEqual([call.kwargs["profile"] for call in request.call_args_list], ["current", "current"])
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(BROWSER_TOOL)], "warnings": []})
     def test_stream_content_and_call_fragment_bounds(self, _list_tools, _load_config):
         session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
@@ -710,13 +823,39 @@ class BrowserAgentTests(unittest.TestCase):
         ), self.assertRaisesRegex(RuntimeError, "response was too large"):
             list(agent.openai_chat(session))
 
-        with patch.object(agent, "MAX_CALL_BYTES", 100), patch(
+        self.assertGreater(agent.MAX_CALL_BYTES, agent.MAX_CALL_OVERHEAD)
+        fragment_limit = agent.MAX_CALL_BYTES - agent.MAX_CALL_OVERHEAD
+        prefix_bytes = len("x".encode()) + len("browser".encode())
+        arguments_prefix = '{"padding":"'
+        arguments_suffix = '"}'
+        padding_length = fragment_limit - prefix_bytes - len(arguments_prefix.encode()) - len(arguments_suffix.encode())
+        near_arguments = arguments_prefix + ("x" * padding_length) + arguments_suffix
+        with patch(
+            "aios.agent.core.request",
+            side_effect=[
+                stream([
+                    {"tool_calls": [{"index": 0, "id": "x", "function": {
+                        "name": "browser", "arguments": near_arguments
+                    }}]}
+                ], "tool_calls"),
+                stream([{"content": "Done."}]),
+            ],
+        ), patch("aios.agent.toolhost.call", return_value={"ok": True}) as call:
+            list(agent.openai_chat(session))
+        call.assert_called_once()
+
+        with patch(
             "aios.agent.core.request",
             return_value=stream([
-                {"tool_calls": [{"index": 0, "id": "x" * 101, "function": {"name": "", "arguments": ""}}]}
+                {"tool_calls": [{"index": 0, "id": "x", "function": {
+                    "name": "browser", "arguments": near_arguments + "x"
+                }}]}
             ], "tool_calls"),
-        ), self.assertRaisesRegex(RuntimeError, "tool request was too large"):
+        ), patch("aios.agent.toolhost.call") as call, self.assertRaisesRegex(
+            RuntimeError, "tool request was too large"
+        ):
             list(agent.openai_chat(session))
+        call.assert_not_called()
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(BROWSER_TOOL)], "warnings": []})

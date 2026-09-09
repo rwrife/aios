@@ -52,6 +52,8 @@ MAX_PROVIDER_TIMEOUT = 90
 MAX_PROGRESS_LENGTH = 100
 PROGRESS_SEPARATOR = ": "
 TOOL_RESULT_OMITTED = '{"previous_tool_result_omitted":true}'
+WARNING_OMISSION = "Additional capability warnings were omitted."
+HOST_TOOL_OMISSION_WARNING = "Additional host tools were omitted."
 
 
 def _safe_error_text(message: str, fallback: str) -> str:
@@ -158,7 +160,7 @@ def _validate_catalog(catalog: Any) -> list[skills.Skill]:
 
 
 def _validate_warning_list(warnings: Any, error_factory) -> list[str]:
-    if not isinstance(warnings, list) or len(warnings) > MAX_TOTAL_WARNINGS:
+    if not isinstance(warnings, list):
         raise error_factory()
     cleaned: list[str] = []
     for warning in warnings:
@@ -169,10 +171,18 @@ def _validate_warning_list(warnings: Any, error_factory) -> list[str]:
             for char in warning
         )
         warning = " ".join(warning.split())
-        if not warning or len(warning) > MAX_WARNING_LENGTH:
-            raise error_factory()
-        cleaned.append(warning)
+        if warning:
+            cleaned.append(warning[:MAX_WARNING_LENGTH])
     return cleaned
+
+
+def _bounded_warnings(warnings: list[str], required: list[str] | None = None) -> list[str]:
+    required = required or []
+    combined = [*warnings, *required]
+    if len(combined) <= MAX_TOTAL_WARNINGS:
+        return combined
+    prefix_count = max(0, MAX_TOTAL_WARNINGS - len(required) - 1)
+    return [*warnings[:prefix_count], *required, WARNING_OMISSION][:MAX_TOTAL_WARNINGS]
 
 
 def _validate_tool_definition(tool: Any) -> dict[str, Any]:
@@ -204,7 +214,7 @@ def _load_host_definitions(tool_socket: os.PathLike[str] | str) -> tuple[list[di
     if not isinstance(listed, dict) or set(listed) != {"tools", "warnings"}:
         raise _tool_host_error()
     definitions = listed.get("tools")
-    if not isinstance(definitions, list) or len(definitions) > MAX_HOST_TOOLS:
+    if not isinstance(definitions, list) or len(definitions) > toolhost.MAX_TOOLS:
         raise _tool_host_error()
     warnings = _validate_warning_list(listed.get("warnings"), _tool_host_error)
     tools_by_name: set[str] = set()
@@ -234,9 +244,9 @@ class AgentSession:
         self.host_tools, host_warnings, self.legacy_browser = _load_host_definitions(tool_socket)
         self.host_names = tuple(tool["function"]["name"] for tool in self.host_tools)
         self.host_by_name = {tool["function"]["name"]: tool for tool in self.host_tools}
-        self.warnings = [*catalog_warnings, *host_warnings]
-        if len(self.warnings) > MAX_TOTAL_WARNINGS:
-            raise RuntimeError("Too many capability warnings were reported.")
+        self._source_warnings = [*catalog_warnings, *host_warnings]
+        self._host_tools_omitted = False
+        self.warnings = _bounded_warnings(self._source_warnings)
         self.active = {
             skill.name: skill
             for skill in skills.initial_skills(self.catalog, self.messages[-1]["content"])
@@ -281,6 +291,10 @@ class AgentSession:
             selected = [tool for tool in self.host_tools if tool["function"]["name"] in allowed]
         else:
             selected = list(self.host_tools)
+        self._host_tools_omitted = len(selected) > MAX_HOST_TOOLS
+        selected = selected[:MAX_HOST_TOOLS]
+        required_warnings = [HOST_TOOL_OMISSION_WARNING] if self._host_tools_omitted else []
+        self.warnings = _bounded_warnings(self._source_warnings, required_warnings)
         tools = [ACTIVATE_TOOL, *selected]
         try:
             encoded = _json_bytes(tools)
@@ -364,15 +378,15 @@ def openai_chat(
         raise ValueError("Choose a valid agent turn timeout.")
     deadline = clock() + duration
     model = core.model_name(profile)
-    history = [{"role": "system", "content": session.system_prompt()}, *session.messages]
+    history = [{"role": "system", "content": ""}, *session.messages]
     for _ in range(8):
         calls: dict[int, dict[str, Any]] = {}
         fragment_bytes: dict[int, int] = {}
         content = ""
         content_bytes = 0
         finish = None
-        history[0]["content"] = session.system_prompt()
         tools = session.tools()
+        history[0]["content"] = session.system_prompt()
         body = _request_body(
             {"model": model, "messages": history, "tools": tools, "tool_choice": "auto", "stream": True}
         )
@@ -384,6 +398,7 @@ def openai_chat(
             profile=profile,
         ) as response:
             for event in core.sse_events(response):
+                _remaining_time(deadline, clock)
                 if event == "[DONE]":
                     break
                 try:
@@ -457,6 +472,7 @@ def openai_chat(
                         entry["id"] += part_id
                         entry["function"]["name"] += name_fragment
                         entry["function"]["arguments"] += arguments_fragment
+                _remaining_time(deadline, clock)
         if calls:
             if finish != "tool_calls":
                 raise RuntimeError("The model tool request was incomplete; no action was taken.")
@@ -522,12 +538,7 @@ def select_provider(session, config):
     if agent_mode == "chatgpt":
         return "chatgpt", None
     if agent_mode == "remote":
-        url = config.get("agent_url")
-        model = config.get("agent_model")
-        if (not isinstance(url, str) or not url or not isinstance(model, str) or not model.strip()
-                or len(model) > 200 or any(char in model for char in "\r\n\"'")):
-            raise ValueError("Remote agent routing requires an endpoint and model.")
-        core.validate_url(url)
+        core._remote_agent_settings(config)
         return "remote", "agent"
     raise ValueError("The agent model provider is not configured.")
 
