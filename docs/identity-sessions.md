@@ -1,0 +1,137 @@
+# Ambient identity and sessions — experimental implementation
+
+This branch is **not a completed implementation of the ambient multi-user plan**.
+It supplies an opt-in broker, deterministic simulator and initial shell surfaces.
+The ordinary ISO still starts the original single-user desktop. Do not enroll
+real biometrics or put real secrets into the simulator.
+
+## Implemented behavior
+
+- Recognition produces a candidate; it does not activate a workspace. Conflicts,
+  missing liveness, multiple active people and stale evidence prevent activation.
+- An explicit personal request binds a durable work session to an enrolled UUID.
+  Another candidate cannot retarget the session. A new lease is issued on resume.
+- Anonymous calculator/editor/terminal requests use an ephemeral context. The
+  simulator records launches; it does not execute applications.
+- Separate SQLite journals store titles, messages, lifecycle events and allowlisted
+  restoration manifests. Reopening a journal recovers active tasks as suspended.
+- Presence loss revokes capabilities and shields content; the longer timeout stops
+  applications, closes the journal and releases storage. Cleanup failures block
+  further activation rather than switching users with a live mount.
+- PIN verifiers use salted scrypt. Persistent attempt counters implement backoff
+  and lockout. Opaque capabilities bind owner, lease, operation, resource, expiry
+  and single-use status. PIN success does not grant other capabilities.
+- AES-GCM encrypts template/credential records with record-name authentication.
+  Recovery secrets rotate on use. No model or template download occurs.
+- A GitHub profile adapter uses a credential at a fixed HTTPS destination, refuses
+  redirects and returns only the login. It is not exposed as an LLM tool.
+- Optional YuNet/SFace and waveform speaker-ONNX adapters validate model digests
+  before inference. Their output is not a calibrated production recognition system.
+
+## Run the non-executing simulator
+
+Use Linux with Python 3.10+ and `cryptography` installed. From the repository:
+
+```sh
+export PYTHONPATH="$PWD/apps"
+python3 -m aios.sessiond --simulate "$HOME/.local/state/aios-identity-demo"
+```
+
+First start asks for a PIN and creates two fictional identities, `user-a` and
+`user-b`. The same PIN is used for these two test identities only. No raw samples
+are captured. Encrypted simulator records and its development key live together;
+this is not protection against the host user or a stolen disk.
+
+In a second terminal, launch a built shell:
+
+```sh
+AIOS_SESSION_SOCKET="$HOME/.local/state/aios-identity-demo/session.sock" aios-shell
+```
+
+The identity panel can select `unknown`, `user-a`, `user-b`, `absent` and
+`conflict`. Calculator stays anonymous even after selecting a known identity.
+Start creates personal work; Editor records a `Resume.txt` restoration manifest.
+Recent lists only the current owner's sessions. Protected account asks for the
+demo PIN and returns a mocked account name. Switching directly to the other
+identity shields the old session and does not change its owner. Suspend explicitly
+returns to anonymous mode. Evidence is refreshed only while the demo shell runs.
+
+Experimental mode disables the original chat, settings and configuration-loading entry points because
+their workers still use the desktop UID. It does **not** claim they have been
+migrated to the broker. The shell's ordinary startup/configuration code remains
+single-user when experimental mode is off. No PIN is routed through chat, command arguments or application logs.
+The PIN's transient Qt/Python copies are not guaranteed to be securely zeroized.
+
+The JSON client can also exercise the service:
+
+```sh
+printf '%s\n' '{"action":"status"}' |
+  python3 -m aios.session_client "$HOME/.local/state/aios-identity-demo/session.sock"
+```
+
+## Linux adapter and deployment gates
+
+`aios.isolation.LinuxIsolation` is a root-only adapter for administrator-provisioned
+LUKS volumes, fixed UID mappings, cgroup v2 scopes and bubblewrap launches. Apps
+receive only the artifact directory, system binaries and a private Wayland socket;
+the journal, broker socket, user homes, host network, X11 socket and credentials
+are not in the sandbox. Application types and arguments are allowlisted.
+
+The adapter has **not passed an actual Alpine VM isolation test**. It is not enabled
+at boot. `world.identity` is an optional dependency list, not part of the default
+ISO; package availability and size still require validation. The OpenRC script
+requires an administrator-created `aios-broker` group and configuration. There
+is intentionally no sample with a real device, UID or disk-formatting command.
+
+Production configuration is root-owned JSON at `/etc/aios/sessiond.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `state`, `master_key` | Root-private encrypted record directory and 32-byte key file |
+| `runtime` | Root-owned workspace mount directory; traversal-only to reach UID-owned artifacts |
+| `socket`, `socket_gid` | Broker socket in a root-owned, group-traversable directory |
+| `shell_uid`, `identity_uid`, `anonymous_uid` | Distinct unprivileged accounts, distinct from all personal UIDs |
+| `principals` | UUID to `{uid, mount, device, key_file}` mapping; preprovisioned LUKS only |
+| `wayland_sockets` | UID to separately isolated compositor socket mapping |
+| `display_isolation_validated` | Defaults false; blocks personal APIs and GUI launches |
+
+Setting the validation flag is **not** display isolation. A separate compositor,
+trusted shell/input channel and completed isolation tests are prerequisites. Never
+point it at a shared desktop or nested compositor controlled by another user.
+The existing X11 desktop is insufficient, including for secure PIN input.
+
+## Remaining work by plan phase
+
+| Phase | Status and remaining implementation |
+| --- | --- |
+| 0 | Initial ADR/threat model and simulator implemented. Schemas and security review need expansion. |
+| 1 | Socket broker and Linux adapter implemented, unvalidated. Explicit principal migration of chat, browser, model workers and settings remains. |
+| 2 | Journal/lifecycle and reconstruction manifests implemented. Provisioning, encrypted-volume enrollment, artifact claim, complete conversation recall and editor save adapters remain. |
+| 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
+| 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
+| 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
+| 6 | Private-display launch gate implemented. Actual compositor migration, clipboard/input/notification isolation, deletion workflow, accessibility and hardware security validation remain. |
+
+No claim is made that the seven-phase definition of done has been achieved.
+
+## Verification
+
+Run `bash scripts/test.sh` on Linux. Tests include durable session restoration,
+ownership denial, anonymous idle cleanup, conflict/stale evidence, liveness gating,
+PIN backoff/lockout, scope mismatch, single use, timeout/revocation, malformed
+protocol, actual Unix socket framing/permissions/deadlines, model integrity and
+ciphertext tamper/name-substitution detection. The encryption test skips if the
+optional `cryptography` package is missing. Simulator tests do not demonstrate
+kernel, storage or display isolation.
+
+Required release tests remain: two-UID filesystem/IPC attacks; fork/daemon escape;
+broker crash/reboot and busy-volume recovery; full compositor input/capture and
+clipboard isolation; PIN focus integrity; camera/microphone unplug; printed face,
+video, recorded/synthesized speech; realistic lighting and multiple speakers;
+disk-full/power-loss enrollment; recovery abuse; secure deletion and accessible
+fallbacks. Record hardware, calibration, latency and false acceptance/rejection
+measurements locally; do not upload telemetry automatically.
+
+References for the optional adapters: [OpenCV face recognition](https://docs.opencv.org/4.13.0/d0/dd4/tutorial_dnn_face.html),
+[bubblewrap](https://github.com/containers/bubblewrap),
+[cryptsetup open](https://man7.org/linux/man-pages/man8/cryptsetup-open.8.html).

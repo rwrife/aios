@@ -28,7 +28,7 @@ for svc in mount-ro killprocs savecache; do rc_add "$svc" shutdown; done
 # configuration (especially doas rules) is never shipped world-writable.
 find "$tmpdir" -type d -exec chmod 755 {} +
 find "$tmpdir" -type f -exec chmod 644 {} +
-chmod +x "$tmpdir"/usr/local/bin/* "$tmpdir"/etc/init.d/aios-init
+chmod +x "$tmpdir"/usr/local/bin/* "$tmpdir"/etc/init.d/aios-init "$tmpdir"/etc/init.d/aios-sessiond
 chmod +x "$tmpdir"/usr/local/sbin/*
 chmod +x "$tmpdir/etc/X11/xinit/xinitrc"
 
