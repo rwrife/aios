@@ -1,13 +1,17 @@
 """Fixture MCP server for stdio integration tests."""
 import json
 import os
+import subprocess
 import sys
+import time
 
 
 SCENARIO = os.environ.get("AIOS_MCP_SCENARIO", "happy")
 LOG_PATH = os.environ.get("AIOS_MCP_LOG")
 ENV_PATH = os.environ.get("AIOS_MCP_ENV_LOG")
+GRANDCHILD_PATH = os.environ.get("AIOS_MCP_GRANDCHILD_PID")
 SECRET = os.environ.get("AIOS_MCP_SECRET", "secret-provider-token")
+TOOL_COUNT = int(os.environ.get("AIOS_MCP_TOOL_COUNT", "20"))
 
 LIST_GENERATION = 0
 LIST_CHANGED_SENT = False
@@ -53,6 +57,19 @@ def server_request():
     send({"jsonrpc": "2.0", "id": "srv-1", "method": "sampling/createMessage", "params": {"secret": SECRET}})
 
 
+def flood_client_requests():
+    request_id = 0
+    payload = "x" * (64 * 1024)
+    while True:
+        send({
+            "jsonrpc": "2.0",
+            "id": f"srv-{request_id}",
+            "method": "sampling/createMessage",
+            "params": {"payload": payload},
+        })
+        request_id += 1
+
+
 def tool(name, description=None, title=None):
     value = {
         "name": name,
@@ -91,6 +108,26 @@ def tools_page(cursor):
         return {"tools": [tool("echo", "First"), tool("echo", "Second")]}
     if SCENARIO == "invalid-tool":
         return {"tools": [tool("", "Blank")]}
+    if SCENARIO == "huge-schema":
+        value = tool("echo", "Huge schema")
+        value["inputSchema"]["description"] = "x" * (33 * 1024)
+        return {"tools": [value]}
+    if SCENARIO == "deep-schema":
+        schema = {"type": "object"}
+        current = schema
+        for _ in range(80):
+            child = {"type": "object"}
+            current["properties"] = {"child": child}
+            current = child
+        value = tool("echo", "Deep schema")
+        value["inputSchema"] = schema
+        return {"tools": [value]}
+    if SCENARIO == "wrong-schema-type":
+        value = tool("echo", "Wrong schema type")
+        value["inputSchema"]["type"] = "string"
+        return {"tools": [value]}
+    if SCENARIO == "many-tools":
+        return {"tools": [tool(f"tool-{index}") for index in range(TOOL_COUNT)]}
     return {"tools": [tool("echo", "Echo back text"), tool("hidden", "Hidden tool")]}
 
 
@@ -130,6 +167,8 @@ def handle_initialize(value):
     if SCENARIO == "missing-capability":
         respond(request_id, {"protocolVersion": "2025-06-18", "capabilities": {}, "serverInfo": {"name": "fixture"}})
         return
+    if SCENARIO == "spoof-future-id":
+        respond(request_id + 1, {"tools": [tool("spoofed", "Spoofed future response")]})
     respond(request_id, {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fixture"}})
     if SCENARIO == "server-request" and not SERVER_REQUEST_SENT:
         SERVER_REQUEST_SENT = True
@@ -143,6 +182,22 @@ def handle_tools_list(value):
         return
     page = tools_page(value.get("params", {}).get("cursor"))
     respond(value["id"], page)
+    if SCENARIO == "exit-after-list":
+        os._exit(0)
+    if SCENARIO == "stop-reading-after-list":
+        while True:
+            time.sleep(60)
+    if SCENARIO == "flood-client-requests":
+        flood_client_requests()
+    if SCENARIO == "grandchild-holds-stdout":
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=subprocess.DEVNULL,
+        )
+        if GRANDCHILD_PATH:
+            with open(GRANDCHILD_PATH, "w", encoding="utf-8") as stream:
+                stream.write(str(child.pid))
+        os._exit(0)
     if SCENARIO == "paginate-list-changed" and not LIST_CHANGED_SENT and page.get("nextCursor") is None:
         LIST_CHANGED_SENT = True
         notify("notifications/tools/list_changed", {})
