@@ -80,6 +80,8 @@ def create(config, config_path, owner):
     finally:
         os.close(descriptor)
     updated = {**config, 'principals': {**config['principals'], owner: entry}}
+    if config.get('embedded_display', False):
+        updated['wayland_sockets'] = {}
     atomic_bytes(config_path, json.dumps(updated, allow_nan=False).encode())
     config['principals'][owner] = entry
     return entry

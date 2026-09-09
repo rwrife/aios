@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QGuiApplication>
 #include <QLocalSocket>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -19,6 +20,9 @@ class SessionControl : public QObject {
     Q_PROPERTY(QVariantList messages READ messages NOTIFY changed)
     Q_PROPERTY(bool olderMessages READ olderMessages NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool embeddedDisplay READ embeddedDisplay NOTIFY changed)
+    Q_PROPERTY(bool secureInput READ secureInput NOTIFY changed)
+    Q_PROPERTY(bool personalAvailable READ personalAvailable NOTIFY changed)
     Q_PROPERTY(QVariantMap challenge READ challenge NOTIFY changed)
 public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
@@ -40,6 +44,10 @@ public:
     QVariantList messages() const { return m_messages; }
     bool olderMessages() const { return !m_before.isNull(); }
     bool busy() const { return pendingEnrollment; }
+    bool embeddedDisplay() const { return m_embedded; }
+    bool secureInput() const { return m_secureInput; }
+    bool personalAvailable() const { return m_personalAvailable; }
+    Q_INVOKABLE void setSecureInput(bool active) { m_secureInput = active; emit changed(); }
     QVariantMap challenge() const { return m_challenge; }
     Q_INVOKABLE void simulate(const QString &state) { if (m_simulator) demoState = state; }
     Q_INVOKABLE void activate(const QString &title) {
@@ -75,10 +83,19 @@ public:
               {"title", QJsonValue::Null}, {"session", QJsonValue::Null}});
     }
     Q_INVOKABLE void launch(const QString &app) {
+        if (m_embedded) { emit displayRequested(app); return; }
+        launchReady(app);
+    }
+    Q_INVOKABLE void launchReady(const QString &app) {
         QJsonArray arguments;
         if (app == "editor") arguments.append("Resume.txt");
         call({{"action", "launch"}, {"app", app}, {"arguments", arguments}});
     }
+    Q_INVOKABLE void displayReady(const QString &lease, const QString &app) {
+        pendingApp = app;
+        call({{"action", "display_ready"}, {"lease", lease}});
+    }
+    Q_INVOKABLE void displayFailed() { m_error = "Private display is unavailable"; emit changed(); }
     Q_INVOKABLE void protectedResource() {
         call({{"action", "request_capability"}, {"operation", "secrets.github.profile"}, {"resource", "github"}});
     }
@@ -98,8 +115,10 @@ signals:
     void documentSaved();
     void enrollmentCompleted(const QString &recovery);
     void unlocked();
+    void displayRequested(const QString &app);
 private:
-    QString path, demoState, m_error, m_authority = "anonymous";
+    QString path, demoState, m_error, pendingApp, m_lease, m_authority = "anonymous";
+    bool m_embedded = false, m_secureInput = false, m_attested = false, m_personalAvailable = false;
     bool m_shield = true, m_simulator = false;
     QVariantList m_sessions, m_messages;
     QJsonValue m_before = QJsonValue::Null;
@@ -112,6 +131,8 @@ private:
         ++generation;
         m_sessions.clear(); m_messages.clear(); m_challenge.clear();
         m_before = QJsonValue::Null; m_error.clear();
+        pendingApp.clear();
+        m_lease.clear();
         emit privacyLost(); emit changed();
     }
     void failClosed() {
@@ -150,17 +171,42 @@ private:
                     const bool wasPersonal = m_authority != "anonymous";
                     m_shield = result.value("shield").toBool() || result.value("fault").toBool();
                     m_simulator = result.value("simulator").toBool();
+                    m_embedded = result.value("embedded_display").toBool();
+                    m_personalAvailable = result.value("personal_available").toBool() && (m_attested || m_simulator || !m_embedded);
+                    if (m_embedded && (!m_attested || !result.value("display_attested").toBool())) {
+                        m_attested = false;
+#ifdef AIOS_EMBEDDED_DISPLAY
+                        const bool embedded = true;
+#else
+                        const bool embedded = false;
+#endif
+                        call({{"action", "display_attest"}, {"platform", QGuiApplication::platformName()}, {"embedded", embedded}});
+                    }
                     m_authority = result.value("authority").toString();
-                    if (m_shield || (wasPersonal && m_authority == "anonymous")) {
+                    const auto nextLease = result.value("lease").toString();
+                    if (m_shield || (wasPersonal && m_authority == "anonymous") ||
+                        (!m_lease.isEmpty() && m_lease != nextLease)) {
                         clearPersonal();
                     }
+                    m_lease = nextLease;
                 } else if (action == "search") m_sessions = result.value("sessions").toArray().toVariantList();
                 else if (action == "history") {
                     m_messages = result.value("messages").toArray().toVariantList() + m_messages;
                     m_before = result.value("before");
                 }
-                else if (action == "activate" || action == "message") history();
-                else if (action == "activate_verified") { emit unlocked(); search(); }
+                else if (action == "activate" || action == "message") {
+                    history();
+                    if (action == "activate" && m_embedded) emit displayRequested("");
+                }
+                else if (action == "display_attest") m_attested = true;
+                else if (action == "activate_verified") {
+                    emit unlocked(); search();
+                    if (m_embedded) emit displayRequested("");
+                }
+                else if (action == "display_ready") {
+                    const auto app = pendingApp; pendingApp.clear();
+                    if (!app.isEmpty()) launchReady(app);
+                }
                 else if (action == "enroll_manual") emit enrollmentCompleted(result.value("recovery").toString());
                 else if (action == "document_read") emit documentLoaded(result.value("content").toString());
                 else if (action == "document_save") emit documentSaved();

@@ -45,6 +45,9 @@ class LinuxIsolation:
         self.root.chmod(0o711)
         self.scopes = {}
         self.mounts = {}
+        self.displays = {}
+        self.ready_displays = set()
+        self.requires_display = config.get('embedded_display', False)
         self.cgroups = Path('/sys/fs/cgroup/aios')
         if not Path('/sys/fs/cgroup/cgroup.controllers').exists():
             raise RuntimeError("cgroup v2 is required")
@@ -59,6 +62,8 @@ class LinuxIsolation:
                 self._wait_empty(group)
                 group.rmdir()
         (self.cgroups / 'cgroup.subtree_control').write_text('+memory +pids')
+        from .display import recover
+        recover(self.root)
         # A broker crash must not leave any previous user's volume unlocked
         # while a new anonymous context starts. Scope teardown always precedes
         # storage recovery, including volumes for users who never return.
@@ -139,12 +144,26 @@ class LinuxIsolation:
     def launch(self, scope, root, uid, app, arguments):
         command = application(app, arguments)
         endpoint = self.config.get('wayland_sockets', {}).get(str(uid))
-        if not endpoint or not self.config.get('display_isolation_validated', False):
+        if not endpoint or not (uid in self.ready_displays or self.config.get('display_isolation_validated', False)):
             raise PermissionError("Isolated display has not passed release validation")
         socket = Path(endpoint)
         if not socket.is_socket() or socket.stat().st_uid != uid:
             raise PermissionError("Invalid private display socket")
         return self._spawn(scope, root, uid, command, socket)
+
+    def display(self, lease, uid):
+        if not self.requires_display:
+            raise PermissionError('Embedded display is disabled')
+        from .display import DisplaySocket
+        if uid not in self.displays:
+            self.displays[uid] = DisplaySocket(self.root, lease, uid)
+            self.config.setdefault('wayland_sockets', {})[str(uid)] = str(self.displays[uid].path)
+        return self.displays[uid].listener.fileno()
+
+    def display_ready(self, uid):
+        if uid not in self.displays:
+            raise PermissionError('Display has not been acquired')
+        self.ready_displays.add(uid)
 
     def _spawn(self, scope, root, uid, command, display=None, *, diagnostics=False):
         """Trusted adapter entry point, never exposed as a service action.
@@ -162,6 +181,7 @@ class LinuxIsolation:
                 '--cap-drop', 'ALL', '--clearenv', '--ro-bind', '/usr', '/usr',
                 '--ro-bind', '/lib', '/lib', '--ro-bind', '/bin', '/bin',
                 '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--tmpfs', '/run',
+                '--tmpfs', '/dev/shm', '--ro-bind-try', '/etc/fonts', '/etc/fonts',
                 '--bind', str(root / 'artifacts'), '/workspace', '--chdir', '/workspace',
                 '--setenv', 'HOME', '/workspace', '--setenv', 'PATH', '/usr/bin:/bin',
                 '--setenv', 'LANG', 'C.UTF-8']
@@ -220,6 +240,11 @@ class LinuxIsolation:
             process.wait(timeout=2)
 
     def release(self, owner, root):
+        uid = self.config['principals'][owner]['uid'] if owner else self.config['anonymous_uid']
+        if uid in self.displays:
+            self.displays.pop(uid).close()
+            self.ready_displays.discard(uid)
+            self.config.get('wayland_sockets', {}).pop(str(uid), None)
         self._run(['/bin/umount', str(root)])
         if owner:
             self._run(['/sbin/cryptsetup', 'close', 'aios-' + owner])

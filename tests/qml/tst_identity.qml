@@ -20,6 +20,9 @@ TestCase {
         property var messages: []
         property bool olderMessages: false
         property bool busy: false
+        property bool secureInput: false
+        property bool personalAvailable: true
+        function setSecureInput(active) { secureInput = active }
         signal privacyLost()
         signal documentLoaded(string content)
         signal documentSaved()

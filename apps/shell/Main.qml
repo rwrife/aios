@@ -80,9 +80,28 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
-    IdentityStatus { x: 48; y: 84; visible: sessionControl.enabled; control: sessionControl }
-    PrivacyShield { control: sessionControl }
-    SecurePinPrompt { control: sessionControl }
+    Loader {
+        x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
+        active: displayBridge.enabled && sessionControl.embeddedDisplay
+        onActiveChanged: {
+            if (active) setSource("PrivateDisplay.qml", {control: sessionControl, bridge: displayBridge})
+            else setSource("")
+        }
+    }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControl.enabled; control: sessionControl }
+    Loader { active: !displayBridge.enabled; sourceComponent: Component { PrivacyShield { control: sessionControl } } }
+    Loader { active: !displayBridge.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControl } } }
+    SecurePinOverlay { parent: desktop.contentItem; control: sessionControl; visible: displayBridge.enabled && sessionControl.enabled && Object.keys(sessionControl.challenge).length > 0 }
+    Rectangle {
+        anchors.fill: parent; z: 100000; color: "#101b27"
+        visible: displayBridge.enabled && sessionControl.enabled && sessionControl.shield
+        MouseArea { anchors.fill: parent }
+        Column {
+            anchors.centerIn: parent; spacing: 16
+            Label { text: "Personal work is hidden"; color: "white"; font.pixelSize: 28 }
+            Button { text: "Return to anonymous"; onClicked: sessionControl.suspend() }
+        }
+    }
     ChatOrb {
         id: launcher
         anchors.horizontalCenter: parent.horizontalCenter

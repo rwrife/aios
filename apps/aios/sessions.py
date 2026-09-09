@@ -29,6 +29,7 @@ class Sessions:
         self.verified_until = 0
         self.manual_owner = None
         self.manual_until = 0
+        self.pending_restoration = []
 
     def _candidate(self):
         if self.manual_owner and self.clock() < self.manual_until:
@@ -83,6 +84,7 @@ class Sessions:
                 self.clock() < self.verified_until else 'recognized' if self.owner and
                 not self.shield else 'anonymous', 'shield': self.shield,
                 'fault': self.fault, 'personal': bool(self.owner),
+                'lease': self.lease if not self.shield else None,
                 'reason': self.fusion.reason, 'session': self.work if not self.shield else None}
 
     def _present(self):
@@ -176,8 +178,12 @@ class Sessions:
         self.shield = False
         self.last_presence = self.clock()
         try:
-            for app, arguments in journal.manifests(work):
-                self.isolation.launch(work, root, uid, app, arguments)
+            manifests = journal.manifests(work)
+            if getattr(self.isolation, 'requires_display', False):
+                self.pending_restoration = manifests
+            else:
+                for app, arguments in manifests:
+                    self.isolation.launch(work, root, uid, app, arguments)
         except Exception:
             self.suspend()
             raise
@@ -199,6 +205,7 @@ class Sessions:
 
     def suspend(self):
         self._shield()
+        self.pending_restoration = []
         if self.root is None:
             self.shield = False
             return
@@ -215,6 +222,28 @@ class Sessions:
             raise
         self.owner = self.lease = self.work = self.root = self.uid = None
         self.shield = False
+
+    def acquire_display(self):
+        if self.owner:
+            self._present()
+        else:
+            self.anonymous()
+        from .display import DescriptorReply
+        return DescriptorReply(self.isolation.display(self.lease, self.uid), {'lease': self.lease})
+
+    def display_ready(self, lease):
+        if self.owner:
+            self._present()
+        if self.shield or self.fault or not self.root or lease != self.lease:
+            raise PermissionError('Display lease expired')
+        self.isolation.display_ready(self.uid)
+        pending, self.pending_restoration = self.pending_restoration, []
+        try:
+            for app, arguments in pending:
+                self.isolation.launch(self.work, self.root, self.uid, app, arguments)
+        except Exception:
+            self.suspend()
+            raise
 
     def list_work(self, query):
         self.tick()

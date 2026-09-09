@@ -10,7 +10,8 @@ Dialog {
     modal: true; width: 440
     standardButtons: control.busy ? Dialog.NoButton : Dialog.Close
     closePolicy: control.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
-    onClosed: { profileName.clear(); pin.clear(); consent.checked = false; recovery.clear(); }
+    onOpened: control.setSecureInput(true)
+    onClosed: { profileName.clear(); pin.clear(); consent.checked = false; recovery.clear(); control.setSecureInput(false); }
     onActiveFocusChanged: { if (!activeFocus) pin.clear(); }
     Connections {
         target: control

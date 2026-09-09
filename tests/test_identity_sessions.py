@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from aios.authority import Capabilities, pin_record, verify_pin
@@ -178,6 +179,30 @@ class SessionTests(unittest.TestCase):
         self.assertIsNone(self.s.activate_verified('Alice', '123456'))
         self.assertEqual([item['id'] for item in self.s.list_work('')], [session])
         self.assertIsNone(self.s.work)
+
+    def test_lost_trusted_shell_locks_even_with_valid_pin_lease(self):
+        self.s.activate_verified(self.a, '123456', title='Private')
+        with patch('aios.sessiond.time.monotonic', return_value=100):
+            service = Service(self.s, 1000, 1001, personal_enabled=True)
+        with patch('aios.sessiond.time.monotonic', return_value=104):
+            service.tick()
+        self.assertIsNone(self.s.owner)
+
+    def test_embedded_personal_gate_requires_direct_display_and_registered_process(self):
+        self.isolation.requires_display = True
+        service = Service(self.s, 1000, 1001, personal_enabled=True)
+        service.dispatch({'action': 'display_attest', 'platform': 'xcb', 'embedded': True}, 1000, 10)
+        self.assertFalse(service.dispatch({'action': 'status'}, 1000, 10)['personal_available'])
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'enroll_manual', 'name': 'Other', 'pin': '123456', 'consent': True}, 1000, 10)
+        service.dispatch({'action': 'display_attest', 'platform': 'eglfs', 'embedded': True}, 1000, 10)
+        self.assertTrue(service.dispatch({'action': 'status'}, 1000, 10)['personal_available'])
+        self.s.activate_verified(self.a, '123456', title='Protected')
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'history', 'before': None}, 1000, 11)
+        self.assertIsNone(service.dispatch({'action': 'status'}, 1000, 11)['session'])
+        service.dispatch({'action': 'display_attest', 'platform': 'offscreen', 'embedded': True}, 1000, 11)
+        self.assertIsNone(self.s.owner)
 
     def test_history_unicode_page_fits_response(self):
         self.activate()

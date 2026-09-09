@@ -42,9 +42,10 @@ Rectangle {
         Label { text: control.simulator ? "Identity simulator · no apps execute" : "Experimental session broker"; color: "#bde4e6" }
         Label { text: control.authority; color: "white" }
         RowLayout {
-            Button { text: "Create profile"; onClicked: { enrollment.creating = true; enrollment.open(); } }
-            Button { text: "Unlock with PIN"; onClicked: { enrollment.creating = false; enrollment.open(); } }
+            Button { text: "Create profile"; enabled: control.personalAvailable; onClicked: { enrollment.creating = true; enrollment.open(); } }
+            Button { text: "Unlock with PIN"; enabled: control.personalAvailable; onClicked: { enrollment.creating = false; enrollment.open(); } }
         }
+        Label { visible: !control.personalAvailable; text: "Private profiles need a protected display."; color: "#bde4e6"; wrapMode: Text.Wrap; Layout.fillWidth: true }
         ComboBox {
             visible: control.simulator; Layout.fillWidth: true
             model: ["unknown", "user-a", "user-b", "absent", "conflict"]

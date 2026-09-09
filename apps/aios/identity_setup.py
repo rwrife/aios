@@ -36,6 +36,7 @@ def initialize(config_path, state_root):
               'personal_uid_min': 30000, 'personal_uid_max': 39999,
               'runtime': '/run/aios-workspaces', 'socket': '/run/aios-broker/session.sock',
               'socket_gid': group, 'principals': {}, 'wayland_sockets': {},
+              'embedded_display': True,
               'display_isolation_validated': False}
     atomic_bytes(config_path, json.dumps(config, indent=2).encode())
     return config

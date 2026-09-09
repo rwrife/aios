@@ -27,6 +27,15 @@ jobs:
       - name: Show kernel sandbox denials on failure
         if: failure()
         run: sudo dmesg | tail -n 60
+  identity-display:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Permit disposable bubblewrap user namespaces
+        run: sudo apparmor_parser -r scripts/qa/aios-bwrap.apparmor
+      - name: Test rendered private surfaces, PIN input and display socket isolation
+        run: bash scripts/test-identity-display.sh
   image:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

@@ -135,6 +135,35 @@ trusted shell/input channel and completed isolation tests are prerequisites. Nev
 point it at a shared desktop or nested compositor controlled by another user.
 The existing X11 desktop is insufficient, including for secure PIN input.
 
+### Embedded private display
+
+Build the shell with `-DAIOS_EMBEDDED_DISPLAY=ON` and Qt Wayland Compositor
+development dependencies to exercise the new path. This optional Qt module is
+available under GPLv3 or a commercial license; the default shell build remains
+unchanged. Setup initializes `embedded_display: true`. The broker creates a new
+UID-private Wayland listener for each lease and passes its listening descriptor
+only to the registered shell process. Applications receive that socket inside
+their mount namespace. Application surfaces are clipped to the shell's application
+area, and PIN UI uses an in-window overlay. Keyboard focus is explicitly removed
+from application surfaces while trusted input is active. Screen-copy and virtual
+input extensions are not instantiated, and the shell clipboard is not bridged.
+
+Only a shell reporting the direct `eglfs` platform can enable personal APIs in
+embedded mode, and the administrator's display-validation gate must also pass.
+X11, WSLg/nested Wayland and offscreen runs remain anonymous even if the validation
+flag was accidentally set. The declaration comes from the dedicated trusted shell
+UID; application UIDs cannot register or request listener descriptors. A changed
+shell process or a lost shell heartbeat suspends existing work. This requires a
+clean appliance startup that does not run untrusted programs under the shell UID;
+it is not a security upgrade for an already-running shared desktop.
+
+`bash scripts/test-identity-display.sh` builds an isolated test container and checks
+real Wayland clients, cross-UID connection denial, listener replacement, rendered
+pixels from a sandboxed synthetic app, and PIN keystroke/clipboard separation.
+The synthetic app replaces the calculator only inside that disposable container.
+No test harness is installed by the shell build. These offscreen checks do not
+validate DRM/input hardware, VT transitions, recovery consoles or device failure.
+
 ## Remaining work by plan phase
 
 | Phase | Status and remaining implementation |
@@ -145,7 +174,7 @@ The existing X11 desktop is insufficient, including for secure PIN input.
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
 | 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
-| 6 | Private-display launch gate implemented. Actual compositor migration, clipboard/input/notification isolation, deletion workflow, accessibility and hardware security validation remain. |
+| 6 | Embedded per-lease Wayland prototype, clipped application surfaces, in-window PIN overlay and protocol/rendering/input checks implemented. Protected appliance startup, physical display/input validation, deletion workflow and accessibility remain. |
 
 No claim is made that the seven-phase definition of done has been achieved.
 
