@@ -29,7 +29,7 @@ def main():
     commands.add_parser("models")
     commands.add_parser("serve")
     setup = commands.add_parser("setup-local")
-    setup.add_argument("model_id", nargs="?", default="smollm2-135m")
+    setup.add_argument("model_id", nargs="?", default="qwen3-0.6b")
     commands.add_parser("local-models")
     commands.add_parser("setup-voice")
     transcription = commands.add_parser("transcribe")

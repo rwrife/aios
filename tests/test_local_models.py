@@ -103,12 +103,21 @@ class LocalModelTests(unittest.TestCase):
 class CatalogTests(unittest.TestCase):
     def test_curated_models_have_pinned_downloads_and_tool_capabilities(self):
         catalog = models.catalog()
-        self.assertEqual(len([m for m in catalog.values() if m["tool_use"]]), 3)
-        for model in catalog.values():
+        self.assertEqual(models.DEFAULT_MODEL, "qwen3-0.6b")
+        self.assertEqual(list(catalog), ["qwen3-0.6b", "qwen3-1.7b", "qwen3-4b", "qwen3-8b"])
+        self.assertTrue(catalog[models.DEFAULT_MODEL]["bundled"])
+        for model_id, model in catalog.items():
             self.assertRegex(model["url"], r"^https://huggingface.co/.+/resolve/[a-f0-9]{40}/[^/]+\.gguf$")
             self.assertRegex(model["sha256"], r"^[a-f0-9]{64}$")
+            self.assertRegex(model["revision"], r"^[a-f0-9]{40}$")
+            self.assertIn("/Qwen/Qwen3-", model["source"])
+            self.assertEqual(model["quantization"], "Q4_K_M")
+            self.assertTrue(model["url"].endswith("/" + model["filename"]))
+            self.assertIn("/resolve/" + model["revision"] + "/", model["url"])
             self.assertGreater(model["bytes"], 0)
-            self.assertGreater(model["ram_gib"], 0)
+            self.assertGreater(model["ram_gib"], 0, model_id)
+            self.assertLessEqual(model["ram_gib"], 32, model_id)
+            self.assertTrue(model["tool_use"], model_id)
 
     def test_worker_returns_catalog_and_rejects_unknown_model(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -130,6 +139,9 @@ class CatalogTests(unittest.TestCase):
         with patch.object(sys, "argv", ["aios-llm", "setup-local", "qwen3-4b"]), patch.object(models, "install") as install, patch("builtins.print"):
             self.assertEqual(cli.main(), 0)
             self.assertEqual(install.call_args.args[0], "qwen3-4b")
+        with patch.object(sys, "argv", ["aios-llm", "setup-local"]), patch.object(models, "install") as install, patch("builtins.print"):
+            self.assertEqual(cli.main(), 0)
+            self.assertEqual(install.call_args.args[0], models.DEFAULT_MODEL)
         with patch.object(sys, "argv", ["aios-llm", "serve"]), patch.object(cli, "load_config", return_value={"model_path": "/model.gguf"}), patch.object(os, "execvp") as launch:
             self.assertEqual(cli.main(), 0)
             args = launch.call_args.args[1]

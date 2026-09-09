@@ -15,9 +15,9 @@ TestCase {
         property bool configuring: false
         property string selectedId: ""
         property var localModels: ({ram_bytes: 4 * 1073741824, free_disk_bytes: 20 * 1073741824, models: [
-            {id: "starter", name: "Starter", installed: true, available: true, bytes: 105454432, ram_gib: 1, license: "Apache-2.0", note: "Basic chat"},
-            {id: "qwen3-1.7b", name: "Qwen3 1.7B", installed: false, available: true, tool_use: true, bytes: 1282439584, ram_gib: 4, license: "Apache-2.0", note: "Tools"},
-            {id: "qwen3-8b", name: "Qwen3 8B", installed: false, available: false, tool_use: true, bytes: 5027784224, ram_gib: 12, license: "Apache-2.0", note: "Tools", reason: "Needs about 12 GiB total RAM."}
+            {id: "qwen3-0.6b", name: "Qwen3 0.6B Q4_K_M", bundled: true, installed: true, available: true, tool_use: true, bytes: 484220320, ram_gib: 2, license: "Apache-2.0", note: "Basic chat"},
+            {id: "qwen3-1.7b", name: "Qwen3 1.7B Q4_K_M", installed: false, available: true, tool_use: true, bytes: 1282439584, ram_gib: 4, license: "Apache-2.0", note: "Tools"},
+            {id: "qwen3-8b", name: "Qwen3 8B Q4_K_M", installed: false, available: false, tool_use: true, bytes: 5027784224, ram_gib: 12, license: "Apache-2.0", note: "Tools", reason: "Needs about 12 GiB total RAM."}
         ]})
         function refreshLocalModels() {}
         function setupLocal(id) { selectedId = id }

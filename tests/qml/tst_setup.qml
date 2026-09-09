@@ -29,7 +29,7 @@ TestCase {
     QtObject {
         id: backend
         property var config: ({})
-        property var localModels: ({models: [{id: "smollm2-135m", name: "Starter", installed: true, available: true, bytes: 105454432, ram_gib: 1, note: "Starter", license: "Apache-2.0"}], ram_bytes: 4294967296, free_disk_bytes: 9999999999})
+        property var localModels: ({models: [{id: "qwen3-0.6b", name: "Qwen3 0.6B Q4_K_M", bundled: true, installed: true, available: true, tool_use: true, bytes: 484220320, ram_gib: 2, note: "Starter", license: "Apache-2.0"}], ram_bytes: 4294967296, free_disk_bytes: 9999999999})
         function refreshLocalModels() {}
         property bool busy: false
         property bool configuring: false
@@ -41,17 +41,18 @@ TestCase {
         property int stopped: 0
         property int downloads: 0
         property int logins: 0
+        property string selectedId: ""
         signal changed()
         function dismissSetup() { dismissed++ }
         function stop() { stopped++; busy = false; changed() }
-        function setupLocal() { downloads++; busy = true; changed() }
+        function setupLocal(id) { selectedId = id; downloads++; busy = true; changed() }
         function subscriptionAction(operation, device) { logins++; busy = true; changed() }
     }
     Component { id: wizardComponent; SetupWizard {} }
     property var wizard
     function init() {
         backend.busy = false; backend.dismissed = 0; backend.stopped = 0
-        backend.downloads = 0; backend.logins = 0
+        backend.downloads = 0; backend.logins = 0; backend.selectedId = ""
         wizard = wizardComponent.createObject(test, {backend: backend, theme: palette, profileControl: profileControl})
         verify(wizard !== null)
         wizard.show(); wait(50)
@@ -74,6 +75,7 @@ TestCase {
         wizard.moveTo(4)
         mouseClick(findChild(wizard, "setupModel"))
         compare(backend.downloads, 1)
+        compare(backend.selectedId, "qwen3-0.6b")
         verify(backend.busy)
         mouseClick(findChild(wizard, "closeSetup"))
         compare(backend.stopped, 1)

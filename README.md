@@ -80,17 +80,18 @@ including device-code login from outside a VM, model selection, and usage status
 
 The softly animated blob at the bottom center restores the most recently
 minimized chat, or opens a new chat window and conversation when none are
-minimized. SmolLM2 135M is bundled and starts automatically for offline chat on
-first boot. Use the ellipsis menu
+minimized. Qwen3 0.6B Q4_K_M is bundled and starts automatically in
+non-thinking mode for offline chat on first boot. Use the ellipsis menu
 to switch back to the starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
 Chromium is available through chat with a tool-capable model, without a desktop
-browser icon. See [browser tools](docs/browser.md). The starter model has limited
-reasoning ability and is not a reliable browser agent. Settings and setup offer
-[three downloadable Qwen3 models](docs/local-models.md) with tool capabilities,
+browser icon. See [browser tools](docs/browser.md). The starter supports simple
+tool bootstrap but is not a reliable browser agent; critical setup controls call
+deterministic backend actions instead of relying on the model. Settings and setup offer
+[three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.

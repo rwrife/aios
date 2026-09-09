@@ -295,7 +295,7 @@ public:
     Q_INVOKABLE void refreshLocalModels() {
         if (!m_busy && !m_configuring) run({{"action", "local-models"}});
     }
-    Q_INVOKABLE void setupLocal(const QString &modelId = "smollm2-135m") {
+    Q_INVOKABLE void setupLocal(const QString &modelId = "qwen3-0.6b") {
         if (m_busy || m_configuring) return;
         m_busy = true; m_status = "Checking local model…"; emit changed();
         run({{"action", "setup-local"}, {"model_id", modelId}});
