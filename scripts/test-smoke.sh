@@ -12,6 +12,9 @@ for f in \
   "$ROOT_DIR/distro/alpine/overlay/etc/X11/xinit/xinitrc" \
   "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/rc.xml" \
   "$ROOT_DIR/distro/alpine/overlay/etc/xdg/openbox/menu.xml" \
+  "$ROOT_DIR/distro/alpine/overlay/etc/xdg/picom.conf" \
+  "$ROOT_DIR/distro/alpine/overlay/usr/local/bin/aios-terminal" \
+  "$ROOT_DIR/distro/alpine/overlay/usr/share/themes/AIOS/openbox-3/themerc" \
   "$ROOT_DIR/scripts/build-iso-container.sh" \
   "$ROOT_DIR/scripts/build.sh" \
   "$ROOT_DIR/scripts/run.sh" \

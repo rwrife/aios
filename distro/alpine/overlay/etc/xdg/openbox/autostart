@@ -1,3 +1,3 @@
 # AI OS Openbox autostart
 # Keep this minimal and terminal-only.
-# xterm is launched by /usr/local/bin/aios-session.
+# The session owns the compositor; terminal windows use aios-terminal.

@@ -188,13 +188,13 @@ public:
     }
     Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
     Q_INVOKABLE void copy(const QString &text) { QGuiApplication::clipboard()->setText(text); }
-    Q_INVOKABLE void terminal() { QProcess::startDetached("xterm", {"-fa", "DejaVu Sans Mono", "-fs", "11"}); }
+    Q_INVOKABLE void terminal() { QProcess::startDetached("aios-terminal", {}); }
     Q_INVOKABLE void openSystemSettings(const QString &section) {
         QString program;
         QStringList args;
         if (section == "sound") program = "pavucontrol";
         else if (section == "display") program = "arandr";
-        else if (section == "network") { program = "xterm"; args = {"-T", "AIOS Network & Wi-Fi", "-fa", "DejaVu Sans Mono", "-fs", "11", "-e", "nmtui"}; }
+        else if (section == "network") { program = "aios-terminal"; args = {"-title", "AIOS Network & Wi-Fi", "-e", "nmtui"}; }
         else return;
         if (!QProcess::startDetached(program, args)) {
             m_status = "Could not open " + section + " settings. Check that the system settings packages are installed.";

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Hallmark · component: terminal window · genre: modern-minimal · theme: AIOS Ocean
+# Hallmark · pre-emit critique: P5 H4 E5 S5 R5 V4
+set -eu
+
+# Keep the terminal on the same cool, layered palette as the native AIOS
+# windows. The compositor applies translucency to this dedicated WM class.
+exec /usr/bin/xterm \
+  -class AIOS-Terminal \
+  -name aios-terminal \
+  -title "Terminal" \
+  -geometry 96x28 \
+  -fa "DejaVu Sans Mono" \
+  -fs 14 \
+  -b 18 \
+  +sb \
+  -bg '#172633' \
+  -fg '#f1f5f6' \
+  -bd '#4c6574' \
+  -cr '#bde4e6' \
+  -xrm 'AIOS-Terminal*VT100.color0: #101b27' \
+  -xrm 'AIOS-Terminal*VT100.color1: #d28b8b' \
+  -xrm 'AIOS-Terminal*VT100.color2: #9fc59f' \
+  -xrm 'AIOS-Terminal*VT100.color3: #d2bd82' \
+  -xrm 'AIOS-Terminal*VT100.color4: #8eb7d0' \
+  -xrm 'AIOS-Terminal*VT100.color5: #b7a3cf' \
+  -xrm 'AIOS-Terminal*VT100.color6: #91c7c9' \
+  -xrm 'AIOS-Terminal*VT100.color7: #dbe5e8' \
+  -xrm 'AIOS-Terminal*VT100.color8: #6f8794' \
+  -xrm 'AIOS-Terminal*VT100.color9: #e5a3a3' \
+  -xrm 'AIOS-Terminal*VT100.color10: #b2d7b2' \
+  -xrm 'AIOS-Terminal*VT100.color11: #e4cf94' \
+  -xrm 'AIOS-Terminal*VT100.color12: #a7cfe5' \
+  -xrm 'AIOS-Terminal*VT100.color13: #cab6e0' \
+  -xrm 'AIOS-Terminal*VT100.color14: #a7dfe0' \
+  -xrm 'AIOS-Terminal*VT100.color15: #f1f5f6' \
+  -xrm 'AIOS-Terminal*VT100.cursorBlink: false' \
+  "$@"
