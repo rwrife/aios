@@ -36,6 +36,7 @@ def write_json(path, value):
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
                 "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": False, "theme_color": "blue",
+                "agent_mode": "current", "agent_url": "", "agent_model": "", "agent_api_key": "",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
                 "speech_model_path": ""}
@@ -60,9 +61,11 @@ def validate_url(url):
 
 def save_config(values):
     config = load_config()
-    if "url" in values and values["url"].rstrip("/") != config["url"].rstrip("/") and "api_key" not in values:
+    if "url" in values and isinstance(values["url"], str) and values["url"].rstrip("/") != str(config["url"]).rstrip("/") and "api_key" not in values:
         config["api_key"] = ""
-    if "voice_url" in values and values["voice_url"].rstrip("/") != config["voice_url"].rstrip("/") and "voice_key" not in values:
+    if "agent_url" in values and isinstance(values["agent_url"], str) and values["agent_url"].rstrip("/") != str(config["agent_url"]).rstrip("/") and "agent_api_key" not in values:
+        config["agent_api_key"] = ""
+    if "voice_url" in values and isinstance(values["voice_url"], str) and values["voice_url"].rstrip("/") != str(config["voice_url"]).rstrip("/") and "voice_key" not in values:
         config["voice_key"] = ""
     for key in defaults_keys():
         if key in values:
@@ -71,6 +74,21 @@ def save_config(values):
         raise ValueError("Choose local, remote, or ChatGPT subscription.")
     if not isinstance(config['subscription_model'], str) or len(config['subscription_model']) > 200:
         raise ValueError('Choose a valid ChatGPT model.')
+    if config["agent_mode"] not in ("current", "chatgpt", "remote"):
+        raise ValueError("Choose current, ChatGPT, or remote agent routing.")
+    if not isinstance(config["agent_url"], str):
+        raise ValueError("Choose a valid agent endpoint.")
+    if not isinstance(config["agent_model"], str) or len(config["agent_model"]) > 200:
+        raise ValueError("Choose a valid agent model.")
+    config["agent_model"] = config["agent_model"].strip()
+    if any(char in config["agent_model"] for char in "\r\n\"'"):
+        raise ValueError("Choose a valid agent model.")
+    if not isinstance(config["agent_api_key"], str) or len(config["agent_api_key"]) > 8192:
+        raise ValueError("Choose a valid agent API key.")
+    if config["agent_url"]:
+        config["agent_url"] = validate_url(config["agent_url"])
+    if config["agent_mode"] == "remote" and (not config["agent_url"] or not config["agent_model"]):
+        raise ValueError("Remote agent routing requires an endpoint and model.")
     if config["theme_color"] not in THEME_COLORS:
         raise ValueError("Choose one of the available theme colors.")
     config["url"] = validate_url(str(config["url"]))
@@ -94,7 +112,24 @@ def save_config(values):
 
 def defaults_keys():
     return ("mode", "url", "model", "model_path", "api_key", "subscription_model", "reduced_motion", "theme_color",
+            "agent_mode", "agent_url", "agent_model", "agent_api_key",
             "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path")
+
+
+def _remote_agent_settings(config):
+    if config.get("agent_mode") != "remote":
+        raise ValueError("The agent model profile is not configured for a remote endpoint.")
+    url = config.get("agent_url")
+    model = config.get("agent_model")
+    key = config.get("agent_api_key", "")
+    if not isinstance(url, str) or not url:
+        raise ValueError("The remote agent profile requires an endpoint and model.")
+    if (not isinstance(model, str) or not model.strip() or len(model) > 200
+            or any(char in model for char in "\r\n\"'")):
+        raise ValueError("The remote agent profile requires a valid endpoint and model.")
+    if not isinstance(key, str) or len(key) > 8192:
+        raise ValueError("The agent API key configuration is invalid.")
+    return validate_url(url), model.strip(), key
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -103,14 +138,38 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def request(route, body=None, timeout=90):
+def model_name(profile="current"):
     config = load_config()
-    if config['mode'] == 'chatgpt':
-        raise ValueError('ChatGPT subscriptions use the subscription connection, not an API endpoint.')
-    base = "http://127.0.0.1:8080/v1" if config["mode"] == "local" else validate_url(config["url"])
+    if profile == "current":
+        if config["mode"] == "chatgpt":
+            raise ValueError("ChatGPT subscriptions use the subscription connection, not this model transport.")
+        if config["mode"] == "local":
+            return "local"
+        if config["mode"] == "remote" and isinstance(config["model"], str) and config["model"].strip():
+            return config["model"]
+        raise ValueError("The current model configuration is invalid.")
+    if profile == "agent":
+        _, model, _ = _remote_agent_settings(config)
+        return model
+    raise ValueError("Unknown model profile.")
+
+
+def request(route, body=None, timeout=90, profile="current"):
+    config = load_config()
+    if profile == "current":
+        if config["mode"] == "chatgpt":
+            raise ValueError("ChatGPT subscriptions use the subscription connection, not an API endpoint.")
+        if config["mode"] not in ("local", "remote"):
+            raise ValueError("The current model configuration is invalid.")
+        base = "http://127.0.0.1:8080/v1" if config["mode"] == "local" else validate_url(config["url"])
+        key = config["api_key"] if config["mode"] == "remote" else ""
+    elif profile == "agent":
+        base, _, key = _remote_agent_settings(config)
+    else:
+        raise ValueError("Unknown model profile.")
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    if config["mode"] == "remote" and config["api_key"]:
-        headers["Authorization"] = "Bearer " + config["api_key"]
+    if key:
+        headers["Authorization"] = "Bearer " + key
     req = urllib.request.Request(base + route, headers=headers,
                                  data=json.dumps(body).encode() if body is not None else None)
     try:
@@ -152,10 +211,10 @@ def chat(messages):
     if not messages or any(m.get("role") not in ("user", "assistant", "system") or
                            not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Invalid conversation.")
-    model = "local" if config["mode"] == "local" else config["model"]
+    model = model_name("current")
     messages = [{"role": m["role"], "content": m["content"]} for m in messages]
     finished = False
-    with request("/chat/completions", {"model": model, "messages": messages, "stream": True}) as response:
+    with request("/chat/completions", {"model": model, "messages": messages, "stream": True}, profile="current") as response:
         for event in sse_events(response):
             if event == "[DONE]":
                 return
