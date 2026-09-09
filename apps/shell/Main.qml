@@ -270,6 +270,11 @@ Window {
         background: Rectangle { color: theme.input; radius: 6; border.color: parent.activeFocus ? theme.accent : theme.line }
     }
     Component { id: chatComponent; ChatWindow {} }
+    Timer {
+        id: volumeCommit
+        interval: 100
+        onTriggered: backendApi.setVolume(Math.round(volumeSlider.value))
+    }
     Popup {
         id: volumePopup
         objectName: "volumePopup"
@@ -321,7 +326,6 @@ Window {
                 from: 0
                 to: 100
                 stepSize: 1
-                value: backendApi.volume
                 enabled: backendApi.volumeAvailable
                 Accessible.name: "Speaker volume"
                 onValueChanged: {
@@ -335,11 +339,6 @@ Window {
                 color: backendApi.volumeAvailable ? theme.ink : theme.muted
                 font.pixelSize: 12
             }
-        }
-        Timer {
-            id: volumeCommit
-            interval: 100
-            onTriggered: backendApi.setVolume(Math.round(volumeSlider.value))
         }
         Connections {
             target: backendApi
