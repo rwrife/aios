@@ -48,6 +48,7 @@ class Backend : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList messages READ messages NOTIFY changed)
     Q_PROPERTY(QVariantMap config READ config NOTIFY changed)
+    Q_PROPERTY(QVariantMap localModels READ localModels NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool configuring READ configuring NOTIFY changed)
@@ -61,6 +62,7 @@ class Backend : public QObject {
 public:
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
+    QVariantMap localModels() const { return m_localModels; }
     QString status() const { return m_status; }
     bool busy() const { return m_busy; }
     bool configuring() const { return m_configuring; }
@@ -230,10 +232,13 @@ public:
         if (url.scheme() != "https" || (url.host() != "auth.openai.com" && url.host() != "chatgpt.com") || !url.userInfo().isEmpty()) return;
         if (!QDesktopServices::openUrl(url)) { m_status = "Open the sign-in address in your browser."; emit changed(); }
     }
-    Q_INVOKABLE void setupLocal() {
-        if (m_busy) return;
-        m_busy = true; m_status = "Downloading starter model…"; emit changed();
-        run({{"action", "setup-local"}});
+    Q_INVOKABLE void refreshLocalModels() {
+        if (!m_busy && !m_configuring) run({{"action", "local-models"}});
+    }
+    Q_INVOKABLE void setupLocal(const QString &modelId = "smollm2-135m") {
+        if (m_busy || m_configuring) return;
+        m_busy = true; m_status = "Checking local model…"; emit changed();
+        run({{"action", "setup-local"}, {"model_id", modelId}});
     }
     Q_INVOKABLE bool setupPending() const {
         return !QSettings("aios", "setup").value("dismissed", false).toBool();
@@ -259,7 +264,7 @@ private:
     QStringList attachmentNames, attachmentText;
     Voice voice;
     QVariantList m_messages;
-    QVariantMap m_config, pendingConfig, m_subscription;
+    QVariantMap m_config, pendingConfig, m_subscription, m_localModels;
     QString m_loginUrl, m_loginCode;
     QString m_status;
     bool m_busy = false;
@@ -287,7 +292,7 @@ private:
         }
         if (m_config.value("mode") == "local" && !m_config.value("model_path").toString().isEmpty()) {
             local.start("llama-server", {"--model", m_config.value("model_path").toString(), "--alias", "local",
-                "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja"});
+                "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja", "--chat-template-kwargs", "{\"enable_thinking\":false}"});
             m_status = "Local model starting. You can chat when it is ready.";
             readiness.start();
         }
@@ -297,7 +302,7 @@ private:
         tieToDesktop(*p);
         auto buffer = new QByteArray;
         const auto action = request.value("action").toString();
-        if (action != "load" && action != "configure") active = p;
+        if (action != "load" && action != "configure" && action != "local-models") active = p;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         if (env.value("AIOS_PYTHONPATH").isEmpty()) env.insert("PYTHONPATH", "/usr/local/share/aios");
         else env.insert("PYTHONPATH", env.value("AIOS_PYTHONPATH"));
@@ -323,6 +328,7 @@ private:
             while ((end = buffer->indexOf('\n')) >= 0) {
                 const auto value = QJsonDocument::fromJson(buffer->left(end)).object(); buffer->remove(0, end + 1);
                 const auto type = value.value("type").toString();
+                if (value.contains("local_models")) m_localModels = value.value("local_models").toObject().toVariantMap();
                 if (type == "loaded") {
                     m_config = value.value("config").toObject().toVariantMap();
                     m_messages = value.value("messages").toArray().toVariantList(); startLocal();

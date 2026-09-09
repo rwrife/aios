@@ -29,6 +29,8 @@ TestCase {
     QtObject {
         id: backend
         property var config: ({})
+        property var localModels: ({models: [{id: "smollm2-135m", name: "Starter", installed: true, available: true, bytes: 105454432, ram_gib: 1, note: "Starter", license: "Apache-2.0"}], ram_bytes: 4294967296, free_disk_bytes: 9999999999})
+        function refreshLocalModels() {}
         property bool busy: false
         property bool configuring: false
         property string status: ""

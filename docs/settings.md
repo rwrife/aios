@@ -15,7 +15,8 @@ Camera checks are opt-in previews only: this build has no supported biometric
 enrollment service, so face login is explicitly unavailable even with a camera.
 The existing experimental recognition adapters are not an enrollment flow.
 The starter model reuses the bundled copy or downloads 101 MiB when missing;
-optional local speech downloads 75 MiB. Nothing downloads merely by opening or
+the [local model catalog](local-models.md) also offers three tool-capable Qwen3
+sizes with RAM and free-disk checks. Optional local speech downloads 75 MiB. Nothing downloads merely by opening or
 advancing through the wizard. Network setup opens the existing connection tool.
 
 Appearance offers eight saved theme colors: Ocean (default), Lagoon, Sage,
@@ -30,8 +31,10 @@ window; opening it again raises the existing panel. Chat continues in its own
 windows. The section list and matching StackLayout pages in SettingsWindow.qml
 provide the extension point for future settings.
 
-- **AI models:** shared with chat's ellipsis menu. Choose a local GGUF or bundled
-  starter model, or configure a compatible remote endpoint, model and API key. The
+- **AI models:** shared with chat's ellipsis menu. Download and use a catalog
+  model, return to the bundled starter, import a local GGUF, or configure a
+  compatible remote endpoint, model and API key. Catalog installs select the
+  model immediately. The
   Agent tasks controls choose Current chat model, ChatGPT subscription, or a
   separate remote OpenAI-compatible endpoint/model/key for skills marked
   `remote-preferred`. Current is the default; ordinary chat remains on the primary

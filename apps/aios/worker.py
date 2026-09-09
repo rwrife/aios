@@ -3,7 +3,7 @@ import json
 import signal
 import sys
 from pathlib import Path
-from .core import chat, load_config, load_history, save_config, save_history, data_dir, download_model, BUNDLED_MODEL
+from .core import chat, load_config, load_history, save_config, save_history
 
 
 def emit(kind, **values):
@@ -19,18 +19,19 @@ def handle(request):
         config["has_agent_key"] = bool(config.pop("agent_api_key"))
         mode_file = Path("/etc/aios-mode")
         config["live"] = mode_file.exists() and mode_file.read_text().strip() == "live"
-        emit("loaded", config=config, messages=load_history())
+        from .local_models import list_models
+        emit("loaded", config=config, messages=load_history(), local_models=list_models())
     elif action == "configure":
         save_config(request["config"])
         emit("saved")
     elif action == "setup-local":
-        model = json.loads(Path(__file__).with_name("models.json").read_text())["smollm2-135m"]
-        destination = BUNDLED_MODEL if BUNDLED_MODEL.is_file() else data_dir() / "models" / "smollm2-135m.gguf"
-        if not destination.exists():
-            download_model(model["url"], model["sha256"], destination,
-                           lambda n: emit("progress", text=f"Downloading starter model: {n // 1048576} / 101 MiB"))
-        save_config({"mode": "local", "model_path": str(destination)})
-        emit("installed", path=str(destination))
+        from .local_models import install, list_models
+        destination = install(request.get("model_id", "smollm2-135m"),
+                              lambda text: emit("progress", text=text))
+        emit("installed", path=str(destination), local_models=list_models())
+    elif action == "local-models":
+        from .local_models import list_models
+        emit("local-models", local_models=list_models())
     elif action == "history":
         save_history(request["messages"])
         emit("saved")

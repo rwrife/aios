@@ -94,7 +94,9 @@ can stay on the current model or be explicitly routed to ChatGPT or a separate
 remote service. See [agentic tools](docs/agentic-tools.md). Chromium remains
 available as one built-in tool, without a desktop browser icon; see
 [browser tools](docs/browser.md). The starter model has limited reasoning
-ability and is not a reliable tool agent; larger models can be imported.
+ability and is not a reliable tool agent. Settings and setup offer
+[three downloadable Qwen3 models](docs/local-models.md) with tool capabilities,
+RAM guidance, and disk-space checks; custom GGUF models can also be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.
 Secure Boot and physical hardware have not yet been validated.
