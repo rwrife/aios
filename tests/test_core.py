@@ -61,6 +61,11 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(config["mode"], "remote")
             self.assertEqual(config["model_path"], "")
 
+    def test_background_motion_is_opt_in_and_saved_choice_wins(self):
+        self.assertTrue(core.load_config()["reduced_motion"])
+        core.save_config({"reduced_motion": False})
+        self.assertFalse(core.load_config()["reduced_motion"])
+
     def test_config_preserves_key_and_rejects_insecure_remote(self):
         core.save_config({"mode": "remote", "url": "https://example.com/v1", "api_key": "private"})
         core.save_config({"model": "test"})
