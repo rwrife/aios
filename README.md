@@ -70,9 +70,10 @@ Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.m
 AI models also supports [ChatGPT subscription sign-in](docs/chatgpt-subscription.md),
 including device-code login from outside a VM, model selection, and usage status.
 
-The softly animated blob at the bottom center opens a new chat window and
-conversation with every click. SmolLM2 135M is bundled and starts automatically
-for offline chat on first boot. Use the ellipsis menu
+The softly animated blob at the bottom center restores the most recently
+minimized chat, or opens a new chat window and conversation when none are
+minimized. SmolLM2 135M is bundled and starts automatically for offline chat on
+first boot. Use the ellipsis menu
 to switch back to the starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.

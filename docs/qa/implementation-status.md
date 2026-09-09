@@ -207,3 +207,14 @@ reply grows without recreating its row and stays visible, wheel scrolling keeps
 the history position across new tokens and can resume following, and sending
 while scrolled up returns to the latest message. Reply completion and window
 resizing are also covered. Image builds now run this UI suite before compiling.
+
+## Minimized chat restoration
+
+The chat blob no longer displays a visual tooltip. Activating it restores
+minimized chat windows from most recently minimized to oldest before creating a
+new independent session. Closing a minimized chat removes it from the restore
+order, while visible chat windows continue to allow additional sessions.
+
+Source-level Qt Quick regression tests cover accessibility metadata, tooltip
+removal, minimize tracking, restore order, close cleanup and session creation.
+This checkpoint does not claim a new ISO or interactive VM validation.
