@@ -27,6 +27,8 @@ FIELDS = {
     'history': ('before',), 'summarize': ('summary',),
     'document_read': ('path',), 'document_save': ('path', 'content'),
     'enroll_manual': ('name', 'pin', 'consent'),
+    'enroll_profile': ('name', 'pin', 'consent', 'photo'),
+    'profiles': (),
     'recover': ('owner', 'recovery', 'pin'),
     'activate_verified': ('owner', 'pin', 'title', 'session'),
     'display_acquire': (), 'display_ready': ('lease',),
@@ -131,7 +133,7 @@ class Service:
         if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
             if action not in ('status', 'suspend', 'evidence', 'display_attest'):
                 raise PermissionError('Personal requests require the registered display process')
-        if action in ('activate', 'activate_verified', 'enroll_manual', 'recover', 'search',
+        if action in ('activate', 'activate_verified', 'enroll_manual', 'enroll_profile', 'profiles', 'recover', 'search',
                       'request_capability', 'verify', 'github_profile') and not self._can_personal():
             raise PermissionError("Personal mode requires a validated isolated display and trusted input path")
         if action == 'status':
@@ -139,6 +141,7 @@ class Service:
             if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
                 status.update(session=None, lease=None)
             return {**status, 'simulator': self.simulator,
+                    'profile': s.profile_status() if self._can_personal() else {},
                     'embedded_display': getattr(s.isolation, 'requires_display', False),
                     'display_attested': self.peer_pid is not None and self.peer_pid == self.display_pid,
                     'personal_available': self._can_personal(),
@@ -155,6 +158,10 @@ class Service:
             return {'session': s.activate_verified(request['owner'], request['pin'], request['title'], request['session'])}
         elif action == 'enroll_manual':
             return s.enroll(request['name'], request['pin'], request['consent'], None)
+        elif action == 'enroll_profile':
+            return s.enroll(request['name'], request['pin'], request['consent'], None, request['photo'])
+        elif action == 'profiles':
+            return {'profiles': s.profiles()}
         elif action == 'recover':
             return {'recovery': s.recover(request['owner'], request['recovery'], request['pin'])}
         elif action == 'display_acquire':

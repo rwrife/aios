@@ -22,11 +22,15 @@ TestCase {
         property bool busy: false
         property bool secureInput: false
         property bool personalAvailable: true
+        property var profile: ({})
+        property var profiles: [{id: "test-id", name: "Test profile"}]
+        function listProfiles() {}
         function setSecureInput(active) { secureInput = active }
         signal privacyLost()
         signal documentLoaded(string content)
         signal documentSaved()
         signal enrollmentCompleted(string recovery)
+        signal photoCaptured(string preview, string rgb)
         signal unlocked()
         property int enrollments: 0
         property int recoveries: 0
@@ -43,6 +47,30 @@ TestCase {
     Component { id: pinComponent; SecurePinPrompt {} }
     Component { id: statusComponent; IdentityStatus {} }
     Component { id: enrollmentComponent; EnrollmentFlow {} }
+    Component { id: bubbleComponent; UserBubble {} }
+    function test_profile_bubble_greeting_and_fallback() {
+        var bubble = bubbleComponent.createObject(test, {control: control})
+        control.profile = {name: "Alice", detected: true, photo: ""}
+        compare(bubble.greeting, "Hello, Alice. How may I help you?")
+        control.profile = {}
+        verify(bubble.greeting.indexOf("Set up an account") >= 0)
+        bubble.openPicker()
+        var picker = findChild(bubble, "profilePicker")
+        tryCompare(picker, "opened", true)
+        waitForRendering(picker.contentItem)
+        var choose = findChild(picker.contentItem, "chooseProfile")
+        verify(choose !== null)
+        mouseClick(choose)
+        var enrollment = findChild(bubble, "bubbleEnrollment")
+        compare(enrollment.creating, false)
+        var name = findChild(bubble, "profileName")
+        tryCompare(name, "text", "Test profile")
+        var pin = findChild(bubble, "enrollmentPin")
+        compare(pin.echoMode, TextInput.Password)
+        compare(pin.text, "")
+        control.privacyLost()
+        bubble.destroy()
+    }
     function test_recovery_submits_and_clears_both_secrets() {
         var surface = enrollmentComponent.createObject(test, {control: control, recovering: true})
         surface.open()

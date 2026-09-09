@@ -367,7 +367,22 @@ class Sessions:
         self.capabilities.use(token, self.owner, self.lease, operation, resource)
         self._audit(operation, True)
 
-    def enroll(self, name, pin, consent, templates):
+    def profiles(self):
+        return [{'id': key, 'name': name} for key, name in
+                sorted(self.store.get('identities', {}).items(), key=lambda item: item[1].casefold())][:128]
+
+    def profile_status(self):
+        self.tick()
+        detected = self.fusion.current()
+        owner = self.owner if self.owner and not self.shield else detected
+        if self.shield or self.fusion.reason in ('conflict', 'ambiguous'):
+            owner = None
+        record = self.store.get('identity-' + owner) if owner else None
+        return {'id': owner if record else None, 'name': record['name'] if record else '',
+                'photo': record.get('photo', '') if record and detected == owner else '',
+                'detected': bool(record and detected == owner), 'reason': self.fusion.reason}
+
+    def enroll(self, name, pin, consent, templates, photo=None):
         self._reconcile_enrollment()
         if self.enrollment_blocked:
             raise PermissionError('Interrupted allocation requires administrator recovery')
@@ -393,10 +408,12 @@ class Sessions:
                     raise ValueError("Invalid embedding")
                 cosine(sample, sample)
         owner = str(uuid.uuid4())
+        from .portraits import portrait
+        image = portrait(photo)
         recovery = secrets.token_urlsafe(32)
         record = {'name': name.strip(), 'pin': pin_record(pin), 'templates': templates,
                   'recovery': hashlib.sha256(recovery.encode()).hexdigest(), 'admin': False,
-                  'biometric_consent': not manual}
+                  'biometric_consent': not manual, 'photo': image}
         # The encrypted intent contains only the PIN verifier and recovery hash,
         # never the entered PIN or the one-time recovery secret.
         self.store.put('pending-enrollment', {'identity': owner, 'record': record})

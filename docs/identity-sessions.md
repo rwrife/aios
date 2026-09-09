@@ -173,6 +173,33 @@ validate DRM/input hardware, VT transitions, recovery consoles or device failure
 
 ## Remaining work by plan phase
 
+### Chat profile bubble
+
+Chat windows now show a centered user bubble. The protected session panel uses
+the same component. A fresh, unambiguous identity candidate produces the greeting
+“Hello, [name]. How may I help you?” and its saved profile portrait. Stale,
+conflicting or unavailable recognition clears the portrait; the fallback is a
+generic head. Explicit PIN unlock can provide the greeting without claiming a
+camera match. An unknown guest sees an invitation to create an account.
+
+Clicking the bubble lists existing profile names and opens masked PIN/password
+entry for the selection, or offers account creation. The broker releases this
+directory only through the protected display gate. It returns no PIN verifiers,
+recovery secrets or biometric templates. Recognition presentation does not
+activate a workspace or assign an existing conversation to a different owner.
+
+Enrollment has an optional **Take profile photo** action. It requests one camera
+snapshot, previews a 64 × 64 crop, and allows retaking or removing it. Capture has
+a five-second timer and uses memory only. The broker accepts only fixed-size RGB
+pixels, generates a metadata-free PNG and stores it with the encrypted identity
+record. No image path, remote URL, full-resolution image or EXIF is retained.
+Camera hardware verification remains paused.
+
+The ordinary desktop chat still uses legacy workers. It shows the guest bubble
+but cannot unlock protected accounts there; the picker explains this limitation.
+Broker-owned chat workers and independent ownership for multiple simultaneous
+chat windows remain required before enabling account switching in those windows.
+
 Enrollment now writes an encrypted intent before creating storage. After the
 principal mapping is committed, restart completes the identity record and name
 index idempotently, then atomically clears the intent. The intent stores a PIN

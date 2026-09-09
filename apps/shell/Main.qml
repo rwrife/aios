@@ -13,7 +13,7 @@ Window {
     Theme { id: theme; selected: backend.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme, profileControl: sessionControl}); if (window) { window.show(); window.raise(); window.requestActivate() } }
     property var settingsWindow: null
     function openSettings() {
         if (sessionControl.enabled) return

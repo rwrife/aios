@@ -39,6 +39,7 @@ Rectangle {
     ColumnLayout {
         id: column; anchors.fill: parent; anchors.margins: 16; spacing: 8
         enabled: !control.busy
+        UserBubble { control: panel.control; Layout.alignment: Qt.AlignHCenter }
         Label { text: control.simulator ? "Identity simulator · no apps execute" : "Experimental session broker"; color: "#bde4e6" }
         Label { text: control.authority; color: "white" }
         RowLayout {

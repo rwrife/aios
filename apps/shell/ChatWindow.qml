@@ -9,6 +9,7 @@ Window {
     required property var backend
     required property var session
     required property var theme
+    property var profileControl: null
     title: "AIOS Chat"
     visible: true
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -37,6 +38,7 @@ Window {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 56
             Item {
                 Layout.fillWidth: true; implicitHeight: 36
                 Text { text: "Chat"; color: theme.muted; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
@@ -46,9 +48,14 @@ Window {
             QuietButton { text: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
             QuietButton { text: "×"; tip: "Close this chat"; onClicked: chat.close() }
         }
+        UserBubble { id: userProfile; parent: chat.contentItem; anchors.top: parent.top; anchors.topMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; control: chat.profileControl; ink: theme.ink; surface: theme.input }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
-            Text { visible: session.messages.length === 0; anchors.centerIn: parent; text: "What’s on your mind?"; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
+            Column {
+                visible: session.messages.length === 0; anchors.centerIn: parent; width: parent.width - 24; spacing: 18
+                Text { width: parent.width; text: userProfile.greeting; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
+                Button { visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.openPicker() }
+            }
             ListView {
                 id: conversation; objectName: "conversation"
                 anchors.fill: parent; clip: true; spacing: 24

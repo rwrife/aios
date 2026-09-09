@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QTimer>
+#include "ProfilePhoto.h"
 
 // Broker UI has no link to the chat worker or model tool registry. Experimental
 // mode is explicit. The normal desktop retains its existing behavior.
@@ -24,9 +25,13 @@ class SessionControl : public QObject {
     Q_PROPERTY(bool secureInput READ secureInput NOTIFY changed)
     Q_PROPERTY(bool personalAvailable READ personalAvailable NOTIFY changed)
     Q_PROPERTY(QVariantMap challenge READ challenge NOTIFY changed)
+    Q_PROPERTY(QVariantMap profile READ profile NOTIFY changed)
+    Q_PROPERTY(QVariantList profiles READ profiles NOTIFY changed)
 public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
         path = qEnvironmentVariable("AIOS_SESSION_SOCKET");
+        connect(&photoCapture, &ProfilePhoto::captured, this, &SessionControl::photoCaptured);
+        connect(&photoCapture, &ProfilePhoto::failed, this, [this] { m_error = "Camera unavailable. You can create a profile without a photo."; emit changed(); });
         timer.setInterval(500);
         connect(&timer, &QTimer::timeout, this, [this] {
             if (pendingEnrollment) return;
@@ -47,7 +52,11 @@ public:
     bool embeddedDisplay() const { return m_embedded; }
     bool secureInput() const { return m_secureInput; }
     bool personalAvailable() const { return m_personalAvailable; }
-    Q_INVOKABLE void setSecureInput(bool active) { m_secureInput = active; emit changed(); }
+    QVariantMap profile() const { return m_profile; }
+    QVariantList profiles() const { return m_profiles; }
+    Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
+    Q_INVOKABLE void takeProfilePhoto() { if (m_secureInput && m_personalAvailable) photoCapture.take(); }
+    Q_INVOKABLE void setSecureInput(bool active) { m_secureInput = active; if (!active) photoCapture.cancel(); emit changed(); }
     QVariantMap challenge() const { return m_challenge; }
     Q_INVOKABLE void simulate(const QString &state) { if (m_simulator) demoState = state; }
     Q_INVOKABLE void activate(const QString &title) {
@@ -76,6 +85,9 @@ public:
     }
     Q_INVOKABLE void enroll(const QString &name, const QString &pin, bool consent) {
         call({{"action", "enroll_manual"}, {"name", name}, {"pin", pin}, {"consent", consent}});
+    }
+    Q_INVOKABLE void enrollProfile(const QString &name, const QString &pin, bool consent, const QString &photo) {
+        call({{"action", "enroll_profile"}, {"name", name}, {"pin", pin}, {"consent", consent}, {"photo", photo}});
     }
     Q_INVOKABLE void unlock(const QString &name, const QString &pin) {
         clearPersonal();
@@ -117,6 +129,7 @@ signals:
     void documentLoaded(const QString &content);
     void documentSaved();
     void enrollmentCompleted(const QString &recovery);
+    void photoCaptured(const QString &preview, const QString &rgb);
     void unlocked();
     void displayRequested(const QString &app);
 private:
@@ -127,10 +140,14 @@ private:
     QJsonValue m_before = QJsonValue::Null;
     quint64 generation = 0;
     QVariantMap m_challenge;
+    QVariantMap m_profile;
+    QVariantList m_profiles;
+    ProfilePhoto photoCapture;
     QTimer timer;
     bool pendingStatus = false;
     bool pendingEnrollment = false;
     void clearPersonal() {
+        photoCapture.cancel(); m_profile.clear(); m_profiles.clear();
         ++generation;
         m_sessions.clear(); m_messages.clear(); m_challenge.clear();
         m_before = QJsonValue::Null; m_error.clear();
@@ -146,7 +163,7 @@ private:
         if (!enabled()) return;
         const QString action = request.value("action").toString();
         if (pendingEnrollment) return;
-        if (action == "enroll_manual") { pendingEnrollment = true; emit changed(); }
+        if (action == "enroll_manual" || action == "enroll_profile") { pendingEnrollment = true; emit changed(); }
         if (action == "status" && pendingStatus) return;
         if (action == "status") pendingStatus = true;
         auto socket = new QLocalSocket(this);
@@ -191,7 +208,8 @@ private:
                         (!m_lease.isEmpty() && m_lease != nextLease)) {
                         clearPersonal();
                     }
-                    m_lease = nextLease;
+                      m_lease = nextLease;
+                      m_profile = result.value("profile").toObject().toVariantMap();
                 } else if (action == "search") m_sessions = result.value("sessions").toArray().toVariantList();
                 else if (action == "history") {
                     m_messages = result.value("messages").toArray().toVariantList() + m_messages;
@@ -210,7 +228,8 @@ private:
                     const auto app = pendingApp; pendingApp.clear();
                     if (!app.isEmpty()) launchReady(app);
                 }
-                else if (action == "enroll_manual" || action == "recover") emit enrollmentCompleted(result.value("recovery").toString());
+                else if (action == "enroll_manual" || action == "enroll_profile" || action == "recover") emit enrollmentCompleted(result.value("recovery").toString());
+                else if (action == "profiles") m_profiles = result.value("profiles").toArray().toVariantList();
                 else if (action == "document_read") emit documentLoaded(result.value("content").toString());
                 else if (action == "document_save") emit documentSaved();
                 else if (action == "request_capability") m_challenge = result.toVariantMap();
@@ -225,9 +244,9 @@ private:
         });
         connect(socket, &QObject::destroyed, this, [this, action] {
             if (action == "status") pendingStatus = false;
-            if (action == "enroll_manual") { pendingEnrollment = false; emit changed(); }
+            if (action == "enroll_manual" || action == "enroll_profile") { pendingEnrollment = false; emit changed(); }
         });
-        QTimer::singleShot(action == "enroll_manual" ? 300000 : 2000, socket, [this, socket, action] {
+        QTimer::singleShot((action == "enroll_manual" || action == "enroll_profile") ? 300000 : 2000, socket, [this, socket, action] {
             if (action == "status" && !pendingEnrollment) failClosed();
             socket->abort(); socket->deleteLater();
         });
