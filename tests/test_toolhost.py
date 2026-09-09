@@ -439,7 +439,11 @@ class ToolHostTests(unittest.TestCase):
                 daemon=True,
             )
             thread.start()
-            self.assertTrue(_wait_until(path.exists), "socket was not created")
+            ready, _ = _wait_for_request_success(
+                path,
+                lambda target: list_tools(target, timeout=0.25),
+            )
+            self.assertTrue(ready, "tool host did not become ready")
 
             stalled_request = b'{"action":"call","name":"browser","arguments":{"action":"snapshot"}}\n'
             with socket.socket(socket.AF_UNIX) as stalled_client:
