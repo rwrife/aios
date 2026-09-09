@@ -88,6 +88,11 @@ TestCase {
         property var createdSessions: []
         property int createSessionCalls: 0
         signal configured()
+        signal loaded()
+        signal changed()
+        property bool needsSetup: false
+        function setupPending() { return needsSetup }
+        function dismissSetup() { needsSetup = false }
         function createSession() {
             var session = sessionComponent.createObject(test)
             createdSessions = createdSessions.concat([session])
@@ -109,6 +114,7 @@ TestCase {
     property var desktop
 
     function init() {
+        backend.needsSetup = false
         launcher = null
         desktop = null
         backend.createdSessions = []
@@ -150,6 +156,29 @@ TestCase {
         verify(desktop !== null)
         wait(100)
         return desktop
+    }
+
+    function test_first_run_and_settings_relaunch() {
+        backend.needsSetup = true
+        createDesktop()
+        compare(desktop.setupWindow, null)
+        backend.loaded()
+        verify(desktop.setupWindow !== null)
+        verify(desktop.setupWindow.visible)
+        desktop.setupWindow.close()
+        verify(!backend.needsSetup)
+        backend.loaded()
+        verify(!desktop.setupWindow.visible)
+        desktop.openSettings()
+        mouseClick(findChild(desktop.settingsWindow, "launchSetup"))
+        verify(desktop.setupWindow.visible)
+        verify(!desktop.settingsWindow.visible)
+    }
+
+    function test_existing_setup_does_not_open_automatically() {
+        createDesktop()
+        backend.loaded()
+        compare(desktop.setupWindow, null)
     }
 
     function minimize(window) {
