@@ -30,6 +30,9 @@ aios_grub_config() {
 
 profile_aios() {
 	profile_standard
+	# NetworkManager manages this desktop. Upstream network-extras pulls in
+	# legacy vlan scripts that conflict with Alpine's ifupdown-ng package.
+	apks="$(printf '%s\n' "$apks" | tr '[:space:]' '\n' | sed '/^network-extras$/d' | tr '\n' ' ')"
 	section_apkovl() { aios_apkovl_section; }
 	syslinux_gen_config() { aios_syslinux_config; }
 	grub_gen_config() { aios_grub_config; }

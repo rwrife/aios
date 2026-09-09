@@ -176,6 +176,51 @@ left stopped. A USB device listing alone is not the success criterion.
 
 ## Test environments
 
+### Camera inside the windowed VM
+
+Use `scripts/run.ps1` (Windows/WSL) or `scripts/run.sh` (Linux) to run the
+entire OS in one resizable window. Guest apps stay inside its desktop. Building
+the image in Docker does not mean running the desktop in a container.
+
+After attachment and a successful bounded WSL capture, close camera probes and
+look up the selected camera with `lsusb`. Set `AIOS_VM_CAMERA_BUS` and
+`AIOS_VM_CAMERA_ADDR` to its Linux bus and device numbers, without leading zeros
+(these are not the Windows usbipd bus ID). Both must be provided. For example,
+for a camera listed as Bus 002 Device 003:
+
+```powershell
+$env:AIOS_VM_CAMERA_BUS = '2'
+$env:AIOS_VM_CAMERA_ADDR = '3'
+.\scripts\run.ps1
+```
+
+The launcher passes only that device through a virtual USB 3 controller using
+[QEMU USB passthrough](https://www.qemu.org/docs/master/system/devices/usb.html).
+It checks read/write access to that specific `/dev/bus/usb/BBB/DDD` node before
+starting. If access is missing, grant the development user access to that node
+with a temporary ACL or a narrowly scoped udev rule; do not run the entire VM as
+root or make every USB device world-writable. Recheck device numbers after every
+reattachment. The native Windows fallback does not accept these Linux selectors.
+
+Inside AIOS, verify device enumeration and run the bounded camera probe again.
+A working WSL capture alone does not verify the second hop into the guest. Remove
+the two environment variables to start without camera passthrough. Actual guest
+capture remains a hardware validation gate until frames have been received.
+
+Validated on 2026-09-09: the default desktop ISO built and booted in the windowed
+WSL QEMU launcher, with the ordinary-user `aios-shell` running. The Dell WB7022
+enumerated inside the Alpine guest, but a 15-second 640×480 MJPEG/30 fps capture
+still timed out without frames. Direct USB connection also failed in WSL with
+video URB errors. This is attached-but-not-working, not a successful camera test.
+The internal HP 5MP camera enumerated under the AMD graphics device rather than
+USB, so it cannot use this USB passthrough path. A second external USB camera is
+the next hardware comparison. The Dell was detached and Logi Tune restored after
+the bounded tests; no capture buffers were retained.
+
+The optional `AIOS_IDENTITY_BUILD=1` image currently has a separate unresolved
+`featherpad` package availability failure. The boot verification above used the
+default desktop image; it does not validate protected-session appliance startup.
+
 Keep camera experiments in WSL, and exercise session authorization with deterministic
 identity events. `scripts/test-identity-linux.sh` runs real namespace, cgroup and
 encrypted-workspace tests in a disposable Alpine container. Full device/compositor

@@ -25,7 +25,8 @@ try {
     $launcher = Convert-ToWslPath "$PSScriptRoot/run.sh"
     $wslArgs = @('-d', $Distro, '--exec', 'env')
     foreach ($name in @('AIOS_VM_MEM_MB', 'AIOS_VM_CPUS', 'AIOS_VM_DISK_SIZE',
-                        'AIOS_QEMU_AUDIO', 'AIOS_QEMU_HEADLESS', 'AIOS_QEMU_UEFI', 'AIOS_QEMU_SERIAL')) {
+                        'AIOS_QEMU_AUDIO', 'AIOS_QEMU_HEADLESS', 'AIOS_QEMU_UEFI', 'AIOS_QEMU_SERIAL',
+                        'AIOS_VM_CAMERA_BUS', 'AIOS_VM_CAMERA_ADDR')) {
         $value = [Environment]::GetEnvironmentVariable($name)
         if ($value) { $wslArgs += "$name=$value" }
     }

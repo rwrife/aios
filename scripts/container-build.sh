@@ -22,5 +22,8 @@ chmod 600 /build/signing/aios.rsa
 chmod +x /workspace/scripts/*.sh /workspace/distro/alpine/mkimage.sh /workspace/distro/alpine/apkovl/genapkovl-aios.sh
 export PACKAGER_PRIVKEY=/build/signing/aios.rsa
 export APORTS_DIR=/build/aports OUT_DIR=/workspace/distro/alpine/out WORK_DIR=/build/work
+# A Windows worktree's .git pointer is not valid inside this Linux container.
+# Build scripts use absolute paths; keep Git's working directory outside it.
+cd /build
 su builder -s /bin/sh -c 'exec "$@"' -- sh /workspace/scripts/build-iso.sh "$@"
 chown -R "$HOST_UID:$HOST_GID" /workspace/distro/alpine/out

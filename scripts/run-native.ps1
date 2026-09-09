@@ -23,6 +23,9 @@ function Find-QemuTool([string]$Name) {
 }
 
 try {
+    if ($env:AIOS_VM_CAMERA_BUS -or $env:AIOS_VM_CAMERA_ADDR) {
+        throw 'Linux USB camera passthrough requires the WSL launcher. Run without -Native.'
+    }
     if (-not $IsoPath) {
         $latest = Get-ChildItem -LiteralPath "$rootDir/distro/alpine/out" -Filter '*-x86_64.iso' -File -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -43,6 +46,7 @@ try {
     if (-not $dry) { $qemu = Find-QemuTool 'qemu-system-x86_64' }
 
     $qemuArgs = @(
+        '-name', 'AIOS',
         '-m', $memory, '-smp', $cpuCount,
         '-accel', $accelerator, '-cpu', 'max',
         '-boot', 'd', '-cdrom', $IsoPath,
@@ -59,6 +63,8 @@ try {
     }
     if ($env:AIOS_QEMU_HEADLESS -eq '1') {
         $qemuArgs += @('-display', 'none', '-serial', 'mon:stdio')
+    } else {
+        $qemuArgs += @('-display', 'sdl,full-screen=off')
     }
     if ($dry) {
         # Print a copyable PowerShell command, without creating a disk or starting QEMU.

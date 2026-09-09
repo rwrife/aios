@@ -36,6 +36,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1
 ```
 
 Both launchers select the newest ISO in `distro/alpine/out` when no path is given.
+The whole OS runs inside one resizable QEMU window, with fullscreen disabled at
+startup. Chat, settings, and other guest apps stay inside that VM. Use this flow
+for interactive OS previews; `preview-chat.sh` is only an isolated UI development
+tool. Camera passthrough setup is documented in [the webcam guide](docs/wsl-webcam.md#camera-inside-the-windowed-vm).
 They provide NAT networking (outbound internet through the host, with guest DHCP),
 Intel HD Audio speakers and microphone, 4 GiB RAM, two CPUs, and a persistent
 32 GiB sparse disk at `.tmp-aios-live.qcow2`. Existing disks are reused unchanged.
