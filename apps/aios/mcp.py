@@ -56,6 +56,14 @@ def _check_json_value(value):
         raise ValueError("invalid value") from None
 
 
+def _tool_error_result(message):
+    return {
+        "text": message,
+        "structured": None,
+        "is_error": True,
+    }
+
+
 def _valid_input_schema(schema):
     if not isinstance(schema, dict) or schema.get("type") not in (None, "object"):
         return False
@@ -366,6 +374,10 @@ class McpClient:
             return True
         except ProcessLookupError:
             return False
+        except PermissionError:
+            return False
+        except OSError:
+            return False
 
     @staticmethod
     def _group_exists(process_group):
@@ -657,17 +669,14 @@ class McpClient:
         try:
             result = self._request("tools/call", {"name": tool_name, "arguments": arguments})
         except _McpResponseError:
-            return {
-                "text": "MCP tool call failed.",
-                "structured": None,
-                "is_error": True,
-            }
+            return _tool_error_result("MCP tool call failed.")
         if not isinstance(result, dict):
             raise RuntimeError("MCP tool returned an invalid result.")
         content = result.get("content", [])
         if not isinstance(content, list):
             raise RuntimeError("MCP tool returned an invalid result.")
         text = []
+        unsupported = False
         for item in content:
             if not isinstance(item, dict):
                 raise RuntimeError("MCP tool returned an invalid result.")
@@ -677,22 +686,24 @@ class McpClient:
                     raise RuntimeError("MCP tool returned an invalid result.")
                 text.append(item["text"])
                 continue
-            if kind in ("image", "audio", "resource", "resource_link"):
-                raise RuntimeError("MCP tool returned unsupported content.")
-            raise RuntimeError("MCP tool returned unsupported content.")
+            if not isinstance(kind, str) or not kind:
+                raise RuntimeError("MCP tool returned an invalid result.")
+            unsupported = True
         structured = result.get("structuredContent")
         if structured is not None:
             try:
                 _check_json_value(structured)
             except ValueError:
                 raise RuntimeError("MCP tool returned an invalid result.") from None
+        if unsupported:
+            return _tool_error_result("MCP tool returned unsupported content.")
         normalized = {
             "text": "\n".join(text),
             "structured": structured,
             "is_error": bool(result.get("isError", False)),
         }
         if len(_json_dumps(normalized).encode("utf-8")) > RESULT_LIMIT:
-            raise RuntimeError("MCP tool result was too large.")
+            return _tool_error_result("MCP tool result was too large.")
         return normalized
 
 
@@ -814,10 +825,12 @@ class McpRegistry:
                 pending_map[exposed] = (name, tool["name"])
             if invalid or any(exposed in tool_map for exposed in pending_map):
                 self._drop_client(name)
+                self._record_failure(name, settings)
                 warnings.append(_safe_server_message(name, "has conflicting tool names and was ignored"))
                 continue
             if len(definitions) + len(pending_defs) > MAX_TOOLS:
                 self._drop_client(name)
+                self._record_failure(name, settings)
                 warnings.append(_safe_server_message(name, "has too many tools and was ignored"))
                 continue
             definitions.extend(pending_defs)

@@ -480,8 +480,14 @@ class McpTests(unittest.TestCase):
                 cleanup=lambda: self.kill_process_group(process, process_group),
             )
             self.assertTrue(finished, f"call blocked for {elapsed:.3f}s")
-            self.assertFalse(outcome[0])
-            self.assertIsInstance(outcome[1], RuntimeError)
+            if outcome[0]:
+                self.assertEqual(outcome[1], {
+                    "text": "MCP tool result was too large.",
+                    "structured": None,
+                    "is_error": True,
+                })
+            else:
+                self.assertIsInstance(outcome[1], RuntimeError)
             finished, outcome, elapsed = self.bounded(
                 registry.close,
                 timeout=0.9,
@@ -671,6 +677,120 @@ class McpTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertEqual([item["function"]["name"] for item in definitions], ["mcp_fixture_echo"])
 
+    def test_conflicting_server_rejection_uses_failure_cooldown_and_retries(self):
+        now = [100.0]
+        self.write_config({
+            "alpha": self.server_settings(
+                tools=["echo"],
+                scenario="happy",
+                env={"AIOS_MCP_SERVER_ID": "alpha"},
+            ),
+            "ALPHA": self.server_settings(
+                tools=["echo"],
+                scenario="happy",
+                env={
+                    "AIOS_MCP_LOG": str(self.root / "alpha-two.jsonl"),
+                    "AIOS_MCP_ENV_LOG": str(self.root / "alpha-two-env.json"),
+                    "AIOS_MCP_SERVER_ID": "ALPHA",
+                },
+            ),
+        })
+        starts = []
+        original = mcp.subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            starts.append(kwargs["env"]["AIOS_MCP_SERVER_ID"])
+            return original(*args, **kwargs)
+
+        with patch.object(mcp.subprocess, "Popen", side_effect=spawn):
+            registry = self.make_registry(failure_cooldown=5, clock=lambda: now[0])
+            try:
+                first, warnings = registry.definitions()
+                self.assertEqual([item["function"]["name"] for item in first], ["mcp_alpha_echo"])
+                self.assertTrue(warnings)
+                self.assertEqual(starts, ["alpha", "ALPHA"])
+
+                second, warnings = registry.definitions()
+                self.assertEqual([item["function"]["name"] for item in second], ["mcp_alpha_echo"])
+                self.assertTrue(warnings)
+                self.assertEqual(starts, ["alpha", "ALPHA"])
+
+                now[0] += 5.1
+                third, warnings = registry.definitions()
+                self.assertEqual([item["function"]["name"] for item in third], ["mcp_alpha_echo"])
+                self.assertTrue(warnings)
+                self.assertEqual(starts, ["alpha", "ALPHA", "ALPHA"])
+
+                self.write_config({
+                    "alpha": self.server_settings(
+                        tools=["echo"],
+                        scenario="happy",
+                        env={"AIOS_MCP_SERVER_ID": "alpha"},
+                    ),
+                    "ALPHA": self.server_settings(
+                        tools=["hidden"],
+                        scenario="happy",
+                        env={
+                            "AIOS_MCP_LOG": str(self.root / "alpha-hidden.jsonl"),
+                            "AIOS_MCP_ENV_LOG": str(self.root / "alpha-hidden-env.json"),
+                            "AIOS_MCP_SERVER_ID": "ALPHA",
+                        },
+                    ),
+                })
+                fourth, warnings = registry.definitions()
+            finally:
+                registry.close()
+        self.assertEqual([item["function"]["name"] for item in fourth], ["mcp_alpha_echo", "mcp_alpha_hidden"])
+        self.assertEqual(warnings, [])
+        self.assertEqual(starts, ["alpha", "ALPHA", "ALPHA", "ALPHA"])
+
+    def test_aggregate_limit_rejection_uses_failure_cooldown_before_retry(self):
+        now = [100.0]
+        servers = {}
+        for index in range(13):
+            servers[f"server-{index}"] = self.server_settings(
+                tools=["*"],
+                scenario="many-tools",
+                env={
+                    "AIOS_MCP_LOG": str(self.root / f"server-{index}.jsonl"),
+                    "AIOS_MCP_ENV_LOG": str(self.root / f"server-{index}-env.json"),
+                    "AIOS_MCP_TOOL_COUNT": "20",
+                    "AIOS_MCP_SERVER_ID": f"server-{index}",
+                },
+            )
+        self.write_config(servers)
+        starts = []
+        original = mcp.subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            starts.append(kwargs["env"]["AIOS_MCP_SERVER_ID"])
+            return original(*args, **kwargs)
+
+        with patch.object(mcp.subprocess, "Popen", side_effect=spawn):
+            registry = self.make_registry(failure_cooldown=5, clock=lambda: now[0])
+            try:
+                first, warnings = registry.definitions()
+                self.assertEqual(len(first), 240)
+                self.assertTrue(warnings)
+                self.assertEqual(starts.count("server-12"), 1)
+                self.assertEqual(len(starts), 13)
+                self.assertEqual(set(registry._clients), {f"server-{index}" for index in range(12)})
+
+                second, warnings = registry.definitions()
+                self.assertEqual(len(second), 240)
+                self.assertTrue(warnings)
+                self.assertEqual(starts.count("server-12"), 1)
+                self.assertEqual(len(starts), 13)
+
+                now[0] += 5.1
+                third, warnings = registry.definitions()
+            finally:
+                registry.close()
+        self.assertEqual(len(third), 240)
+        self.assertTrue(warnings)
+        self.assertEqual(starts.count("server-12"), 2)
+        self.assertEqual(len(starts), 14)
+
     def test_timeout_protocol_failures_and_start_failures_are_safely_redacted(self):
         for scenario in ("init-timeout", "malformed-line", "incomplete-line", "wrong-version", "missing-capability", "oversized-line", "rpc-error"):
             with self.subTest(scenario=scenario):
@@ -748,7 +868,57 @@ class McpTests(unittest.TestCase):
         finally:
             registry.close()
 
-    def test_call_validation_and_result_normalization_fail_safely(self):
+    def test_safe_tool_result_errors_preserve_healthy_client(self):
+        cases = (
+            ("unsupported-content-once", "MCP tool returned unsupported content."),
+            ("oversized-result-once", "MCP tool result was too large."),
+        )
+        for scenario, expected_text in cases:
+            with self.subTest(scenario=scenario):
+                self.write_config({
+                    "fixture": self.server_settings(tools=["echo"], scenario=scenario),
+                })
+                registry = self.make_registry()
+                try:
+                    definitions, warnings = registry.definitions()
+                    self.assertEqual(warnings, [])
+                    self.assertEqual([item["function"]["name"] for item in definitions], ["mcp_fixture_echo"])
+                    client = registry._clients["fixture"]
+                    process = client.process
+
+                    first = registry.call("mcp_fixture_echo", {"value": "first"})
+                    self.assertEqual(first, {
+                        "text": expected_text,
+                        "structured": None,
+                        "is_error": True,
+                    })
+                    self.assertIs(registry._clients["fixture"], client)
+                    self.assertIs(client.process, process)
+                    self.assertIsNone(process.poll())
+                    self.assertEqual(registry._tool_map["mcp_fixture_echo"], ("fixture", "echo"))
+                    serialized = json.dumps(first)
+                    self.assertNotIn("secret-provider-token", serialized)
+                    self.assertNotIn("abcd", serialized)
+                    self.assertNotIn("x" * 1024, serialized)
+
+                    refreshed, warnings = registry.definitions()
+                    self.assertEqual([item["function"]["name"] for item in refreshed], ["mcp_fixture_echo"])
+                    self.assertEqual(warnings, [])
+                    self.assertIs(registry._clients["fixture"], client)
+                    self.assertIs(client.process, process)
+
+                    second = registry.call("mcp_fixture_echo", {"value": "second"})
+                    self.assertEqual(second, {
+                        "text": "echo:second",
+                        "structured": {"value": "second"},
+                        "is_error": False,
+                    })
+                    self.assertIs(registry._clients["fixture"], client)
+                    self.assertIs(client.process, process)
+                finally:
+                    registry.close()
+
+    def test_call_validation_and_malformed_result_fail_safely(self):
         self.write_config({
             "fixture": self.server_settings(tools=["echo"]),
         })
@@ -762,7 +932,7 @@ class McpTests(unittest.TestCase):
         finally:
             registry.close()
 
-        for scenario in ("unsupported-content", "oversized-result", "call-nondict"):
+        for scenario in ("call-nondict", "call-content-nonlist", "call-invalid-text", "call-structured-nonjson"):
             with self.subTest(scenario=scenario):
                 self.write_config({
                     "fixture": self.server_settings(tools=["echo"], scenario=scenario),
@@ -774,9 +944,13 @@ class McpTests(unittest.TestCase):
                     self.assertEqual([item["function"]["name"] for item in definitions], ["mcp_fixture_echo"])
                     with self.assertRaises(RuntimeError) as error:
                         registry.call("mcp_fixture_echo", {"value": "hello"})
+                    self.assertNotIn("fixture", registry._clients)
+                    cooled, warnings = registry.definitions()
                 finally:
                     registry.close()
                 self.assertNotIn("secret-provider-token", str(error.exception))
+                self.assertEqual(cooled, [])
+                self.assertTrue(warnings)
 
     def test_call_arguments_must_be_json_compatible_without_repr_leakage(self):
         class SecretObject:
@@ -1104,6 +1278,28 @@ class McpTests(unittest.TestCase):
             if write_descriptor is not None:
                 os.close(write_descriptor)
             client.close()
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process groups required")
+    def test_close_tolerates_process_group_signal_errors(self):
+        for error in (PermissionError("denied"), OSError("boom")):
+            with self.subTest(error=type(error).__name__):
+                client = mcp.McpClient("fixture", self.server_settings(), request_timeout=0.1)
+                process = unittest.mock.Mock(stdin=None, stdout=None)
+                process.wait.return_value = 0
+                client.process = process
+                client._process_group = 2468
+
+                with patch.object(client, "_group_exists", side_effect=[True, False]), \
+                    patch.object(mcp.os, "killpg", side_effect=error) as killpg:
+                    finished, outcome, elapsed = self.bounded(client.close, timeout=0.5)
+                    self.assertTrue(finished, f"close blocked for {elapsed:.3f}s")
+                    self.assertTrue(outcome[0])
+                    self.assertEqual(killpg.mock_calls, [unittest.mock.call(2468, signal.SIGTERM)])
+
+                self.assertIsNone(client.process)
+                finished, outcome, elapsed = self.bounded(client.close, timeout=0.2)
+                self.assertTrue(finished, f"second close blocked for {elapsed:.3f}s")
+                self.assertTrue(outcome[0])
 
 
 if __name__ == "__main__":

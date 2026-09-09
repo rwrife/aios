@@ -152,10 +152,25 @@ def tools_page(cursor):
 def call_result(arguments):
     if SCENARIO == "unsupported-content":
         return {"content": [{"type": "image", "data": "abcd", "mimeType": "image/png"}]}
+    if SCENARIO == "unsupported-content-once" and TOOL_CALL_COUNT == 1:
+        return {"content": [{"type": "image", "data": "abcd", "mimeType": "image/png"}]}
     if SCENARIO == "oversized-result":
+        return {"content": [{"type": "text", "text": "x" * (70 * 1024)}]}
+    if SCENARIO == "oversized-result-once" and TOOL_CALL_COUNT == 1:
         return {"content": [{"type": "text", "text": "x" * (70 * 1024)}]}
     if SCENARIO == "call-nondict":
         return []
+    if SCENARIO == "call-content-nonlist":
+        return {"content": "echo:" + arguments.get("value", "")}
+    if SCENARIO == "call-invalid-text":
+        return {"content": [{"type": "text", "text": 123}]}
+    if SCENARIO == "call-structured-nonjson":
+        value = arguments.get("value", "")
+        return {
+            "content": [{"type": "text", "text": "echo:" + value}],
+            "structuredContent": {"value": float("nan")},
+            "isError": False,
+        }
     value = arguments.get("value", "")
     return {
         "content": [{"type": "text", "text": "echo:" + value}],
