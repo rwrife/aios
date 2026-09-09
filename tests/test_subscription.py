@@ -3,9 +3,11 @@ import json
 import os
 from pathlib import Path
 import queue
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -45,9 +47,50 @@ class SubscriptionTests(unittest.TestCase):
         self.spawn.start()
 
     def tearDown(self):
+        for process in reversed(self.processes):
+            self.kill_process_group(process)
         self.spawn.stop()
         self.env.stop()
         self.temp.cleanup()
+
+    def bounded(self, function, timeout=1.0, cleanup=None):
+        outcomes = queue.Queue()
+
+        def invoke():
+            try:
+                outcomes.put((True, function()))
+            except BaseException as error:
+                outcomes.put((False, error))
+
+        thread = threading.Thread(target=invoke, daemon=True)
+        started = time.monotonic()
+        thread.start()
+        thread.join(timeout)
+        elapsed = time.monotonic() - started
+        finished = not thread.is_alive()
+        if not finished and cleanup is not None:
+            cleanup()
+            thread.join(1)
+        outcome = outcomes.get_nowait() if not outcomes.empty() else None
+        return finished, outcome, elapsed
+
+    def kill_process_group(self, process, process_group=None):
+        if process is None:
+            return
+        if os.name == 'posix':
+            if process_group is None and process.poll() is None:
+                try:
+                    process_group = os.getpgid(process.pid)
+                except ProcessLookupError:
+                    return
+            if process_group is None:
+                return
+            try:
+                os.killpg(process_group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        elif process.poll() is None:
+            process.kill()
 
     def requests(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
@@ -68,8 +111,16 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(args[:2], ['codex', 'app-server'])
         self.assertEqual(args[2::2], ['-c'] * ((len(args) - 2) // 2))
         settings = dict(item.split('=', 1) for item in args[3::2])
+        self.assertEqual(settings['forced_login_method'], '"chatgpt"')
+        self.assertEqual(settings['cli_auth_credentials_store'], '"file"')
+        self.assertEqual(settings['model_provider'], '"openai"')
         self.assertEqual(settings['mcp_servers'], '{}')
         self.assertEqual(settings['web_search'], '"disabled"')
+        self.assertEqual(settings['check_for_update_on_startup'], 'false')
+        self.assertEqual(settings['project_doc_max_bytes'], '0')
+        self.assertEqual(settings['analytics.enabled'], 'false')
+        self.assertEqual(settings['tools.update_plan.enabled'], 'false')
+        self.assertEqual(settings['tools.experimental_request_user_input.enabled'], 'false')
         self.assertEqual(settings['skip_host_skill_discovery'], 'true')
         for name in subscription.DISABLED_FEATURES:
             self.assertEqual(settings[f'features.{name}'], 'false')
@@ -83,6 +134,9 @@ class SubscriptionTests(unittest.TestCase):
         self.assertFalse(any(name.startswith('OPENAI_') for name in env))
         self.assertEqual([name for name in env if name.startswith('CODEX_')], ['CODEX_HOME'])
         self.assertNotEqual(env['CODEX_HOME'], 'must-not-inherit')
+        if os.name == 'posix':
+            self.assertTrue(self.popen_kwargs[-1]['start_new_session'])
+            self.assertTrue(callable(self.popen_kwargs[-1]['preexec_fn']))
         thread = next(r for r in self.requests() if r.get('method') == 'thread/start')
         self.assertEqual(thread['params']['environments'], [])
 
@@ -129,6 +183,28 @@ class SubscriptionTests(unittest.TestCase):
             fail()
         self.assertFalse(work.exists())
         server.__exit__(None, None, None)
+
+    def test_teardown_skips_stdout_close_while_reader_still_alive(self):
+        server = subscription.Server()
+        process = Mock()
+        process.poll.return_value = 0
+        process.wait.return_value = 0
+        process.stdin = Mock()
+        stdout = Mock()
+        process.stdout = stdout
+        server.process = process
+        server._process_group = 2468
+        server._reader_thread = Mock()
+        server._reader_thread.is_alive.return_value = True
+
+        with (patch.object(server, '_signal_group', return_value=False),
+              patch.object(server, '_group_exists', return_value=False)):
+            finished, outcome, elapsed = self.bounded(server.__exit__, timeout=0.5)
+
+        self.assertTrue(finished, f'__exit__ blocked for {elapsed:.3f}s')
+        self.assertTrue(outcome[0])
+        process.stdin.close.assert_called_once_with()
+        stdout.close.assert_not_called()
 
     def test_partial_startup_failure_cleans_work_directory(self):
         work = []
@@ -478,6 +554,38 @@ class SubscriptionTests(unittest.TestCase):
         self.assertIsNone(self.processes[-1].poll())
         stream.close()
         self.assertIsNotNone(self.processes[-1].poll())
+        with subscription.account_lock(exclusive=True):
+            pass
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX process groups required')
+    def test_stop_stream_kills_process_group_holding_stdout_and_releases_account(self):
+        grandchild_path = Path(self.temp.name) / 'grandchild.pid'
+        os.environ['AIOS_FAKE_SCENARIO'] = 'grandchild-holds-stdout'
+        os.environ['AIOS_FAKE_GRANDCHILD_PID'] = str(grandchild_path)
+        stream = subscription.chat([{'role': 'user', 'content': 'hello'}])
+        self.assertEqual(next(stream), {'type': 'token', 'text': 'Hello 世界'})
+        process = self.processes[-1]
+        process_group = os.getpgid(process.pid)
+        deadline = time.monotonic() + 1
+        while not grandchild_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(grandchild_path.exists())
+        grandchild_pid = int(grandchild_path.read_text(encoding='utf-8'))
+        os.kill(grandchild_pid, 0)
+
+        finished, outcome, elapsed = self.bounded(
+            stream.close,
+            timeout=0.75,
+            cleanup=lambda: self.kill_process_group(process, process_group),
+        )
+        self.assertTrue(finished, f'stream.close blocked for {elapsed:.3f}s')
+        self.assertTrue(outcome[0])
+        self.assertIsNotNone(process.poll())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(grandchild_pid, 0)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(process_group, 0)
+        self.assertFalse(Path(self.popen_kwargs[-1]['cwd']).exists())
         with subscription.account_lock(exclusive=True):
             pass
 

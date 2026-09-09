@@ -1,6 +1,7 @@
 """Protocol peer used by subscription integration tests; never contacts OpenAI."""
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -149,6 +150,17 @@ for line in sys.stdin:
                 'threadId': thread, 'tool': 'application',
                 'arguments': {'action': 'search', 'query': 'large'}}})
             # Stop reading while the adapter attempts a response larger than the pipe capacity.
+            time.sleep(60)
+        elif scenario == 'grandchild-holds-stdout':
+            child = subprocess.Popen(
+                [sys.executable, '-c', 'import time; time.sleep(60)'],
+                stdin=subprocess.DEVNULL,
+            )
+            path = os.environ.get('AIOS_FAKE_GRANDCHILD_PID')
+            if path:
+                with open(path, 'w', encoding='utf-8') as stream:
+                    stream.write(str(child.pid))
+            notify('item/agentMessage/delta', {'threadId': thread, 'delta': 'Hello 世界'})
             time.sleep(60)
         elif scenario not in ('malformed-thread', 'malformed-turn'):
             if scenario == 'server-request':

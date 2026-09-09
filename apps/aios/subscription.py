@@ -74,6 +74,7 @@ def _parent_guard(parent):
 class Server:
     def __init__(self):
         self.process = None
+        self._process_group = None
         self.work = None
         self.events = queue.Queue(maxsize=1024)
         self.pending = deque()
@@ -109,9 +110,14 @@ class Server:
                 'bufsize': 0,
             }
             if os.name == 'posix':
+                options['start_new_session'] = True
                 options['preexec_fn'] = lambda: _parent_guard(parent)
             self.process = subprocess.Popen(args, **options)
             if os.name == 'posix':
+                try:
+                    self._process_group = os.getpgid(self.process.pid)
+                except OSError:
+                    self._process_group = None
                 os.set_blocking(self.process.stdin.fileno(), False)
             self.process.stdout = io.BufferedReader(self.process.stdout)
             self._reader_thread = threading.Thread(target=self._read, daemon=True)
@@ -136,39 +142,68 @@ class Server:
             work = self.work
             try:
                 if process:
-                    try:
-                        running = process.poll() is None
-                    except OSError:
-                        running = False
-                    if running:
+                    stdin = getattr(process, 'stdin', None)
+                    stdout = getattr(process, 'stdout', None)
+                    if os.name == 'posix':
+                        process_group = self._capture_process_group(process)
+                        if process_group is not None:
+                            self._signal_group(process_group, signal.SIGTERM)
+                        self._wait_for_process(process, 0.1)
+                        if process_group is not None and self._group_exists(process_group):
+                            deadline = time.monotonic() + 0.2
+                            while time.monotonic() < deadline:
+                                if not self._group_exists(process_group):
+                                    break
+                                self._wait_for_process(process, 0.05)
+                                time.sleep(0.01)
+                            if self._group_exists(process_group):
+                                self._signal_group(process_group, signal.SIGKILL)
+                                deadline = time.monotonic() + 0.2
+                                while time.monotonic() < deadline:
+                                    if not self._group_exists(process_group):
+                                        break
+                                    time.sleep(0.01)
+                    else:
                         try:
-                            process.terminate()
+                            running = process.poll() is None
                         except OSError:
-                            pass
-                        try:
-                            process.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
+                            running = False
+                        if running:
                             try:
-                                process.kill()
+                                process.terminate()
                             except OSError:
                                 pass
                             try:
                                 process.wait(timeout=2)
-                            except (OSError, subprocess.TimeoutExpired):
+                            except subprocess.TimeoutExpired:
+                                try:
+                                    process.kill()
+                                except OSError:
+                                    pass
+                                try:
+                                    process.wait(timeout=2)
+                                except (OSError, subprocess.TimeoutExpired, ValueError):
+                                    pass
+                            except (OSError, ValueError):
                                 pass
-                        except OSError:
-                            pass
                     if self._reader_thread is not None:
                         self._reader_thread.join(timeout=READER_JOIN_WAIT)
-                    for stream in (getattr(process, 'stdin', None),
-                                   getattr(process, 'stdout', None)):
-                        if stream is not None:
-                            try:
-                                stream.close()
-                            except OSError:
-                                pass
+                    if stdin is not None:
+                        try:
+                            stdin.close()
+                        except (OSError, ValueError):
+                            pass
+                    if self._reader_thread is not None and self._reader_thread.is_alive():
+                        process.stdout = None
+                    elif stdout is not None:
+                        try:
+                            stdout.close()
+                        except (OSError, ValueError):
+                            pass
+                    self._wait_for_process(process, 0.2)
             finally:
                 self.process = None
+                self._process_group = None
                 self.work = None
                 if work:
                     try:
@@ -180,11 +215,12 @@ class Server:
         fatal = False
         try:
             process = self.process
-            if process is None or process.stdout is None:
+            stream = None if process is None else process.stdout
+            if process is None or stream is None:
                 fatal = True
                 return
             while True:
-                line = process.stdout.readline(MAX_JSON_LINE_BYTES + 1)
+                line = stream.readline(MAX_JSON_LINE_BYTES + 1)
                 if not line:
                     break
                 if len(line) > MAX_JSON_LINE_BYTES:
@@ -203,7 +239,7 @@ class Server:
                 except queue.Full:
                     fatal = True
                     break
-        except OSError:
+        except (OSError, ValueError):
             fatal = True
         finally:
             if fatal:
@@ -358,6 +394,51 @@ class Server:
         self.send({'id': value['id'], 'error': {'code': -32601,
                    'message': 'This operation is not available in AIOS.'}},
                   deadline=deadline, clock=clock)
+
+    def _capture_process_group(self, process):
+        if os.name != 'posix':
+            return None
+        if self._process_group is not None:
+            return self._process_group
+        try:
+            self._process_group = os.getpgid(process.pid)
+        except (AttributeError, OSError, TypeError, ValueError):
+            self._process_group = None
+        return self._process_group
+
+    @staticmethod
+    def _wait_for_process(process, timeout):
+        try:
+            process.wait(timeout=timeout)
+            return True
+        except subprocess.TimeoutExpired:
+            return False
+        except (AttributeError, OSError, ValueError):
+            return False
+
+    @staticmethod
+    def _signal_group(process_group, sig):
+        try:
+            os.killpg(process_group, sig)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return False
+        except OSError:
+            return False
+
+    @staticmethod
+    def _group_exists(process_group):
+        try:
+            os.killpg(process_group, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
 
 
 def account_info(server):
