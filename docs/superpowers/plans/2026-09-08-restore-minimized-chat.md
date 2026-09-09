@@ -203,7 +203,7 @@ function test_closing_minimized_chat_removes_it() {
 Run:
 
 ```powershell
-docker run --rm -v "${PWD}:/workspace" -w /workspace alpine:3.23 sh -lc "apk add --no-cache qt6-qtdeclarative qt6-qtmultimedia >/dev/null && QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input tests/qml/tst_chat_launcher.qml"
+docker run --rm -v "${PWD}:/workspace" -w /workspace alpine:3.23 sh -lc "apk add --no-cache qt6-qtdeclarative-dev qt6-qtmultimedia >/dev/null && QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input tests/qml/tst_chat_launcher.qml"
 ```
 
 Expected: FAIL because the existing orb tooltip becomes visible and `Main.qml`
@@ -395,7 +395,7 @@ tracking, tooltip removal, documentation updates, and QML regression coverage.
 Run:
 
 ```powershell
-docker run --rm -v "${PWD}:/workspace" -w /workspace alpine:3.23 sh -lc "apk add --no-cache bash python3 py3-cryptography qt6-qtdeclarative qt6-qtmultimedia >/dev/null && QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input tests/qml && bash scripts/test.sh"
+docker run --rm -v "${PWD}:/workspace" -w /workspace alpine:3.23 sh -lc "apk add --no-cache bash python3 py3-cryptography qt6-qtdeclarative-dev qt6-qtmultimedia >/dev/null && QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input tests/qml && bash scripts/test.sh"
 ```
 
 Expected: all QML and Python/shell/XML checks pass.
