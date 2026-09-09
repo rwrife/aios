@@ -213,15 +213,124 @@ Window {
         background: Rectangle { color: theme.input; radius: 6; border.color: parent.activeFocus ? theme.accent : theme.line }
     }
     Component { id: chatComponent; ChatWindow {} }
-    Dialog {
-        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360
-        popupType: displayBridgeApi.enabled ? Popup.Item : Popup.Window
-        background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
-        contentItem: Row { spacing: 12
-            QuietButton { text: "Cancel"; onClicked: powerDialog.close() }
-            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backendApi.power("reboot") } }
-            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backendApi.power("poweroff") } }
+    // Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4
+    Popup {
+        id: powerDialog
+        objectName: "powerDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(420, parent.width - 32)
+        padding: 28
+        modal: true
+        dim: true
+        focus: true
+        // Keep rounded corners on the desktop surface, without native window edges.
+        popupType: Popup.Item
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: cancelPower.forceActiveFocus(Qt.TabFocusReason)
+        Overlay.modal: Rectangle {
+            color: Qt.rgba(theme.night.r, theme.night.g, theme.night.b, 0.62)
+            Behavior on opacity { NumberAnimation { duration: desktop.reducedMotion ? 0 : 160 } }
         }
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: desktop.reducedMotion ? 0 : 160; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: desktop.reducedMotion ? 0 : 100 }
+        }
+        background: Rectangle {
+            color: theme.panel
+            radius: 24
+            border.color: Qt.rgba(theme.line.r, theme.line.g, theme.line.b, 0.55)
+        }
+        contentItem: ColumnLayout {
+            spacing: 20
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    text: "Ready to leave?"
+                    color: theme.ink
+                    font.pixelSize: 26
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    text: "Save your work before you go."
+                    color: theme.muted
+                    font.pixelSize: 15
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                PowerAction {
+                    text: "Restart"
+                    symbol: "restart"
+                    onClicked: { powerDialog.close(); backendApi.power("reboot") }
+                }
+                PowerAction {
+                    text: "Shut down"
+                    symbol: "power"
+                    onClicked: { powerDialog.close(); backendApi.power("poweroff") }
+                }
+            }
+            QuietButton {
+                id: cancelPower
+                text: "Cancel"
+                Layout.fillWidth: true
+                onClicked: powerDialog.close()
+                ToolTip.visible: false
+            }
+        }
+    }
+    component PowerAction: Button {
+        id: action
+        property string symbol
+        Layout.fillWidth: true
+        implicitHeight: 108
+        hoverEnabled: true
+        Accessible.name: text
+        contentItem: ColumnLayout {
+            spacing: 12
+            Canvas {
+                id: powerActionIcon
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                onPaint: {
+                    var c = getContext("2d"); c.reset()
+                    c.strokeStyle = theme.accent; c.lineWidth = 1.8; c.lineCap = "round"; c.lineJoin = "round"
+                    c.beginPath()
+                    if (action.symbol === "power") {
+                        c.arc(14, 15, 9, -Math.PI / 3, Math.PI * 4 / 3)
+                        c.stroke(); c.beginPath(); c.moveTo(14, 3); c.lineTo(14, 13)
+                    } else {
+                        c.arc(14, 14, 9, -Math.PI / 2, Math.PI)
+                        c.stroke(); c.beginPath(); c.moveTo(3, 9); c.lineTo(5, 15); c.lineTo(11, 13)
+                    }
+                    c.stroke()
+                }
+                Connections { target: theme; function onAccentChanged() { powerActionIcon.requestPaint() } }
+            }
+            Text {
+                text: action.text
+                color: theme.ink
+                font.pixelSize: 16
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+        background: Rectangle {
+            radius: 16
+            color: action.down ? theme.line : action.hovered ? Qt.lighter(theme.input, 1.18) : theme.input
+            border.width: action.visualFocus ? 2 : 0
+            border.color: theme.accent
+            Behavior on color { ColorAnimation { duration: desktop.reducedMotion ? 0 : 100 } }
+        }
+        opacity: enabled ? 1 : 0.5
     }
 
 }
