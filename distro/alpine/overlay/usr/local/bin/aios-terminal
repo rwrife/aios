@@ -13,6 +13,7 @@ exec /usr/bin/xterm \
   -fa "DejaVu Sans Mono" \
   -fs 14 \
   -b 18 \
+  -bw 0 \
   +sb \
   -bg '#172633' \
   -fg '#f1f5f6' \

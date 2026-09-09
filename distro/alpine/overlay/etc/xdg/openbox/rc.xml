@@ -8,14 +8,14 @@
 
   <theme>
     <name>AIOS</name>
-    <titleLayout>LIMC</titleLayout>
-    <keepBorder>yes</keepBorder>
+    <titleLayout>LC</titleLayout>
+    <keepBorder>no</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
-      <name>DejaVu Sans</name><size>11</size><weight>Normal</weight><slant>Normal</slant>
+      <name>DejaVu Sans</name><size>16</size><weight>Normal</weight><slant>Normal</slant>
     </font>
     <font place="InactiveWindow">
-      <name>DejaVu Sans</name><size>11</size><weight>Normal</weight><slant>Normal</slant>
+      <name>DejaVu Sans</name><size>16</size><weight>Normal</weight><slant>Normal</slant>
     </font>
   </theme>
 
@@ -39,6 +39,10 @@
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
       <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
       <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Frame">
+      <!-- Borderless windows can still be resized from anywhere inside. -->
+      <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
     </context>
     <context name="Client">
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>

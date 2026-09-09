@@ -25,8 +25,8 @@ class TerminalThemeTests(unittest.TestCase):
         openbox = (ROOT / "distro/alpine/overlay/etc/xdg/openbox/rc.xml").read_text()
         self.assertIn("<name>AIOS</name>", openbox)
         self.assertIn("window.active.title.bg.color: #172633", theme)
-        self.assertIn("window.active.label.text.color: #b2c3cd", theme)
-        self.assertIn("window.active.button.hover.image.color: #bde4e6", theme)
+        self.assertIn("window.active.label.text.color: #f1f5f6", theme)
+        self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
 
     def test_desktop_launch_paths_use_the_themed_launcher(self):
         main = (ROOT / "apps/shell/main.cpp").read_text()

@@ -1,9 +1,9 @@
 # Hallmark · component: window chrome · genre: modern-minimal · theme: AIOS Ocean
 # Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4
 
-border.width: 1
-padding.width: 8
-padding.height: 6
+border.width: 0
+padding.width: 24
+padding.height: 18
 window.handle.width: 0
 window.client.padding.width: 0
 window.label.text.justify: Left
@@ -18,20 +18,20 @@ window.inactive.title.separator.color: #354e60
 window.active.title.bg: Flat Solid
 window.active.title.bg.color: #172633
 window.active.label.bg: Parentrelative
-window.active.label.text.color: #b2c3cd
+window.active.label.text.color: #f1f5f6
 window.active.label.text.font: shadow=n
 
 window.inactive.title.bg: Flat Solid
-window.inactive.title.bg.color: #101b27
+window.inactive.title.bg.color: #172633
 window.inactive.label.bg: Parentrelative
-window.inactive.label.text.color: #6f8794
+window.inactive.label.text.color: #f1f5f6
 window.inactive.label.text.font: shadow=n
 
 window.active.button.unpressed.bg: Parentrelative
 window.active.button.unpressed.image.color: #b2c3cd
 window.active.button.hover.bg: Flat Solid
 window.active.button.hover.bg.color: #203340
-window.active.button.hover.image.color: #bde4e6
+window.active.button.hover.image.color: #b2c3cd
 window.active.button.pressed.bg: Flat Solid
 window.active.button.pressed.bg.color: #354e60
 window.active.button.pressed.image.color: #f1f5f6
@@ -47,9 +47,9 @@ window.active.button.toggled.pressed.bg.color: #354e60
 window.active.button.toggled.pressed.image.color: #f1f5f6
 
 window.inactive.button.unpressed.bg: Parentrelative
-window.inactive.button.unpressed.image.color: #6f8794
+window.inactive.button.unpressed.image.color: #b2c3cd
 window.inactive.button.hover.bg: Flat Solid
-window.inactive.button.hover.bg.color: #172633
+window.inactive.button.hover.bg.color: #203340
 window.inactive.button.hover.image.color: #b2c3cd
 window.inactive.button.pressed.bg: Flat Solid
 window.inactive.button.pressed.bg.color: #203340
