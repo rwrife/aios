@@ -190,6 +190,14 @@ Window {
             } }
         }
         QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal() }
+        QuietButton {
+            id: volumeButton
+            objectName: "volumeButton"
+            tip: backendApi.volumeAvailable ? (backendApi.muted ? "Volume muted" : "Volume · " + backendApi.volume + "%") : "Volume"
+            implicitWidth: 44
+            onClicked: volumePopup.open()
+            contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+        }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
@@ -207,12 +215,142 @@ Window {
         background: Rectangle { radius: 8; color: control.down || control.hovered ? theme.input : "transparent"; border.width: control.activeFocus ? 2 : 0; border.color: theme.accent }
         ToolTip.visible: hovered || activeFocus; ToolTip.text: tip; ToolTip.delay: activeFocus ? 0 : 700
     }
+    component SpeakerIcon: Item {
+        id: speakerIcon
+        property bool muted: false
+        property real volume: 50
+        implicitWidth: 20
+        implicitHeight: 20
+        Canvas {
+            id: speakerCanvas
+            anchors.fill: parent
+            onPaint: {
+                var c = getContext("2d")
+                c.reset()
+                c.strokeStyle = theme.ink
+                c.lineWidth = 1.5
+                c.lineCap = "round"
+                c.lineJoin = "round"
+                c.beginPath()
+                c.moveTo(2.5, 8)
+                c.lineTo(6.5, 8)
+                c.lineTo(11, 4.5)
+                c.lineTo(11, 15.5)
+                c.lineTo(6.5, 12)
+                c.lineTo(2.5, 12)
+                c.closePath()
+                c.stroke()
+                if (speakerIcon.muted || speakerIcon.volume <= 0) {
+                    c.beginPath()
+                    c.moveTo(14, 7)
+                    c.lineTo(19, 13)
+                    c.moveTo(19, 7)
+                    c.lineTo(14, 13)
+                    c.stroke()
+                    return
+                }
+                c.beginPath()
+                c.arc(11, 10, 4, -Math.PI / 3, Math.PI / 3)
+                c.stroke()
+                if (speakerIcon.volume > 50) {
+                    c.beginPath()
+                    c.arc(11, 10, 7, -Math.PI / 3, Math.PI / 3)
+                    c.stroke()
+                }
+            }
+        }
+        onMutedChanged: speakerCanvas.requestPaint()
+        onVolumeChanged: speakerCanvas.requestPaint()
+        onWidthChanged: speakerCanvas.requestPaint()
+        onHeightChanged: speakerCanvas.requestPaint()
+    }
     component Field: TextField {
         color: theme.ink; placeholderTextColor: theme.muted; selectByMouse: true
         font.pixelSize: 14; padding: 12
         background: Rectangle { color: theme.input; radius: 6; border.color: parent.activeFocus ? theme.accent : theme.line }
     }
     Component { id: chatComponent; ChatWindow {} }
+    Timer {
+        id: volumeCommit
+        interval: 100
+        onTriggered: backendApi.setVolume(Math.round(volumeSlider.value))
+    }
+    Popup {
+        id: volumePopup
+        objectName: "volumePopup"
+        parent: Overlay.overlay
+        width: 88
+        height: 236
+        padding: 10
+        modal: false
+        dim: false
+        focus: true
+        popupType: Popup.Item
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property bool syncingVolume: false
+        function positionAboveButton() {
+            var point = volumeButton.mapToItem(parent, 0, 0)
+            x = Math.max(8, Math.min(parent.width - width - 8, point.x + (volumeButton.width - width) / 2))
+            y = Math.max(8, point.y - height - 8)
+        }
+        onAboutToShow: positionAboveButton()
+        onOpened: {
+            backendApi.refreshVolume()
+            syncingVolume = true
+            volumeSlider.value = backendApi.volume
+            syncingVolume = false
+            volumeSlider.forceActiveFocus(Qt.TabFocusReason)
+        }
+        background: Rectangle {
+            color: theme.panel
+            radius: 16
+            border.color: theme.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
+            QuietButton {
+                id: muteButton
+                objectName: "muteButton"
+                tip: backendApi.muted ? "Unmute speaker" : "Mute speaker"
+                enabled: backendApi.volumeAvailable
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: backendApi.setMuted(!backendApi.muted)
+                contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+            }
+            Slider {
+                id: volumeSlider
+                objectName: "volumeSlider"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.fillHeight: true
+                orientation: Qt.Vertical
+                from: 0
+                to: 100
+                stepSize: 1
+                enabled: backendApi.volumeAvailable
+                Accessible.name: "Speaker volume"
+                onValueChanged: {
+                    if (volumePopup.opened && !volumePopup.syncingVolume)
+                        volumeCommit.restart()
+                }
+            }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: backendApi.volumeAvailable ? Math.round(volumeSlider.value) + "%" : "—"
+                color: backendApi.volumeAvailable ? theme.ink : theme.muted
+                font.pixelSize: 12
+            }
+        }
+        Connections {
+            target: backendApi
+            function onVolumeChanged() {
+                if (!volumeSlider.pressed) {
+                    volumePopup.syncingVolume = true
+                    volumeSlider.value = backendApi.volume
+                    volumePopup.syncingVolume = false
+                }
+            }
+        }
+    }
     // Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4
     Popup {
         id: powerDialog

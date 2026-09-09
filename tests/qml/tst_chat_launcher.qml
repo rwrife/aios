@@ -85,8 +85,14 @@ TestCase {
         property var subscription: ({})
         property string loginUrl: ""
         property string loginCode: ""
+        property int volume: 65
+        property bool muted: false
+        property bool volumeAvailable: true
         property var createdSessions: []
         property int createSessionCalls: 0
+        property int refreshVolumeCalls: 0
+        property var setVolumeCalls: []
+        property var setMutedCalls: []
         signal configured()
         signal loaded()
         signal changed()
@@ -105,6 +111,9 @@ TestCase {
         function openSystemSettings(section) {}
         function stop() {}
         function subscriptionAction(action, device) {}
+        function refreshVolume() { refreshVolumeCalls += 1 }
+        function setVolume(value) { setVolumeCalls = setVolumeCalls.concat([value]) }
+        function setMuted(value) { setMutedCalls = setMutedCalls.concat([value]) }
     }
 
     Theme { id: palette; selected: "blue" }
@@ -119,6 +128,12 @@ TestCase {
         desktop = null
         backend.createdSessions = []
         backend.createSessionCalls = 0
+        backend.volume = 65
+        backend.muted = false
+        backend.volumeAvailable = true
+        backend.refreshVolumeCalls = 0
+        backend.setVolumeCalls = []
+        backend.setMutedCalls = []
     }
 
     function cleanup() {
@@ -179,6 +194,32 @@ TestCase {
         createDesktop()
         backend.loaded()
         compare(desktop.setupWindow, null)
+    }
+
+    function test_volume_button_opens_vertical_slider_and_mutes() {
+        createDesktop()
+        var button = findChild(desktop, "volumeButton")
+        verify(button !== null)
+        compare(button.Accessible.name, "Volume · 65%")
+        mouseClick(button)
+
+        var popup = findChild(desktop, "volumePopup")
+        tryCompare(popup, "opened", true)
+        compare(backend.refreshVolumeCalls, 1)
+
+        var slider = findChild(desktop, "volumeSlider")
+        compare(slider.orientation, Qt.Vertical)
+        compare(popup.syncingVolume, false)
+        slider.value = 37
+        compare(slider.value, 37)
+        wait(200)
+        tryCompare(backend.setVolumeCalls, "length", 1)
+        compare(backend.setVolumeCalls[0], 37)
+
+        mouseClick(findChild(desktop, "muteButton"))
+        compare(backend.setMutedCalls.length, 1)
+        compare(backend.setMutedCalls[0], true)
+        popup.close()
     }
 
     function minimize(window) {

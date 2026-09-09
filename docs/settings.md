@@ -31,6 +31,11 @@ window; opening it again raises the existing panel. Chat continues in its own
 windows. The section list and matching StackLayout pages in SettingsWindow.qml
 provide the extension point for future settings.
 
+The speaker icon in the lower-right controls opens a compact vertical volume
+slider for the default output device. Its speaker button mutes or unmutes audio;
+the full Sound settings page remains available for choosing devices and adjusting
+individual applications.
+
 - **AI models:** shared with chat's ellipsis menu. Download and use a catalog model,
   return to the bundled starter, import a local GGUF, or configure a compatible
   remote endpoint, model and API key. Catalog installs select the model immediately. The
