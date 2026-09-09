@@ -522,6 +522,27 @@ class ApplicationStoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 app_runner.load_document(linked_file_root)
 
+    def test_load_document_rejects_invalid_manifest_timestamps(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Timestamp", "request": "Build a timestamp page"})
+        html = "<!doctype html><p>timestamp</p>"
+        store.write({"id": created["id"], "html": html})
+        store.publish({"id": created["id"], "summary": "Timestamp summary", "keywords": ["timestamp"]})
+        folder = self.root / created["id"]
+        manifest_path = folder / "manifest.json"
+        manifest = _read_json(manifest_path)
+        original_manifest = dict(manifest)
+
+        for field in ["created_at", "updated_at"]:
+            with self.subTest(field=field):
+                manifest = dict(original_manifest)
+                manifest[field] = "NOT-A-DATE"
+                manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    app_runner.load_document(folder)
+
     def test_run_builds_restricted_chromium_command_and_cleans_up_on_launcher_failure(self):
         from aios import app_runner
 

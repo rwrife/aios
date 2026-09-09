@@ -23,6 +23,7 @@ from .applications import (
     _is_regular_dir,
     _is_regular_file,
     _load_json,
+    _timestamp_key,
     _read_regular_file_bytes,
     _sha256_bytes,
 )
@@ -73,6 +74,8 @@ def _valid_published_manifest(folder: Path) -> dict[str, object]:
         raise ValueError(_GENERIC_LOAD_ERROR)
     if not isinstance(data["updated_at"], str) or not data["updated_at"]:
         raise ValueError(_GENERIC_LOAD_ERROR)
+    _timestamp_key(data["created_at"])
+    _timestamp_key(data["updated_at"])
     if not isinstance(data["summary"], str) or not (1 <= len(data["summary"]) <= MAX_SUMMARY_LENGTH):
         raise ValueError(_GENERIC_LOAD_ERROR)
     if data["entrypoint"] != "index.html":
