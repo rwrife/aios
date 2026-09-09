@@ -361,10 +361,11 @@ class SessionTests(unittest.TestCase):
 
 class BoundaryTests(unittest.TestCase):
     def test_pin_minimum_length(self):
-        for value in ('12345', 'abcdef', 'abcdefghi', '12345\n'):
+        for value in ('123', 'abcdef', 'abcdefghi', '12345\n'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 pin_record(value)
         self.assertTrue(pin_record('longer passphrase'))
+        self.assertTrue(verify_pin(pin_record('1234'), '1234', 0))
 
     def test_schema_rejects_extra_duplicate_and_nonfinite_fields(self):
         for value in ('{"action":"status","uid":0}', '{"action":"status","action":"status"}',

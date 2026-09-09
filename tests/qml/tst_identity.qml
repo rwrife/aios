@@ -34,12 +34,16 @@ TestCase {
         signal photoCaptured(string preview, string rgb)
         signal unlocked()
         property int enrollments: 0
+        property int signins: 0
+        property int photosTaken: 0
+        function takeProfilePhoto() { photosTaken++ }
+        function unlock(name, pin) { if (name === "Test profile" && pin === "1234") { signins++; profile = {name: name}; unlocked() } }
         property int recoveries: 0
         function recover(name, secret, pin) {
             if (name === "Test profile" && secret === "test-recovery-secret" && pin === "246802") recoveries++
         }
         function enroll(name, pin, consent) {
-            if (name === "Test profile" && pin === "123456" && consent) {
+            if (name.toLowerCase() === "test profile" && (pin === "123456" || pin === "1234") && consent) {
                 enrollments++
                 if (greetingOnly) { profile = {name: name}; unlocked() }
             }
@@ -52,6 +56,50 @@ TestCase {
     Component { id: statusComponent; IdentityStatus {} }
     Component { id: enrollmentComponent; EnrollmentFlow {} }
     Component { id: bubbleComponent; UserBubble {} }
+    function typeKeys(text) {
+        for (var i = 0; i < text.length; ++i) {
+            var letter = text[i]
+            keyClick(letter.toUpperCase().charCodeAt(0), /[A-Z]/.test(letter) ? Qt.ShiftModifier : Qt.NoModifier)
+        }
+    }
+    function test_keyboard_only_create_four_digit_pin_and_select_account() {
+        control.greetingOnly = true
+        var bubble = bubbleComponent.createObject(test, {control: control})
+        bubble.openPicker()
+        var form = findChild(bubble, "bubbleEnrollment")
+        tryCompare(form, "opened", true); waitForRendering(form.contentItem)
+        var name = findChild(bubble, "profileName")
+        var pin = findChild(bubble, "enrollmentPin")
+        tryCompare(name, "activeFocus", true)
+        typeKeys("test profile")
+        compare(name.text, "test profile")
+        keyClick(Qt.Key_Tab)
+        tryCompare(pin, "activeFocus", true)
+        typeKeys("123")
+        keyClick(Qt.Key_Return)
+        verify(form.validationError.indexOf("4 digits") >= 0)
+        compare(form.opened, true)
+        typeKeys("4")
+        compare(pin.text, "1234")
+        keyClick(Qt.Key_Return)
+        tryCompare(form, "opened", false)
+        compare(bubble.name, "test profile")
+        compare(control.photosTaken, 0)
+        bubble.openPicker()
+        tryCompare(form, "opened", true); waitForRendering(form.contentItem)
+        keyClick(Qt.Key_U, Qt.AltModifier)
+        var saved = findChild(bubble, "savedAccounts")
+        tryCompare(saved, "activeFocus", true)
+        keyClick(Qt.Key_Space); keyClick(Qt.Key_Down); keyClick(Qt.Key_Return)
+        tryCompare(pin, "activeFocus", true)
+        compare(name.text, "Test profile")
+        typeKeys("1234")
+        var before = control.signins
+        keyClick(Qt.Key_Return)
+        compare(control.signins, before + 1)
+        compare(control.photosTaken, 0)
+        bubble.destroy(); control.greetingOnly = false; control.profile = {}
+    }
     function test_desktop_bubble_opens_name_pin_and_greets_after_create() {
         control.greetingOnly = true
         var bubble = bubbleComponent.createObject(test, {control: control})
@@ -145,7 +193,7 @@ TestCase {
         compare(note.text, "")
         surface.destroy()
     }
-    function cleanup() { control.shield = false; control.challenge = ({}) }
+    function cleanup() { control.shield = false; control.challenge = ({}); control.greetingOnly = false; control.profile = {} }
     function test_shield_tracks_loss_and_release() {
         var surface = shieldComponent.createObject(test, {control: control})
         verify(surface !== null)

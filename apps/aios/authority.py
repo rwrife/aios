@@ -63,11 +63,11 @@ class Capabilities:
 
 
 def pin_record(pin):
-    if not isinstance(pin, str) or not 6 <= len(pin) <= 128:
-        raise ValueError("Use at least six ASCII digits or a passphrase of ten characters")
+    if not isinstance(pin, str) or not 4 <= len(pin) <= 128:
+        raise ValueError("Use at least four ASCII digits or a passphrase of ten characters")
     numeric = pin.isascii() and pin.isdecimal()
     if (not numeric and len(pin) < 10) or any(ord(c) < 32 for c in pin):
-        raise ValueError("Use at least six ASCII digits or a passphrase of ten characters")
+        raise ValueError("Use at least four ASCII digits or a passphrase of ten characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(pin.encode(), salt=salt, n=16384, r=8, p=1)
     return {'salt': salt.hex(), 'digest': digest.hex(), 'failures': 0, 'retry_at': 0}

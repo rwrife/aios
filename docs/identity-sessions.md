@@ -204,6 +204,15 @@ These profiles personalize the legacy chat; they do not grant broker capabilitie
 encrypt chat history or unlock protected workspace identities. Broker-owned chat
 workers remain required for protected multi-user conversation ownership.
 
+Account creation and selection work with no camera. Name entry gets initial
+keyboard focus; Tab moves to PIN and Enter submits. Alt+U focuses the saved-account
+selector, which supports arrow keys and Enter. A PIN may contain four or more
+ASCII digits, including leading zeros; passphrases require ten or more characters.
+Invalid input produces an inline explanation instead of a disabled submit button.
+The optional photo controls are collapsed by default and never start capture
+unless the user explicitly requests a photo. These PIN lengths also apply to
+protected account creation and recovery; persistent retry limits remain enforced.
+
 For a WSLg preview, run `sh scripts/preview-chat.sh`. Keep that foreground process
 running so WSL does not close the GUI connection. The preview opens only a normal
 chat window, saves local profiles in the `aios-chat-preview-data` Docker volume,
