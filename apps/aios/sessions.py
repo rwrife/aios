@@ -30,6 +30,34 @@ class Sessions:
         self.manual_owner = None
         self.manual_until = 0
         self.pending_restoration = []
+        self.enrollment_blocked = False
+        self._reconcile_enrollment()
+
+    def _reconcile_enrollment(self):
+        pending = self.store.get('pending-enrollment')
+        if not pending:
+            return
+        owner = identity_id(pending['identity'])
+        # An allocation without a committed principal mapping is never adopted,
+        # reformatted or deleted automatically. Existing profiles remain usable.
+        if not self.isolation.provisioned(owner):
+            self.enrollment_blocked = True
+            return
+        record = pending['record']
+        names = self.store.get('identities', {})
+        if any(key != owner and value.casefold() == record['name'].casefold()
+               for key, value in names.items()):
+            raise PermissionError('Enrollment index conflict requires administrator recovery')
+        existing = self.store.get('identity-' + owner)
+        if existing is not None and existing != record:
+            raise PermissionError('Enrollment record conflict requires administrator recovery')
+        self.store.put('identity-' + owner, record)
+        names[owner] = record['name']
+        self.store.put('identities', names)
+        # Persist a tombstone atomically so a power loss cannot replay stale PIN
+        # state after subsequent verification/recovery updates.
+        self.store.put('pending-enrollment', None)
+        self.enrollment_blocked = False
 
     def _candidate(self):
         if self.manual_owner and self.clock() < self.manual_until:
@@ -62,6 +90,8 @@ class Sessions:
         self.manual_until = 0
 
     def tick(self):
+        if not self.enrollment_blocked:
+            self._reconcile_enrollment()
         now = self.clock()
         if self.manual_owner and now >= self.manual_until:
             self._shield()
@@ -334,6 +364,9 @@ class Sessions:
         self._audit(operation, True)
 
     def enroll(self, name, pin, consent, templates):
+        self._reconcile_enrollment()
+        if self.enrollment_blocked:
+            raise PermissionError('Interrupted allocation requires administrator recovery')
         if self.owner or self.fault:
             raise PermissionError('Enrollment requires an anonymous context')
         if consent is not True or not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
@@ -360,10 +393,11 @@ class Sessions:
         record = {'name': name.strip(), 'pin': pin_record(pin), 'templates': templates,
                   'recovery': hashlib.sha256(recovery.encode()).hexdigest(), 'admin': False,
                   'biometric_consent': not manual}
+        # The encrypted intent contains only the PIN verifier and recovery hash,
+        # never the entered PIN or the one-time recovery secret.
+        self.store.put('pending-enrollment', {'identity': owner, 'record': record})
         self.isolation.provision(owner)
-        self.store.put('identity-' + owner, record)
-        names[owner] = name.strip()
-        self.store.put('identities', names)
+        self._reconcile_enrollment()
         return {'identity': owner, 'recovery': recovery}
 
     def recover(self, owner, recovery, new_pin):

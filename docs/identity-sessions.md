@@ -166,11 +166,29 @@ validate DRM/input hardware, VT transitions, recovery consoles or device failure
 
 ## Remaining work by plan phase
 
+Enrollment now writes an encrypted intent before creating storage. After the
+principal mapping is committed, restart completes the identity record and name
+index idempotently, then atomically clears the intent. The intent stores a PIN
+verifier and recovery hash, never the entered PIN or recovery code. If allocation
+did not commit, new enrollment stops for administrator inspection; existing
+profiles can still open. Orphaned storage is never automatically adopted,
+reformatted or deleted. A crash before the recovery code reaches the user requires
+the profile's PIN to regain access; recovery-code replacement UI remains pending.
+
+For an experimental image containing the embedded compositor and broker runtime
+dependencies, run `AIOS_IDENTITY_BUILD=1 bash scripts/build-iso-container.sh` on
+Linux/WSL. This selects the optional Qt Wayland Compositor build (GPLv3 or commercial
+Qt licensing) and includes `world.identity` in both the installation package set
+and overlay. The default remains `0`. Reusing a build cache explicitly switches
+the compositor option in either direction. This packages the prototype; it does
+not enable personal access, initialize identity storage, or provide a protected
+appliance boot path. Physical display validation is still required.
+
 | Phase | Status and remaining implementation |
 | --- | --- |
 | 0 | Initial ADR/threat model and simulator implemented. Schemas and security review need expansion. |
 | 1 | Broker, Linux adapter and explicit process storage context implemented; headless checks pass. Routing chat, browser, model workers and settings through broker-owned scopes remains. |
-| 2 | New encrypted-volume provisioning, PIN-only profile UI, durable history paging, summary search and safe text-document save/resume implemented. Artifact claim, broader application adapters and interrupted-enrollment reconciliation remain. |
+| 2 | New encrypted-volume provisioning, PIN-only profile UI, durable history paging, summary search, safe text-document save/resume and committed-enrollment replay implemented. Artifact claim, broader application adapters and administrator recovery of incomplete allocations remain. |
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
 | 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |

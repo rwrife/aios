@@ -52,6 +52,40 @@ class SessionTests(unittest.TestCase):
         self.clock.advance(1.1)
         self.s.evidence([evidence(owner)])
 
+    def test_interrupted_enrollment_reconciles_committed_workspace(self):
+        original = self.store.put
+        def fail_record(key, value):
+            if key.startswith('identity-'):
+                raise OSError('simulated power loss')
+            original(key, value)
+        with patch.object(self.store, 'put', side_effect=fail_record):
+            with self.assertRaises(OSError):
+                self.s.enroll('Carol', '135790', True, None)
+        pending = self.store.get('pending-enrollment')
+        owner = pending['identity']
+        self.assertNotIn('135790', json.dumps(pending))
+        self.assertNotIn(owner, self.store.get('identities'))
+        restarted = Sessions(self.isolation, self.store, self.clock, self.clock)
+        self.assertEqual(self.store.get('identities')[owner], 'Carol')
+        self.assertIsNone(self.store.get('pending-enrollment'))
+        restarted.activate_verified('Carol', '135790')
+        restarted.suspend()
+
+    def test_incomplete_allocation_is_not_adopted_or_reformatted(self):
+        with patch.object(self.isolation, 'provision', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.s.enroll('Carol', '135790', True, None)
+        pending = self.store.get('pending-enrollment')
+        restarted = Sessions(self.isolation, self.store, self.clock, self.clock)
+        self.assertTrue(restarted.enrollment_blocked)
+        with patch.object(self.isolation, 'provision') as provision:
+            with self.assertRaises(PermissionError):
+                restarted.enroll('Dave', '135790', True, None)
+            provision.assert_not_called()
+        self.assertEqual(self.store.get('pending-enrollment'), pending)
+        restarted.activate_verified('Alice', '123456')
+        restarted.suspend()
+
     def activate(self, owner=None):
         self.recognize(owner or self.a)
         return self.s.activate('Résumé')

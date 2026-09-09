@@ -112,6 +112,9 @@ class LinuxIsolation:
         from .provisioning import create
         return create(self.config, self.config_path, owner)
 
+    def provisioned(self, owner):
+        return owner in self.config['principals']
+
     def activate(self, owner):
         entry = self.config['principals'][owner]
         root = Path(entry['mount'])
@@ -274,6 +277,9 @@ class SimulatorIsolation:
 
     def provision(self, owner):
         self._workspace(owner)
+
+    def provisioned(self, owner):
+        return (self.root / owner / 'artifacts').is_dir()
 
     def launch(self, scope, root, uid, app, arguments):
         application(app, arguments)

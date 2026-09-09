@@ -146,7 +146,8 @@ Window {
     }
     Component { id: chatComponent; ChatWindow {} }
     Dialog {
-        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360; popupType: Popup.Window
+        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360
+        popupType: displayBridge.enabled ? Popup.Item : Popup.Window
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
         contentItem: Row { spacing: 12
             QuietButton { text: "Cancel"; onClicked: powerDialog.close() }
