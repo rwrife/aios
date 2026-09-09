@@ -72,12 +72,23 @@ Window {
         return window
     }
     property var settingsWindow: null
+    property var setupWindow: null
+    function openSetup() {
+        if (sessionControlApi.enabled) return
+        if (!setupWindow) setupWindow = setupComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
+        if (setupWindow) { setupWindow.show(); setupWindow.raise(); setupWindow.requestActivate() }
+    }
+    Connections {
+        target: backendApi
+        function onLoaded() { if (backendApi.setupPending()) desktop.openSetup() }
+    }
+    Component { id: setupComponent; SetupWizard {} }
     function openSettings() {
         if (sessionControlApi.enabled) return
         if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
-    Component { id: settingsComponent; SettingsWindow {} }
+    Component { id: settingsComponent; SettingsWindow { onSetupRequested: desktop.openSetup() } }
     property real phase: 0
     NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 48000; loops: Animation.Infinite; running: !desktop.reducedMotion && desktop.visible }
     onReducedMotionChanged: waves.requestPaint()

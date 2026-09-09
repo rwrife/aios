@@ -9,6 +9,7 @@ Window {
     required property var backend
     required property var theme
     property var profileControl: null
+    signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
     width: Math.min(820, Screen.width - 32); height: Math.min(620, Screen.height - 48)
@@ -47,6 +48,7 @@ Window {
                 }
             }
             Item { Layout.fillHeight: true }
+            Action { objectName: "launchSetup"; text: "Run setup wizard"; Layout.fillWidth: true; onClicked: { settings.close(); settings.setupRequested() } }
             Note { text: backend.config.live ? "Live session\nChanges are lost after reboot." : "This computer"; font.pixelSize: 11 }
         }
         Rectangle { Layout.fillHeight: true; implicitWidth: 1; color: theme.line; opacity: 0.5 }

@@ -71,6 +71,10 @@ guest; see [the upstream report](https://github.com/microsoft/wslg/issues/1482).
 
 The Settings button beside Terminal and Power opens AI models, Sound, Camera,
 Network & Wi-Fi, Display, and Appearance. See [desktop settings](docs/settings.md).
+On a desktop user's first launch, an optional setup wizard offers network setup,
+local profile and ChatGPT account sign-in, a private camera check, and local model downloads. Every
+step can be skipped, the wizard can be closed at any time, and **Run setup wizard**
+in Settings opens it again.
 AI models also supports [ChatGPT subscription sign-in](docs/chatgpt-subscription.md),
 including device-code login from outside a VM, model selection, and usage status.
 

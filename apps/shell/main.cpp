@@ -18,6 +18,7 @@
 #include <QNetworkReply>
 #include <QUuid>
 #include <QTemporaryDir>
+#include <QSettings>
 #include <QDesktopServices>
 #include "voice.h"
 #include "SessionControl.h"
@@ -232,7 +233,20 @@ public:
         m_busy = true; m_status = "Downloading starter model…"; emit changed();
         run({{"action", "setup-local"}});
     }
+    Q_INVOKABLE bool setupPending() const {
+        return !QSettings("aios", "setup").value("dismissed", false).toBool();
+    }
+    Q_INVOKABLE void dismissSetup() {
+        QSettings settings("aios", "setup");
+        settings.setValue("dismissed", true);
+        settings.sync();
+        if (settings.status() != QSettings::NoError) {
+            m_status = "Could not save setup preference. Setup may appear again next time.";
+            emit changed();
+        }
+    }
 signals:
+    void loaded();
     void changed();
     void configured();
     void transcribed(const QString &text);
@@ -310,6 +324,7 @@ private:
                 if (type == "loaded") {
                     m_config = value.value("config").toObject().toVariantMap();
                     m_messages = value.value("messages").toArray().toVariantList(); startLocal();
+                    emit loaded();
                 } else if (type == "token" && !m_messages.isEmpty()) {
                     auto last = m_messages.last().toMap(); last["content"] = last.value("content").toString() + value.value("text").toString();
                     m_messages.last() = last; m_status = "Replying…";
