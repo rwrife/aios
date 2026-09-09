@@ -146,7 +146,11 @@ Window {
                         }
                     }
                     Note { text: "Background animation" }
-                    Action { text: backend.config.reduced_motion ? "Enable motion" : "Reduce motion"; onClicked: backend.configure({reduced_motion: !backend.config.reduced_motion}) }
+                    Action {
+                        objectName: "motionToggle"
+                        text: backend.config.reduced_motion ? "Enable motion" : "Reduce motion"
+                        onClicked: backend.configure({reduced_motion: !backend.config.reduced_motion})
+                    }
                     Item { Layout.fillHeight: true }
                 }
             }
