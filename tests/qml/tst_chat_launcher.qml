@@ -210,7 +210,7 @@ TestCase {
         var slider = findChild(desktop, "volumeSlider")
         compare(slider.orientation, Qt.Vertical)
         slider.forceActiveFocus()
-        keyClick(slider, Qt.Key_Down)
+        keyClick(Qt.Key_Down)
         tryCompare(backend.setVolumeCalls, "length", 1)
         compare(backend.setVolumeCalls[0], 64)
 
