@@ -23,6 +23,9 @@ TestCase {
         property var config: ({mode: "local", model_path: "/starter.gguf"})
         property bool busy: false
         property string status: ""
+        property var subscription: ({})
+        property string loginUrl: ""
+        property string loginCode: ""
         signal configured()
     }
     QtObject {

@@ -14,6 +14,9 @@ TestCase {
         property bool busy: false
         property bool configuring: false
         property string status: ""
+        property var subscription: ({})
+        property string loginUrl: ""
+        property string loginCode: ""
         signal configured()
         function configure(values) {
             var updated = Object.assign({}, config, values)

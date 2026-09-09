@@ -9,6 +9,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/test.sh
+      - name: Check pinned ChatGPT runtime without account credentials
+        run: |
+          python3 scripts/stage-codex.py /tmp/aios-codex-download /tmp/aios-codex-stage
+          PATH="/tmp/aios-codex-stage/usr/local/bin:$PATH" AIOS_CODEX_SMOKE=1 PYTHONPATH=apps python3 -m unittest discover -s tests -p test_subscription.py -v
   image:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

@@ -1,12 +1,17 @@
 """One request per process. JSON lines keep UI text separate from commands."""
 import json
 import sys
+import signal
 from pathlib import Path
 from .core import chat, load_config, load_history, save_config, save_history, data_dir, download_model, BUNDLED_MODEL
 
 
 def emit(kind, **values):
     print(json.dumps({"type": kind, **values}), flush=True)
+
+
+# A graceful Stop unwinds account cancellation and subprocess cleanup.
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
 
 try:
@@ -47,8 +52,15 @@ try:
         from .attachments import read_attachment
         name, text = read_attachment(request["path"])
         emit("attached", name=name, text=text)
+    elif action == 'subscription':
+        from .subscription import account_action
+        account_action(request['operation'], emit, request.get('device', False))
     elif action == "chat":
-        if request.get("browser_socket"):
+        if load_config()['mode'] == 'chatgpt':
+            from .subscription import chat as subscription_chat
+            for event in subscription_chat(request['messages'], request.get('browser_socket')):
+                print(json.dumps(event), flush=True)
+        elif request.get("browser_socket"):
             from .agent import chat as agent_chat
             for event in agent_chat(request["messages"], request["browser_socket"]):
                 print(json.dumps(event), flush=True)
