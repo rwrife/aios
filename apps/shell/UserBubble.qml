@@ -49,6 +49,14 @@ Item {
         parent: root; x: (root.width - width) / 2; y: root.height + 8
         width: 260; height: Math.min(implicitHeight, 320)
         popupType: Popup.Item
+        palette.window: root.surface
+        palette.base: root.surface
+        palette.text: root.ink
+        palette.windowText: root.ink
+        palette.buttonText: root.ink
+        palette.highlight: "#405968"
+        palette.highlightedText: root.ink
+        background: Rectangle { color: root.surface; border.color: "#58717e"; radius: 8 }
         onAboutToHide: if (root.control) root.control.setSecureInput(false)
         onOpened: { currentIndex = -1; if (root.control) root.control.setSecureInput(true); }
         Instantiator {
@@ -56,6 +64,7 @@ Item {
             delegate: MenuItem {
                 required property var modelData
                 objectName: "chooseProfile"; text: modelData.name
+                background: Rectangle { color: parent.highlighted ? "#405968" : "transparent"; radius: 4 }
                 contentItem: Text { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.ink; verticalAlignment: Text.AlignVCenter }
                 onTriggered: {
                     picker.close()
@@ -72,7 +81,7 @@ Item {
             height: visible ? implicitHeight : 0
             text: root.control && root.control.busy ? "Loading accounts…" : "No saved accounts"
         }
-        MenuSeparator {}
+        MenuSeparator { contentItem: Rectangle { implicitWidth: 240; implicitHeight: 1; color: "#58717e" } }
         MenuItem {
             objectName: "createUser"; text: "New account"
             enabled: root.control && root.control.personalAvailable
