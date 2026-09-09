@@ -15,7 +15,6 @@ Item {
     function clear() {
         lease = ""
         if (compositor) { compositor.clearInput(); compositor.destroy(); compositor = null }
-        for (var index = children.length - 1; index >= 0; --index) children[index].destroy()
     }
     function prepare(app) {
         var acquired = bridge.acquire()
@@ -52,7 +51,7 @@ Item {
             Component.onCompleted: initialize()
             property XdgShell shell: XdgShell {
                 onToplevelCreated: (toplevel, surface) => {
-                    surfaceComponent.createObject(display, {shellSurface: surface})
+                    surfaceComponent.createObject(privateServer, {parent: display, shellSurface: surface})
                 }
             }
             property WaylandOutput output: WaylandOutput {

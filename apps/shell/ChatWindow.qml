@@ -17,7 +17,18 @@ Window {
     width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
     x: (Screen.width - width)/2; y: (Screen.height - height)/2
     color: theme.panel
-    onClosing: { session.closeSession(); if (ownsProfileControl && profileControl) profileControl.dispose(); Qt.callLater(chat.destroy) }
+    signal minimized()
+    signal removed()
+    onVisibilityChanged: function() {
+        if (chat.visibility === Window.Minimized)
+            minimized()
+    }
+    onClosing: {
+        removed()
+        session.closeSession()
+        if (ownsProfileControl && profileControl) profileControl.dispose()
+        Qt.callLater(chat.destroy)
+    }
     Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
     function submit() {
         if (session.busy || session.recording) return;

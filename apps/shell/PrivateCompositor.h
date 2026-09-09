@@ -1,5 +1,6 @@
 #pragma once
 #include <QWaylandQuickCompositor>
+#include <QWaylandQuickItem>
 #include <QWaylandSeat>
 #include <unistd.h>
 
@@ -10,7 +11,12 @@ class PrivateCompositor : public QWaylandQuickCompositor {
     Q_PROPERTY(int descriptor WRITE setDescriptor READ descriptor)
 public:
     explicit PrivateCompositor(QObject *parent = nullptr) : QWaylandQuickCompositor(parent) {}
-    ~PrivateCompositor() override { if (fd >= 0) ::close(fd); }
+    ~PrivateCompositor() override {
+        // Views must release their surfaces while the compositor and outputs
+        // still exist, before the base destructor tears down Wayland clients.
+        qDeleteAll(findChildren<QWaylandQuickItem *>(QString(), Qt::FindDirectChildrenOnly));
+        if (fd >= 0) ::close(fd);
+    }
     int descriptor() const { return fd; }
     void setDescriptor(int value) { if (!isCreated() && fd < 0) fd = value; }
     void create() override {

@@ -13,14 +13,68 @@ Window {
     height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
     flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
-    Theme { id: theme; selected: backend.config.theme_color || "blue" }
+    property var backendApi: typeof backend === "undefined" ? null : backend
+    property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
+    property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
+    property var minimizedChats: []
+    readonly property int minimizedChatCount: minimizedChats.length
+    Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
-    property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme, profileControl: sessionControl.chatProfile(), ownsProfileControl: true}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    property bool reducedMotion: backendApi.config.reduced_motion === true
+    function removeMinimizedChat(window) {
+        var remaining = []
+        for (var i = 0; i < minimizedChats.length; ++i) {
+            if (minimizedChats[i] !== window)
+                remaining.push(minimizedChats[i])
+        }
+        minimizedChats = remaining
+    }
+    function trackMinimizedChat(window) {
+        removeMinimizedChat(window)
+        var updated = minimizedChats.slice()
+        updated.push(window)
+        minimizedChats = updated
+    }
+    function restoreMinimizedChat() {
+        var pending = minimizedChats.slice()
+        while (pending.length > 0) {
+            var window = pending.pop()
+            minimizedChats = pending.slice()
+            if (!window || window.visibility !== Window.Minimized)
+                continue
+            window.showNormal()
+            window.raise()
+            window.requestActivate()
+            return window
+        }
+        return null
+    }
+    function openChat() {
+        if (sessionControlApi.enabled)
+            return null
+        var restored = restoreMinimizedChat()
+        if (restored)
+            return restored
+        var window = chatComponent.createObject(desktop, {
+            backend: backendApi,
+            session: backendApi.createSession(),
+            theme: theme,
+            profileControl: sessionControlApi.chatProfile(),
+            ownsProfileControl: true
+        })
+        if (!window)
+            return null
+        window.minimized.connect(function() { desktop.trackMinimizedChat(window) })
+        window.removed.connect(function() { desktop.removeMinimizedChat(window) })
+        window.show()
+        window.raise()
+        window.requestActivate()
+        return window
+    }
     property var settingsWindow: null
     function openSettings() {
-        if (sessionControl.enabled) return
-        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme, profileControl: sessionControl})
+        if (sessionControlApi.enabled) return
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
     Component { id: settingsComponent; SettingsWindow {} }
@@ -85,24 +139,24 @@ Window {
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
     Loader {
         x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
-        active: displayBridge.enabled && sessionControl.embeddedDisplay
+        active: displayBridgeApi.enabled && sessionControlApi.embeddedDisplay
         onActiveChanged: {
-            if (active) setSource("PrivateDisplay.qml", {control: sessionControl, bridge: displayBridge})
+            if (active) setSource("PrivateDisplay.qml", {control: sessionControlApi, bridge: displayBridgeApi})
             else setSource("")
         }
     }
-    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControl.enabled; control: sessionControl }
-    Loader { active: !displayBridge.enabled; sourceComponent: Component { PrivacyShield { control: sessionControl } } }
-    Loader { active: !displayBridge.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControl } } }
-    SecurePinOverlay { parent: desktop.contentItem; control: sessionControl; visible: displayBridge.enabled && sessionControl.enabled && Object.keys(sessionControl.challenge).length > 0 }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
+    SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }
     Rectangle {
         anchors.fill: parent; z: 100000; color: "#101b27"
-        visible: displayBridge.enabled && sessionControl.enabled && sessionControl.shield
+        visible: displayBridgeApi.enabled && sessionControlApi.enabled && sessionControlApi.shield
         MouseArea { anchors.fill: parent }
         Column {
             anchors.centerIn: parent; spacing: 16
             Label { text: "Personal work is hidden"; color: "white"; font.pixelSize: 28 }
-            Button { text: "Return to anonymous"; onClicked: sessionControl.suspend() }
+            Button { text: "Return to anonymous"; onClicked: sessionControlApi.suspend() }
         }
     }
     ChatOrb {
@@ -124,7 +178,7 @@ Window {
                 }
             } }
         }
-        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControl.enabled ? sessionControl.launch("terminal") : backend.terminal() }
+        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal() }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
@@ -150,12 +204,12 @@ Window {
     Component { id: chatComponent; ChatWindow {} }
     Dialog {
         id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360
-        popupType: displayBridge.enabled ? Popup.Item : Popup.Window
+        popupType: displayBridgeApi.enabled ? Popup.Item : Popup.Window
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
         contentItem: Row { spacing: 12
             QuietButton { text: "Cancel"; onClicked: powerDialog.close() }
-            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backend.power("reboot") } }
-            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backend.power("poweroff") } }
+            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backendApi.power("reboot") } }
+            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backendApi.power("poweroff") } }
         }
     }
 

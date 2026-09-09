@@ -137,7 +137,9 @@ class DisplayTests(unittest.TestCase):
         report_path = self.wait(lambda: next(self.runtime.glob('*/artifacts/display-test.json'), None), timeout=4)
         self.assertEqual(json.loads(report_path.read_text()), {'painted': True, 'uid': self.anon_uid})
         screenshot = self.runtime_for(self.shell_uid) / 'surface.png'
-        self.wait(lambda: screenshot.exists())
+        # The path is created before PNG encoding completes. The capture shell
+        # exits only after save() returns, so wait for its successful completion.
+        self.assertEqual(self.shell.wait(timeout=10), 0)
         with Image.open(screenshot) as image:
             pixels = image.convert('RGB')
             area = pixels.crop((410, 84, pixels.width, pixels.height))
