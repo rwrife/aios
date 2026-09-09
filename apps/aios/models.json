@@ -7,6 +7,44 @@
     "license": "Apache-2.0",
     "source": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct",
     "quantization": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF",
-    "note": "A small model for trying local chat. Limited reasoning and coding ability; import a larger model for substantive work."
+    "note": "A small model for trying local chat. Limited reasoning and coding ability; import a larger model for substantive work.",
+    "ram_gib": 1,
+    "tool_use": false
+  },
+  "qwen3-1.7b": {
+    "name": "Qwen3 1.7B",
+    "url": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/dcb19155b962dbb6389f4691a982043a8e651022/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+    "sha256": "72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb",
+    "bytes": 1282439584,
+    "license": "Apache-2.0",
+    "source": "https://huggingface.co/Qwen/Qwen3-1.7B",
+    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF",
+    "ram_gib": 4,
+    "tool_use": true,
+    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
+  },
+  "qwen3-4b": {
+    "name": "Qwen3 4B",
+    "url": "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/cb76885dc66d50759b207c5a48c4e78dfa00c638/Qwen_Qwen3-4B-Q4_K_M.gguf",
+    "sha256": "fbe1d5edd4ce802ae3ae7c7e4ab7d09789d697fdac1fc7929f8df4ca3c41bae3",
+    "bytes": 2497280960,
+    "license": "Apache-2.0",
+    "source": "https://huggingface.co/Qwen/Qwen3-4B",
+    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF",
+    "ram_gib": 8,
+    "tool_use": true,
+    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
+  },
+  "qwen3-8b": {
+    "name": "Qwen3 8B",
+    "url": "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/0b69f75b7472688e6808490aa2b85efdb81b5ce7/Qwen_Qwen3-8B-Q4_K_M.gguf",
+    "sha256": "54fffa050078e984116639c83dfb64b5aa6d4cd474e018b076777c632bbccccd",
+    "bytes": 5027784224,
+    "license": "Apache-2.0",
+    "source": "https://huggingface.co/Qwen/Qwen3-8B",
+    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF",
+    "ram_gib": 12,
+    "tool_use": true,
+    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
   }
 }

@@ -124,11 +124,11 @@ Window {
                     visible: wizard.step === 4; Layout.fillWidth: true; spacing: 16
                     Note { text: "Local models keep chat and speech on this computer. Downloads need internet access and free disk space." }
                     Note { text: backend.config.model_path ? "A local chat model is configured. You can keep it and continue." : "Prepare the starter model to chat offline." }
-                    Action {
-                        objectName: "setupModel"; text: "Use starter model · 101 MiB if missing"; enabled: !backend.busy && !backend.configuring
-                        onClicked: { backend.setupLocal(); wizard.ownsOperation = true }
+                    LocalModels {
+                        Layout.fillWidth: true; backend: wizard.backend; theme: wizard.theme
+                        buttonName: "setupModel"
+                        onInstallStarted: wizard.ownsOperation = true
                     }
-                    Note { text: "SmolLM2 135M · Apache-2.0. Reuses the bundled copy when available. Choosing it switches chat to the starter model."; font.pixelSize: 12 }
                     Action {
                         objectName: "setupVoice"; text: "Download local speech model · 75 MiB"; enabled: !backend.busy && !backend.configuring
                         onClicked: { backend.setupVoice(); wizard.ownsOperation = true }
