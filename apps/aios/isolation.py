@@ -140,7 +140,7 @@ class LinuxIsolation:
             raise PermissionError("Invalid private display socket")
         return self._spawn(scope, root, uid, command, socket)
 
-    def _spawn(self, scope, root, uid, command, display=None):
+    def _spawn(self, scope, root, uid, command, display=None, *, diagnostics=False):
         """Trusted adapter entry point, never exposed as a service action.
 
         The headless path is also exercised by kernel isolation tests. Callers
@@ -174,7 +174,7 @@ class LinuxIsolation:
             os.setuid(uid)
         process = subprocess.Popen(argv + command, preexec_fn=demote, start_new_session=True,
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, close_fds=True,
+                                   stderr=None if diagnostics else subprocess.DEVNULL, close_fds=True,
                                    env={'PATH': '/usr/bin:/bin'})
         self.scopes.setdefault(scope, []).append(process)
         # Catch missing binaries, unsupported namespace settings and immediate

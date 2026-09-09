@@ -69,7 +69,7 @@ if os.fork() == 0:
 while True:
     time.sleep(.1)
 ''' % str(secret)
-        process = self.adapter._spawn(scope, root, uid, ['/usr/bin/python3', '-I', '-c', probe])
+        process = self.adapter._spawn(scope, root, uid, ['/usr/bin/python3', '-I', '-c', probe], diagnostics=True)
         report_path = root / 'artifacts' / 'report.json'
         for _ in range(100):
             if report_path.exists():
@@ -157,8 +157,8 @@ while True:
     def test_restart_reaps_scope_and_discards_anonymous_tmpfs(self):
         root, uid = self.adapter.anonymous()
         scope = str(uuid.uuid4())
-        process = self.adapter._spawn(scope, root, uid, ['/bin/sleep', '60'])
         try:
+            process = self.adapter._spawn(scope, root, uid, ['/bin/sleep', '60'], diagnostics=True)
             (root / 'artifacts' / 'temporary.txt').write_text('discard on restart')
             recovered = LinuxIsolation(self.config)
             self.assertFalse(root.exists())
