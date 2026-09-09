@@ -14,6 +14,7 @@ import uuid
 
 from aios.isolation import LinuxIsolation
 from aios.journal import Journal
+from aios.provisioning import create
 
 
 def run(*args):
@@ -137,6 +138,49 @@ while True:
         finally:
             if os.path.ismount(root):
                 self.adapter.release(owner, root)
+
+    def test_provisioning_creates_only_new_encrypted_images(self):
+        owner = str(uuid.uuid4())
+        self.config.update(volume_store=str(self.root / 'volumes'), workspace_size_mib=64)
+        config_path = self.root / 'config.json'
+        entry = create(self.config, config_path, owner)
+        self.assertEqual(json.loads(config_path.read_text())['principals'][owner], entry)
+        self.assertEqual(Path(entry['key_file']).stat().st_mode & 0o777, 0o600)
+        self.assertFalse(Path('/dev/mapper', 'aios-create-' + owner).exists())
+        root, uid = self.adapter.activate(owner)
+        try:
+            self.assertEqual(uid, entry['uid'])
+            (root / 'artifacts' / 'private.txt').write_text('new encrypted workspace')
+        finally:
+            self.adapter.release(owner, root)
+        with self.assertRaises(PermissionError):
+            create(self.config, config_path, owner)
+        other = str(uuid.uuid4())
+        existing = self.root / 'volumes' / other
+        existing.mkdir()
+        sentinel = existing / 'workspace.luks'
+        sentinel.write_text('pre-existing data must never be formatted')
+        with self.assertRaises(FileExistsError):
+            create(self.config, config_path, other)
+        self.assertEqual(sentinel.read_text(), 'pre-existing data must never be formatted')
+
+    def test_alpine_setup_creates_private_state_and_refuses_overwrite(self):
+        run('/usr/sbin/adduser', '-D', '-H', '-u', '1000', 'aios')
+        package = Path('/usr/local/share/aios')
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.symlink_to('/workspace/apps', target_is_directory=True)
+        wrapper = '/workspace/distro/alpine/overlay/usr/local/bin/aios-identity-setup'
+        run('/bin/sh', wrapper)
+        config = json.loads(Path('/etc/aios/sessiond.json').read_text())
+        self.assertFalse(config['display_isolation_validated'])
+        self.assertEqual(len({config[role] for role in ('shell_uid', 'identity_uid', 'anonymous_uid')}), 3)
+        key = Path(config['master_key'])
+        original = key.read_bytes()
+        self.assertEqual(len(original), 32)
+        self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(subprocess.CalledProcessError):
+            run('/bin/sh', wrapper)
+        self.assertEqual(key.read_bytes(), original)
 
     def test_distinct_uids_cannot_read_each_others_artifacts(self):
         alice, alice_uid = self.adapter.anonymous()

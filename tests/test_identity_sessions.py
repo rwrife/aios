@@ -99,6 +99,97 @@ class SessionTests(unittest.TestCase):
         self.assertIn(work, self.isolation.stopped)
         self.assertIsNone(self.s.owner)
 
+    def test_history_survives_resume_and_denies_absent_owner(self):
+        session = self.activate()
+        for index in range(25):
+            self.s.message('user', str(index))
+        self.s.summarize('Résumé drafting history')
+        self.s.suspend()
+        self.recognize(self.a)
+        self.s.activate(session=session)
+        page = self.s.history()
+        self.assertEqual([m['content'] for m in page['messages']], [str(i) for i in range(5, 25)])
+        older = self.s.history(page['before'])
+        self.assertEqual([m['content'] for m in older['messages']], [str(i) for i in range(5)])
+        self.assertIsNone(older['before'])
+        self.assertEqual(self.s.list_work('drafting')[0]['id'], session)
+        self.clock.advance(4)
+        with self.assertRaises(PermissionError):
+            self.s.history()
+
+    def test_recent_sessions_need_no_throwaway_work_session(self):
+        session = self.activate()
+        self.s.suspend()
+        self.recognize(self.a)
+        self.assertEqual([item['id'] for item in self.s.list_work('')], [session])
+        self.assertIsNone(self.s.work)
+        self.assertEqual(self.s.owner, self.a)
+        with self.assertRaises(PermissionError):
+            self.s.launch('calculator', [])
+        self.s.suspend()
+        self.recognize(self.b)
+        self.assertEqual(self.s.list_work(''), [])
+
+    def test_document_save_resume_and_cross_owner_denial(self):
+        session = self.activate()
+        saved = self.s.document('Resume.txt', 'Private résumé')
+        self.s.suspend()
+        self.activate(self.b)
+        with self.assertRaises(FileNotFoundError):
+            self.s.document('Resume.txt')
+        self.s.suspend()
+        self.recognize(self.a)
+        self.s.activate(session=session)
+        self.assertEqual(self.s.document('Resume.txt')['sha256'], saved['sha256'])
+        self.clock.advance(4)
+        with self.assertRaises(PermissionError):
+            self.s.document('Resume.txt', 'overwrite')
+
+    def test_manual_enrollment_and_pin_fallback_without_sensors(self):
+        enrolled = self.s.enroll('Manual user', '456789', True, None)
+        owner = enrolled['identity']
+        self.assertFalse(self.store.get('identity-' + owner)['biometric_consent'])
+        with self.assertRaises(PermissionError):
+            self.s.activate_verified(owner, 'wrong', title='Private document')
+        self.clock.advance(3)
+        session = self.s.activate_verified(owner, '456789', title='Private document')
+        self.assertEqual(self.s.status()['authority'], 'verified')
+        self.s.document('Resume.txt', 'Saved without camera')
+        self.clock.advance(60)
+        self.s.activate(session=session)
+        self.assertEqual(self.s.document('Resume.txt')['content'], 'Saved without camera')
+        self.clock.advance(61)
+        with self.assertRaises(PermissionError):
+            self.s.document('Resume.txt')
+        self.assertTrue(self.s.shield or self.s.owner is None)
+
+    def test_sensor_conflict_revokes_manual_pin_session(self):
+        self.s.activate_verified(self.a, '123456', title='Manual')
+        self.s.evidence([evidence(self.a, self.b)])
+        self.assertTrue(self.s.shield)
+        self.assertIsNone(self.s.manual_owner)
+        with self.assertRaises(PermissionError):
+            self.s.activate_verified(self.a, '123456', title='Conflict cannot be bypassed')
+
+    def test_pin_unlock_opens_catalog_by_name_without_new_session(self):
+        session = self.activate()
+        self.s.suspend()
+        self.s.fusion.feed([])
+        self.assertIsNone(self.s.activate_verified('Alice', '123456'))
+        self.assertEqual([item['id'] for item in self.s.list_work('')], [session])
+        self.assertIsNone(self.s.work)
+
+    def test_history_unicode_page_fits_response(self):
+        self.activate()
+        for _ in range(3):
+            self.s.message('assistant', '\U0001f642' * 32768)
+        page = self.s.history()
+        self.assertLess(len(json.dumps(page, ensure_ascii=False).encode()), 262000)
+        self.assertEqual(len(page['messages']), 1)
+        self.assertIsNotNone(page['before'])
+        with self.assertRaises(ValueError):
+            self.s.history(True)
+
     def test_conflict_immediately_revokes_and_never_retargets(self):
         self.activate()
         self.token()

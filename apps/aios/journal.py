@@ -75,7 +75,8 @@ class Journal:
     def search(self, query=''):
         if not isinstance(query, str) or len(query) > 200:
             raise ValueError("Invalid search")
-        return [dict(row) for row in self.db.execute('''SELECT * FROM work_sessions
+        return [dict(row) for row in self.db.execute('''SELECT id,owner,title,status,updated,
+            substr(summary,1,280) AS summary FROM work_sessions
             WHERE owner=? AND status!='deleted' AND (instr(lower(title),lower(?))>0
             OR instr(lower(summary),lower(?))>0) ORDER BY updated DESC LIMIT 50''',
             (self.owner, query, query))]
@@ -87,6 +88,41 @@ class Journal:
             raise ValueError("Invalid message")
         with self.db:
             self._event(session, 'message', {'role': role, 'content': content})
+            self.db.execute('UPDATE work_sessions SET updated=? WHERE id=?', (time.time(), session))
+
+    def history(self, session, before=None, limit=20):
+        """Read a bounded page, oldest first; cursor IDs never bypass ownership."""
+        self.get(session)
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("Invalid history limit")
+        if before is not None and (type(before) is not int or before <= 0):
+            raise ValueError("Invalid history cursor")
+        rows = self.db.execute('''SELECT id,payload,created FROM session_events
+            WHERE session=? AND kind='message' AND (? IS NULL OR id<?)
+            ORDER BY id DESC LIMIT ?''', (session, before, before, limit + 1)).fetchall()
+        messages, size = [], 0
+        for row in rows[:limit]:
+            item = {'id': row['id'], 'created': row['created'], **json.loads(row['payload'])}
+            # Keep the entire socket response below its 256 KiB response limit,
+            # including JSON escaping of non-ASCII message contents.
+            item_size = len(json.dumps(item, ensure_ascii=False).encode())
+            if messages and size + item_size > 200000:
+                break
+            if item_size > 200000:
+                raise ValueError("Message exceeds history transport limit")
+            messages.append(item)
+            size += item_size
+        cursor = messages[-1]['id'] if messages and len(rows) > len(messages) else None
+        return {'messages': list(reversed(messages)), 'before': cursor}
+
+    def summarize(self, session, summary):
+        self.get(session)
+        if not isinstance(summary, str) or len(summary) > 4000:
+            raise ValueError("Invalid summary")
+        with self.db:
+            self.db.execute('UPDATE work_sessions SET summary=?,updated=? WHERE id=?',
+                            (summary, time.time(), session))
+            self._event(session, 'summary', {})
 
     def manifest(self, session, app, arguments):
         self.get(session)
@@ -99,3 +135,11 @@ class Journal:
         self.get(session)
         return [(row['app'], json.loads(row['arguments'])) for row in self.db.execute(
             'SELECT * FROM application_manifests WHERE session=?', (session,))]
+
+    def artifact(self, session, path, digest):
+        if self.get(session)['status'] != 'active':
+            raise PermissionError('Session is not active')
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO artifacts VALUES (?,?,?)', (session, path, digest))
+            self.db.execute('UPDATE work_sessions SET updated=? WHERE id=?', (time.time(), session))
+            self._event(session, 'artifact_saved', {'path': path, 'sha256': digest})

@@ -23,6 +23,10 @@ FIELDS = {
     'status': (), 'anonymous': (), 'suspend': (), 'cancel_challenge': (),
     'activate': ('title', 'session'), 'launch': ('app', 'arguments'),
     'search': ('query',), 'message': ('role', 'content'),
+    'history': ('before',), 'summarize': ('summary',),
+    'document_read': ('path',), 'document_save': ('path', 'content'),
+    'enroll_manual': ('name', 'pin', 'consent'),
+    'activate_verified': ('owner', 'pin', 'title', 'session'),
     'request_capability': ('operation', 'resource'),
     'verify': ('challenge', 'pin', 'confirmed'), 'github_profile': ('token',),
     'evidence': ('tracks',), 'simulate': ('state',),
@@ -52,6 +56,8 @@ def load_config(path):
     if path.stat().st_uid != 0 or path.stat().st_mode & 0o022:
         raise PermissionError("Session configuration must be root-owned and not writable by others")
     config = json.loads(path.read_text())
+    if type(config.get('display_isolation_validated', False)) is not bool:
+        raise ValueError('Display validation must be a boolean')
     uids = []
     for owner, principal in config['principals'].items():
         identity_id(owner)
@@ -89,7 +95,8 @@ class Service:
         elif uid != self.shell_uid:
             raise PermissionError("Only the trusted shell can request sessions")
         s = self.sessions
-        if action in ('activate', 'request_capability', 'verify', 'github_profile') and not self.personal_enabled:
+        if action in ('activate', 'activate_verified', 'enroll_manual', 'search',
+                      'request_capability', 'verify', 'github_profile') and not self.personal_enabled:
             raise PermissionError("Personal mode requires a validated isolated display and trusted input path")
         if action == 'status':
             return {**s.status(), 'simulator': self.simulator}
@@ -101,12 +108,26 @@ class Service:
             s.challenge = None
         elif action == 'activate':
             return {'session': s.activate(request['title'], request['session'])}
+        elif action == 'activate_verified':
+            return {'session': s.activate_verified(request['owner'], request['pin'], request['title'], request['session'])}
+        elif action == 'enroll_manual':
+            return s.enroll(request['name'], request['pin'], request['consent'], None)
         elif action == 'launch':
             s.launch(request['app'], request['arguments'])
         elif action == 'search':
             return {'sessions': s.list_work(request['query'])}
         elif action == 'message':
             s.message(request['role'], request['content'])
+        elif action == 'history':
+            return s.history(request['before'])
+        elif action == 'summarize':
+            s.summarize(request['summary'])
+        elif action == 'document_read':
+            return s.document(request['path'])
+        elif action == 'document_save':
+            if not isinstance(request['content'], str):
+                raise ValueError('Invalid document')
+            return s.document(request['path'], request['content'])
         elif action == 'request_capability':
             return s.request_capability(request['operation'], request['resource'])
         elif action == 'verify':
@@ -190,7 +211,10 @@ def serve(path, service, socket_group=None):
                     except Exception:
                         response = {'ok': False, 'error': 'Service unavailable'}
                     try:
-                        connection.sendall(json.dumps(response).encode() + b'\n')
+                        encoded = json.dumps(response, ensure_ascii=False).encode() + b'\n'
+                        if len(encoded) > 262144:
+                            encoded = b'{"ok":false,"error":"Response exceeds transport limit"}\n'
+                        connection.sendall(encoded)
                     except OSError:
                         pass
         finally:
@@ -232,7 +256,7 @@ def main():
         if key_path.stat().st_uid != 0 or key_path.stat().st_mode & 0o077:
             raise PermissionError("Master key must be root-only")
         store = EncryptedStore(config['state'], key_path.read_bytes())
-        sessions = Sessions(LinuxIsolation(config), store)
+        sessions = Sessions(LinuxIsolation(config, args.config), store)
         serve(config['socket'], Service(sessions, config['shell_uid'], config['identity_uid'],
               personal_enabled=config.get('display_isolation_validated', False)), config['socket_gid'])
 

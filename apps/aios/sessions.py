@@ -27,6 +27,13 @@ class Sessions:
         self.last_presence = self.last_activity = clock()
         self.challenge = None
         self.verified_until = 0
+        self.manual_owner = None
+        self.manual_until = 0
+
+    def _candidate(self):
+        if self.manual_owner and self.clock() < self.manual_until:
+            return self.manual_owner
+        return self.fusion.current()
 
     def _audit(self, kind, allowed):
         # Deliberately omit request bodies, tokens, PINs, names and resources.
@@ -50,10 +57,16 @@ class Sessions:
         self.capabilities.revoke()
         self.challenge = None
         self.verified_until = 0
+        self.manual_owner = None
+        self.manual_until = 0
 
     def tick(self):
         now = self.clock()
-        candidate = self.fusion.current()
+        if self.manual_owner and now >= self.manual_until:
+            self._shield()
+        candidate = self._candidate()
+        if self.owner and candidate == self.owner and self.manual_owner == self.owner:
+            self.last_presence = now
         if self.owner:
             if candidate != self.owner and now - self.last_presence >= self.privacy_timeout:
                 self._shield()
@@ -74,7 +87,7 @@ class Sessions:
 
     def _present(self):
         self.tick()
-        if self.fault or self.shield or not self.owner or self.fusion.current() != self.owner:
+        if self.fault or self.shield or not self.owner or self._candidate() != self.owner:
             raise PermissionError("Personal presence required")
 
     def anonymous(self):
@@ -91,7 +104,49 @@ class Sessions:
 
     def activate(self, title=None, session=None):
         self.tick()
-        candidate = self.fusion.current()
+        manual_owner, deadline = self.manual_owner, self.manual_until
+        result = self._activate_for(self._candidate(), title, session)
+        if manual_owner:
+            self.manual_owner, self.manual_until = manual_owner, deadline
+            self.verified_until = deadline
+        return result
+
+    def activate_verified(self, owner, pin, title=None, session=None):
+        self.tick()
+        if not isinstance(owner, str) or len(owner) > 80:
+            raise ValueError('Enter a profile name')
+        try:
+            identity_id(owner)
+        except ValueError:
+            owners = [key for key, name in self.store.get('identities', {}).items()
+                      if name.casefold() == owner.strip().casefold()]
+            if len(owners) != 1:
+                raise PermissionError('Verification failed or temporarily locked')
+            owner = owners[0]
+        record = self.store.get('identity-' + owner)
+        if not record:
+            raise PermissionError('Verification failed or temporarily locked')
+        valid = verify_pin(record['pin'], pin, self.wall())
+        self.store.put('identity-' + owner, record)
+        self._audit('pin-session', valid)
+        if not valid:
+            raise PermissionError('Verification failed or temporarily locked')
+        if title is None and session is None:
+            if self.owner and self.owner != owner:
+                raise PermissionError('Suspend current personal work first')
+            if self.root:
+                self.suspend()
+            self._open_catalog(owner)
+            work = None
+        else:
+            work = self._activate_for(owner, title, session)
+        self.manual_owner = owner
+        self.manual_until = self.verified_until = self.clock() + 120
+        return work
+
+    def _activate_for(self, candidate, title, session):
+        if self.fusion.reason in ('conflict', 'ambiguous'):
+            raise PermissionError('Resolve conflicting identity evidence first')
         if not candidate or self.fault:
             raise PermissionError("Unambiguous local recognition required")
         if self.owner and self.owner != candidate:
@@ -133,6 +188,8 @@ class Sessions:
         application(app, arguments)
         if self.owner:
             self._present()
+            if self.work is None:
+                raise PermissionError("Start or resume a work session first")
         else:
             self.anonymous()
         self.isolation.launch(self.work or self.lease, self.root, self.uid, app, arguments)
@@ -148,7 +205,7 @@ class Sessions:
         try:
             self.isolation.stop(self.work or self.lease)
             if self.journal:
-                if self.journal.get(self.work)['status'] == 'active':
+                if self.work and self.journal.get(self.work)['status'] == 'active':
                     self.journal.transition(self.work, 'suspended')
                 self.journal.close()
                 self.journal = None
@@ -160,12 +217,53 @@ class Sessions:
         self.shield = False
 
     def list_work(self, query):
+        self.tick()
+        if self.owner is None:
+            candidate = self.fusion.current()
+            if self.fault or not candidate or self.store.get('identity-' + candidate) is None:
+                raise PermissionError("Unambiguous local recognition required")
+            if self.root is not None:
+                raise PermissionError("Suspend anonymous work before browsing personal sessions")
+            self._open_catalog(candidate)
         self._present()
         return self.journal.search(query)
+
+    def _open_catalog(self, candidate):
+        if self.fault or self.fusion.reason in ('conflict', 'ambiguous'):
+            raise PermissionError('Personal workspace unavailable')
+        root, uid = self.isolation.activate(candidate)
+        try:
+            journal = Journal(root, candidate)
+        except Exception:
+            self.isolation.release(candidate, root)
+            raise
+        self.owner, self.root, self.uid, self.journal = candidate, root, uid, journal
+        self.lease = str(uuid.uuid4())
+        self.last_presence = self.clock()
+        self.shield = False
 
     def message(self, role, content):
         self._present()
         self.journal.message(self.work, role, content)
+
+    def history(self, before=None):
+        self._present()
+        return self.journal.history(self.work, before)
+
+    def summarize(self, summary):
+        self._present()
+        self.journal.summarize(self.work, summary)
+
+    def document(self, path, content=None):
+        self._present()
+        if self.work is None:
+            raise PermissionError('Start or resume a work session first')
+        from . import artifacts
+        if content is None:
+            return artifacts.read(self.root, path)
+        result = artifacts.save(self.root, self.uid, path, content)
+        self.journal.artifact(self.work, result['path'], result['sha256'])
+        return result
 
     def request_capability(self, operation, resource):
         self._present()
@@ -207,17 +305,22 @@ class Sessions:
         self._audit(operation, True)
 
     def enroll(self, name, pin, consent, templates):
+        if self.owner or self.fault:
+            raise PermissionError('Enrollment requires an anonymous context')
         if consent is not True or not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError("A display name and explicit consent are required")
         # Enrollment cannot select or merge an existing principal by spoken name.
         names = self.store.get('identities', {})
         if name.strip().casefold() in (value.casefold() for value in names.values()):
             raise PermissionError("Use the recovery process for an existing name")
+        manual = templates is None
+        if manual:
+            templates = {'face': [], 'voice': []}
         if not isinstance(templates, dict) or set(templates) != {'face', 'voice'}:
             raise ValueError("Face and speaker templates required")
         from .identity import cosine
         for samples in templates.values():
-            if not isinstance(samples, list) or not 3 <= len(samples) <= 12:
+            if not isinstance(samples, list) or not (manual or 3 <= len(samples) <= 12):
                 raise ValueError("Collect multiple enrollment samples")
             for sample in samples:
                 if not isinstance(sample, list) or not 16 <= len(sample) <= 2048:
@@ -226,7 +329,9 @@ class Sessions:
         owner = str(uuid.uuid4())
         recovery = secrets.token_urlsafe(32)
         record = {'name': name.strip(), 'pin': pin_record(pin), 'templates': templates,
-                  'recovery': hashlib.sha256(recovery.encode()).hexdigest(), 'admin': False}
+                  'recovery': hashlib.sha256(recovery.encode()).hexdigest(), 'admin': False,
+                  'biometric_consent': not manual}
+        self.isolation.provision(owner)
         self.store.put('identity-' + owner, record)
         names[owner] = name.strip()
         self.store.put('identities', names)

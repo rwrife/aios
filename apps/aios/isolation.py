@@ -4,6 +4,7 @@ No user-supplied commands, UID, environment, device, or mount paths are accepted
 GUI launch intentionally requires an independently isolated Wayland socket.
 """
 import os
+import json
 from pathlib import Path, PurePosixPath
 import shutil
 import signal
@@ -34,10 +35,11 @@ def application(app, arguments):
 
 
 class LinuxIsolation:
-    def __init__(self, config):
+    def __init__(self, config, config_path=None):
         if os.geteuid() != 0:
             raise PermissionError("The session broker must run as root")
         self.config = config
+        self.config_path = config_path
         self.root = Path(config['runtime'])
         self.root.mkdir(parents=True, mode=0o711, exist_ok=True)
         self.root.chmod(0o711)
@@ -101,6 +103,10 @@ class LinuxIsolation:
         os.chown(root / 'artifacts', uid, uid)
         return root, uid
 
+    def provision(self, owner):
+        from .provisioning import create
+        return create(self.config, self.config_path, owner)
+
     def activate(self, owner):
         entry = self.config['principals'][owner]
         root = Path(entry['mount'])
@@ -159,6 +165,13 @@ class LinuxIsolation:
                 '--bind', str(root / 'artifacts'), '/workspace', '--chdir', '/workspace',
                 '--setenv', 'HOME', '/workspace', '--setenv', 'PATH', '/usr/bin:/bin',
                 '--setenv', 'LANG', 'C.UTF-8']
+        owners = [owner for owner, entry in self.config.get('principals', {}).items()
+                  if entry['uid'] == uid]
+        if len(owners) > 1 or (not owners and uid != self.config['anonymous_uid']):
+            raise PermissionError('Process UID has no unique principal')
+        descriptor = {'owner': owners[0] if owners else None, 'uid': uid,
+                      'scope': scope, 'workspace': '/workspace'}
+        argv += ['--setenv', 'AIOS_PRINCIPAL', json.dumps(descriptor)]
         if display:
             argv += ['--dir', '/run/user', '--dir', '/run/user/session',
                      '--bind', str(display), '/run/user/session/wayland-0',
@@ -233,6 +246,9 @@ class SimulatorIsolation:
 
     def activate(self, owner):
         return self._workspace(owner)
+
+    def provision(self, owner):
+        self._workspace(owner)
 
     def launch(self, scope, root, uid, app, arguments):
         application(app, arguments)

@@ -15,6 +15,13 @@ real biometrics or put real secrets into the simulator.
   simulator records launches; it does not execute applications.
 - Separate SQLite journals store titles, messages, lifecycle events and allowlisted
   restoration manifests. Reopening a journal recovers active tasks as suspended.
+- Recent sessions can be browsed without creating a new work session. Bounded
+  conversation pages and searchable summaries survive resume. The document panel
+  atomically saves UTF-8 text/Markdown inside the encrypted workspace; directory
+  traversal, symlinks and special files cannot redirect root reads or writes.
+- Sandboxed processes receive a fixed UID/owner/scope descriptor. Configuration
+  and data helpers use that explicit workspace and reject malformed descriptors
+  instead of falling back to an inherited desktop home.
 - Presence loss revokes capabilities and shields content; the longer timeout stops
   applications, closes the journal and releases storage. Cleanup failures block
   further activation rather than switching users with a live mount.
@@ -71,7 +78,30 @@ printf '%s\n' '{"action":"status"}' |
 
 ## Linux adapter and deployment gates
 
-`aios.isolation.LinuxIsolation` is a root-only adapter for administrator-provisioned
+On an Alpine target with the optional identity dependencies installed, root can
+run `aios-identity-setup`. It creates dedicated identity/anonymous service accounts,
+the broker group, root-private state and a random master key. Existing state is
+never overwritten. It does **not** enable the service or validate a display.
+
+After the display prerequisite is satisfied, **Create profile** provisions a new
+LUKS2 image and unused UID in the reserved 30000–39999 range. Keep that range
+reserved for AIOS workspaces. Only exclusively created UUID directories and new
+regular image files are eligible for formatting; existing devices/images are
+never accepted. Failed allocations remain root-private for administrator review.
+Initial image creation temporarily occupies the serialized broker while no
+personal workspace is active; the shell shows progress and pauses status polling.
+Enrollment interruption/reconciliation still needs production hardening.
+
+**Unlock with PIN** accepts the profile name and rate-limited PIN/passphrase,
+opens Recent without a throwaway session, and grants a two-minute local fallback
+lease. It requires no camera and does not collect biometric templates. It locks
+at expiry, does not extend on Start/Resume, and conflicts revoke it immediately.
+This is explicit PIN verification, not a claim of continued sensor presence.
+Protected resources still require their own operation-scoped challenge. Save the
+one-time recovery code when creating the profile. These controls are also usable
+with fictional profiles in the simulator, without kernel-isolation claims.
+
+`aios.isolation.LinuxIsolation` is a root-only adapter for broker-provisioned
 LUKS volumes, fixed UID mappings, cgroup v2 scopes and bubblewrap launches. Apps
 receive only the artifact directory, system binaries and a private Wayland socket;
 the journal, broker socket, user homes, host network, X11 socket and credentials
@@ -95,7 +125,8 @@ Production configuration is root-owned JSON at `/etc/aios/sessiond.json`:
 | `runtime` | Root-owned workspace mount directory; traversal-only to reach UID-owned artifacts |
 | `socket`, `socket_gid` | Broker socket in a root-owned, group-traversable directory |
 | `shell_uid`, `identity_uid`, `anonymous_uid` | Distinct unprivileged accounts, distinct from all personal UIDs |
-| `principals` | UUID to `{uid, mount, device, key_file}` mapping; preprovisioned LUKS only |
+| `principals` | UUID to `{uid, mount, device, key_file}` mapping; new allocations are persisted atomically |
+| `volume_store`, `workspace_size_mib` | Root-private directory for new image allocations; 512 MiB default |
 | `wayland_sockets` | UID to separately isolated compositor socket mapping |
 | `display_isolation_validated` | Defaults false; blocks personal APIs and GUI launches |
 
@@ -109,8 +140,8 @@ The existing X11 desktop is insufficient, including for secure PIN input.
 | Phase | Status and remaining implementation |
 | --- | --- |
 | 0 | Initial ADR/threat model and simulator implemented. Schemas and security review need expansion. |
-| 1 | Socket broker and Linux adapter implemented; headless kernel/storage checks pass. Explicit principal migration of chat, browser, model workers and settings remains. |
-| 2 | Journal/lifecycle and reconstruction manifests implemented. Provisioning, encrypted-volume enrollment, artifact claim, complete conversation recall and editor save adapters remain. |
+| 1 | Broker, Linux adapter and explicit process storage context implemented; headless checks pass. Routing chat, browser, model workers and settings through broker-owned scopes remains. |
+| 2 | New encrypted-volume provisioning, PIN-only profile UI, durable history paging, summary search and safe text-document save/resume implemented. Artifact claim, broader application adapters and interrupted-enrollment reconciliation remain. |
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
 | 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
