@@ -209,7 +209,10 @@ TestCase {
 
         var slider = findChild(desktop, "volumeSlider")
         compare(slider.orientation, Qt.Vertical)
+        compare(popup.syncingVolume, false)
         slider.value = 37
+        compare(slider.value, 37)
+        wait(200)
         tryCompare(backend.setVolumeCalls, "length", 1)
         compare(backend.setVolumeCalls[0], 37)
 
