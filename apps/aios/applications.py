@@ -197,7 +197,7 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     _atomic_write_bytes(path, data)
 
 
-def _ensure_secure_directory(path: Path) -> None:
+def _ensure_secure_directory_fallback(path: Path) -> None:
     missing: list[Path] = []
     current = path
     while not current.exists():
@@ -214,6 +214,81 @@ def _ensure_secure_directory(path: Path) -> None:
     path.chmod(0o700)
 
 
+def _supports_descriptor_safe_directories() -> bool:
+    return (
+        sys.platform.startswith("linux")
+        and hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and hasattr(os, "fchmod")
+        and hasattr(os, "supports_dir_fd")
+        and os.open in os.supports_dir_fd
+        and os.mkdir in os.supports_dir_fd
+    )
+
+
+def _ensure_secure_directory_linux(path: Path) -> None:
+    absolute_path = Path(os.path.abspath(path))
+    parts = absolute_path.parts
+    if not absolute_path.is_absolute() or not parts:
+        raise ValueError("Choose a real application root directory.")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    current_fd: int | None = None
+    child_fd: int | None = None
+    try:
+        try:
+            current_fd = os.open(parts[0], flags)
+        except OSError as error:
+            raise ValueError("Choose a real application root directory.") from error
+        remaining = parts[1:]
+        if not remaining:
+            if not stat.S_ISDIR(os.fstat(current_fd).st_mode):
+                raise ValueError("Choose a real application root directory.")
+            os.fchmod(current_fd, 0o700)
+            return
+        for index, component in enumerate(remaining):
+            created = False
+            try:
+                child_fd = os.open(component, flags, dir_fd=current_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=current_fd)
+                    created = True
+                except FileExistsError:
+                    pass
+                except OSError as error:
+                    raise ValueError("Choose a real application root directory.") from error
+                try:
+                    child_fd = os.open(component, flags, dir_fd=current_fd)
+                except OSError as error:
+                    raise ValueError("Choose a real application root directory.") from error
+            except OSError as error:
+                raise ValueError("Choose a real application root directory.") from error
+            try:
+                if not stat.S_ISDIR(os.fstat(child_fd).st_mode):
+                    raise ValueError("Choose a real application root directory.")
+                if created or index == len(remaining) - 1:
+                    os.fchmod(child_fd, 0o700)
+            except Exception:
+                os.close(child_fd)
+                child_fd = None
+                raise
+            os.close(current_fd)
+            current_fd = child_fd
+            child_fd = None
+    finally:
+        if child_fd is not None:
+            os.close(child_fd)
+        if current_fd is not None:
+            os.close(current_fd)
+
+
+def _ensure_secure_directory(path: Path) -> None:
+    if _supports_descriptor_safe_directories():
+        _ensure_secure_directory_linux(path)
+        return
+    _ensure_secure_directory_fallback(path)
+
+
 def _read_regular_file_bytes(path: Path, max_bytes: int) -> bytes:
     if hasattr(os, "O_NOFOLLOW"):
         try:
@@ -222,14 +297,13 @@ def _read_regular_file_bytes(path: Path, max_bytes: int) -> bytes:
             raise
         except OSError as error:
             raise ValueError("Unexpected application files found.") from error
-        with os.fdopen(fd, "rb", closefd=False) as stream:
+        with os.fdopen(fd, "rb", closefd=True) as stream:
             stat_result = os.fstat(stream.fileno())
             if not stat.S_ISREG(stat_result.st_mode):
                 raise ValueError("Unexpected application files found.")
             if stat_result.st_size > max_bytes:
                 raise ValueError("The file is too large.")
             data = stream.read(stat_result.st_size)
-        os.close(fd)
         if len(data) != stat_result.st_size:
             raise ValueError("Unexpected application files found.")
         return data
@@ -245,14 +319,7 @@ class ApplicationStore:
     def __init__(self, root: Path | str | None = None, launcher: Callable[[Path], Any] | None = None):
         self.root = Path(root) if root is not None else core.data_dir() / "applications"
         self.root = self.root.expanduser()
-        if self.root.exists():
-            if self.root.is_symlink():
-                raise ValueError("Choose a real application root directory.")
-            if not _is_regular_dir(self.root):
-                raise ValueError("Choose a real application root directory.")
-            self.root.chmod(0o700)
-        else:
-            _ensure_secure_directory(self.root)
+        _ensure_secure_directory(self.root)
         self.launcher = launcher or self._default_launcher
 
     def create(self, payload: dict[str, Any]) -> dict[str, str]:
@@ -368,6 +435,8 @@ class ApplicationStore:
         query_tokens = _tokenize(normalized)
         results: list[dict[str, Any]] = []
         for folder in self.root.iterdir() if self.root.exists() else []:
+            if folder.is_symlink() or not _is_regular_dir(folder):
+                continue
             try:
                 entry = self._load_manifest(folder)
                 if entry is None:
@@ -537,6 +606,8 @@ class ApplicationStore:
         return data
 
     def _validate_folder_contents(self, folder: Path, *, allow_draft: bool, allow_manifest: bool) -> None:
+        if folder.is_symlink() or not _is_regular_dir(folder):
+            raise ValueError("Unexpected application files found.")
         allowed = {"index.html"}
         if allow_draft:
             allowed.add(".draft.json")

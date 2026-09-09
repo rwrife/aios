@@ -1,6 +1,8 @@
 import json
 import os
+import shutil
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -257,6 +259,96 @@ class ApplicationStoreTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             helper(index, 16 * 1024)
+
+    def test_regular_file_reader_repeated_errors_do_not_leak_file_descriptors(self):
+        if not sys.platform.startswith("linux"):
+            self.skipTest("requires Linux")
+        fd_dir = Path("/proc/self/fd")
+        if not fd_dir.is_dir():
+            self.skipTest("/proc/self/fd unavailable")
+        helper = getattr(applications, "_read_regular_file_bytes", None)
+        self.assertIsNotNone(helper)
+        path = Path(self.tmp.name) / "oversized.bin"
+        path.write_bytes(b"x" * 32)
+
+        baseline = len(os.listdir(fd_dir))
+        for _ in range(25):
+            with self.assertRaisesRegex(ValueError, "too large"):
+                helper(path, 1)
+            self.assertEqual(len(os.listdir(fd_dir)), baseline)
+
+    def test_search_ignores_symlinked_application_folder(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlinks unavailable")
+        store = self._store()
+        external_root = Path(self.tmp.name) / "outside"
+        external_store = ApplicationStore(root=external_root)
+        created = external_store.create({"title": "Outside", "request": "Build the outside app"})
+        external_store.write({"id": created["id"], "html": "<!doctype html><p>outside</p>"})
+        external_store.publish({"id": created["id"], "summary": "Outside summary", "keywords": ["outside"]})
+        try:
+            os.symlink(external_root / created["id"], self.root / created["id"], target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("environment cannot create symlinks")
+
+        self.assertEqual(store.search({"query": "Build the outside app"}), [])
+
+    def test_search_rejects_folder_swapped_to_symlink_after_validation(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlinks unavailable")
+        store = self._store()
+        created = store.create({"title": "Swap", "request": "Build the swap app"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>swap</p>"})
+        store.publish({"id": created["id"], "summary": "Swap summary", "keywords": ["swap"]})
+
+        external_root = Path(self.tmp.name) / "outside"
+        external_folder = external_root / created["id"]
+        shutil.copytree(self.root / created["id"], external_folder)
+        draft_path = external_folder / ".draft.json"
+        draft_path.write_text(
+            json.dumps({
+                "id": created["id"],
+                "title": "Swap",
+                "request": "Build the swap app",
+                "created_at": _read_json(external_folder / "manifest.json")["created_at"],
+            }, separators=(",", ":"), sort_keys=True),
+            encoding="utf-8",
+        )
+
+        original_load_manifest = store._load_manifest
+        swapped = False
+
+        def swapping_load_manifest(folder: Path):
+            nonlocal swapped
+            if not swapped and folder.name == created["id"]:
+                swapped = True
+                shutil.rmtree(folder)
+                os.symlink(external_folder, folder, target_is_directory=True)
+            return original_load_manifest(folder)
+
+        store._load_manifest = swapping_load_manifest  # type: ignore[method-assign]
+        self.assertEqual(store.search({"query": "Build the swap app"}), [])
+        self.assertTrue(draft_path.exists())
+
+    def test_linux_rejects_symlinked_intermediate_root_component(self):
+        if not sys.platform.startswith("linux"):
+            self.skipTest("requires Linux")
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlinks unavailable")
+        outside = Path(self.tmp.name) / "outside"
+        applications_dir = outside / "applications"
+        applications_dir.mkdir(parents=True)
+        os.chmod(applications_dir, 0o755)
+        link = Path(self.tmp.name) / "link"
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("environment cannot create symlinks")
+
+        with self.assertRaises(ValueError):
+            ApplicationStore(root=link / "applications" / "nested")
+        self.assertFalse((applications_dir / "nested").exists())
+        self.assertEqual(stat.S_IMODE(applications_dir.stat().st_mode), 0o755)
 
     def test_launcher_failure_preserves_published_files(self):
         def launcher(_folder):
