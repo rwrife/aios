@@ -1,0 +1,109 @@
+name: Build bootable ISO
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/build-iso.yml"
+      - "distro/alpine/**"
+      - "scripts/build-apps.sh"
+      - "scripts/build-iso.sh"
+      - "scripts/build-iso-container.sh"
+      - "scripts/build.sh"
+      - "scripts/container-build.sh"
+      - "scripts/stage-codex.py"
+      - "scripts/stage-model.py"
+      - "scripts/test-boot.py"
+      - "scripts/verify-iso.sh"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            release_tag="${GITHUB_REF_NAME#v}"
+          else
+            release_tag="snapshot-${GITHUB_SHA::12}"
+          fi
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install boot verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ovmf qemu-system-x86 xorriso
+
+      - name: Build ISO
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+        run: bash scripts/build.sh
+
+      - name: Locate and verify ISO
+        id: image
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
+        shell: bash
+        run: |
+          iso="$(find distro/alpine/out -maxdepth 1 -type f -name "*-${RELEASE_TAG}-x86_64.iso" -print -quit)"
+          test -n "$iso"
+          echo "iso=$iso" >> "$GITHUB_OUTPUT"
+          bash scripts/verify-iso.sh "$iso"
+
+      - name: Boot offline with BIOS
+        run: |
+          sudo python3 scripts/test-boot.py "${{ steps.image.outputs.iso }}" \
+            --timeout 600 \
+            --log distro/alpine/out/boot-bios.log
+
+      - name: Boot offline with UEFI
+        run: |
+          sudo python3 scripts/test-boot.py "${{ steps.image.outputs.iso }}" \
+            --uefi /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --timeout 600 \
+            --log distro/alpine/out/boot-uefi.log
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aios-${{ steps.version.outputs.release_tag }}-x86_64
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ steps.image.outputs.iso }}
+            ${{ steps.image.outputs.iso }}.packages.txt
+            distro/alpine/out/SHA256SUMS
+            distro/alpine/out/build-inputs.env
+            distro/alpine/out/boot-bios.log
+            distro/alpine/out/boot-uefi.log
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISO: ${{ steps.image.outputs.iso }}
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes \
+              --title "AIOS $GITHUB_REF_NAME"
+          fi
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            "$ISO" \
+            "$ISO.packages.txt" \
+            distro/alpine/out/SHA256SUMS \
+            distro/alpine/out/build-inputs.env
