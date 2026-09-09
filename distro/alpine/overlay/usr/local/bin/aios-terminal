@@ -5,6 +5,11 @@ set -eu
 
 # Keep the terminal on the same cool, layered palette as the native AIOS
 # windows. The compositor applies translucency to this dedicated WM class.
+export PYTHONPATH=/usr/local/share/aios${PYTHONPATH:+:$PYTHONPATH}
+colors=$(python3 -m aios.terminal_theme)
+read -r night horizon panel input muted accent line <<EOF
+$colors
+EOF
 exec /usr/bin/xterm \
   -class AIOS-Terminal \
   -name aios-terminal \
@@ -13,12 +18,13 @@ exec /usr/bin/xterm \
   -fa "DejaVu Sans Mono" \
   -fs 14 \
   -b 18 \
+  -bw 0 \
   +sb \
-  -bg '#172633' \
+  -bg "$panel" \
   -fg '#f1f5f6' \
-  -bd '#4c6574' \
-  -cr '#bde4e6' \
-  -xrm 'AIOS-Terminal*VT100.color0: #101b27' \
+  -bd "$line" \
+  -cr "$accent" \
+  -xrm "AIOS-Terminal*VT100.color0: $night" \
   -xrm 'AIOS-Terminal*VT100.color1: #d28b8b' \
   -xrm 'AIOS-Terminal*VT100.color2: #9fc59f' \
   -xrm 'AIOS-Terminal*VT100.color3: #d2bd82' \
