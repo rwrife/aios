@@ -10,17 +10,8 @@ Window {
     width: Screen.width; height: Screen.height
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
-    QtObject {
-        id: theme
-        readonly property color night: "#101b27"
-        readonly property color horizon: "#354e60"
-        readonly property color panel: "#172633"
-        readonly property color input: "#203340"
-        readonly property color ink: "#f1f5f6"
-        readonly property color muted: "#b2c3cd"
-        readonly property color accent: "#bde4e6"
-        readonly property color line: "#4c6574"
-    }
+    Theme { id: theme; selected: backend.config.theme_color || "blue" }
+    Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backend.config.reduced_motion === true
     function openChat() { var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
     property var settingsWindow: null
@@ -65,10 +56,10 @@ Window {
                     var y0 = wave(x / width, layer), y1 = wave(nextX / width, layer)
                     var top = (y0 + y1) / 2
                     var fade = ctx.createLinearGradient(0, top, 0, top + fadeDepth)
-                    fade.addColorStop(0, "rgba(158,199,216,0.18)")
-                    fade.addColorStop(0.25, "rgba(158,199,216,0.09)")
-                    fade.addColorStop(0.65, "rgba(158,199,216,0.02)")
-                    fade.addColorStop(1, "rgba(158,199,216,0)")
+                    fade.addColorStop(0, theme.waveAlpha(0.18))
+                    fade.addColorStop(0.25, theme.waveAlpha(0.09))
+                    fade.addColorStop(0.65, theme.waveAlpha(0.02))
+                    fade.addColorStop(1, theme.waveAlpha(0))
                     ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(nextX, y1)
                     ctx.lineTo(nextX, y1 + fadeDepth); ctx.lineTo(x, y0 + fadeDepth); ctx.closePath()
                     ctx.fillStyle = fade; ctx.fill()
@@ -82,8 +73,8 @@ Window {
                     if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(u * width, y)
                 }
                 ctx.lineJoin = "round"
-                ctx.strokeStyle = "rgba(167,199,213,0.08)"; ctx.lineWidth = 3.5; ctx.stroke()
-                ctx.strokeStyle = "rgba(167,199,213,0.50)"; ctx.lineWidth = 1.3; ctx.stroke()
+                ctx.strokeStyle = theme.waveAlpha(0.08); ctx.lineWidth = 3.5; ctx.stroke()
+                ctx.strokeStyle = theme.waveAlpha(0.50); ctx.lineWidth = 1.3; ctx.stroke()
             }
         }
     }

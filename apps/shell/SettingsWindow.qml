@@ -67,7 +67,7 @@ Window {
                 }
             }
             StackLayout {
-                id: pages; Layout.fillWidth: true; Layout.fillHeight: true
+                id: pages; objectName: "settingsPages"; Layout.fillWidth: true; Layout.fillHeight: true
                 ModelSettings { id: models; showClose: false; backend: settings.backend; theme: settings.theme; onCloseRequested: settings.close() }
                 ColumnLayout {
                     spacing: 16
@@ -109,6 +109,42 @@ Window {
                 }
                 ColumnLayout {
                     spacing: 16
+                    Note { text: "Theme color" }
+                    GridLayout {
+                        columns: 4; columnSpacing: 12; rowSpacing: 12; uniformCellWidths: true
+                        Layout.fillWidth: true
+                        Repeater {
+                            objectName: "themeChoices"
+                            model: theme.choices
+                            Button {
+                                id: swatch
+                                required property var modelData
+                                objectName: "theme-" + modelData.key
+                                Layout.fillWidth: true; implicitWidth: 96; implicitHeight: 72
+                                checkable: true
+                                checked: (backend.config.theme_color || "blue") === modelData.key
+                                enabled: !backend.busy && backend.configuring !== true
+                                Accessible.name: modelData.name + " theme"
+                                Accessible.role: Accessible.RadioButton
+                                Accessible.checked: checked
+                                onClicked: backend.configure({theme_color: modelData.key})
+                                background: Rectangle {
+                                    radius: 8; color: swatch.hovered ? theme.input : "transparent"
+                                    border.width: swatch.checked || swatch.activeFocus ? 1 : 0
+                                    border.color: theme.accent
+                                }
+                                contentItem: Column {
+                                    spacing: 8
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 26; height: 26; radius: 13; color: swatch.modelData.swatch
+                                        Text { anchors.centerIn: parent; text: swatch.checked ? "✓" : ""; color: "#15202b"; font.pixelSize: 17 }
+                                    }
+                                    Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: swatch.modelData.name; color: theme.ink; font.pixelSize: 12 }
+                                }
+                            }
+                        }
+                    }
                     Note { text: "Background animation" }
                     Action { text: backend.config.reduced_motion ? "Enable motion" : "Reduce motion"; onClicked: backend.configure({reduced_motion: !backend.config.reduced_motion}) }
                     Item { Layout.fillHeight: true }

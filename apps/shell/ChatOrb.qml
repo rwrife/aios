@@ -29,9 +29,14 @@ Button {
             var b = orb.brightness;
             function tone(dim, bright) {
                 var d = parseInt(dim.slice(1), 16), l = parseInt(bright.slice(1), 16);
-                return Qt.rgba(((d >> 16) + ((l >> 16) - (d >> 16))*b)/255,
+                var color = Qt.rgba(((d >> 16) + ((l >> 16) - (d >> 16))*b)/255,
                     (((d >> 8)&255) + (((l >> 8)&255)-((d >> 8)&255))*b)/255,
                     ((d&255) + ((l&255)-(d&255))*b)/255, 1);
+                if (orb.theme.paletteIndex > 0) {
+                    var lightness = (Math.max(color.r, color.g, color.b) + Math.min(color.r, color.g, color.b)) / 2
+                    return Qt.hsla(orb.theme.hue, orb.theme.saturation + b * 0.1, lightness, 1)
+                }
+                return color;
             }
             var radius = Math.min(width,height) * (orb.down ? 0.285 : 0.31);
             radius *= 1 + 0.035*Math.sin(t) + orb.energy*0.07;
@@ -80,6 +85,7 @@ Button {
     onReducedMotionChanged: surface.requestPaint()
     onActivityLevelChanged: surface.requestPaint()
     onAwakenedChanged: surface.requestPaint()
+    Connections { target: orb.theme; ignoreUnknownSignals: true; function onPaletteIndexChanged() { surface.requestPaint() } }
     ToolTip.visible: hovered || activeFocus
     ToolTip.text: "New chat"
     ToolTip.delay: 900
