@@ -60,6 +60,9 @@ public:
     QVariantMap profile() const { return m_profile; }
     QVariantList profiles() const { return m_profiles; }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
+    Q_INVOKABLE void deleteAccount(const QString &id, const QString &pin) {
+        if (greetingOnly()) call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
+    }
     Q_INVOKABLE void takeProfilePhoto() { if (m_secureInput && personalAvailable()) photoCapture.take(); }
     Q_INVOKABLE void setSecureInput(bool active) { m_secureInput = active; if (!active) photoCapture.cancel(); emit changed(); }
     QVariantMap challenge() const { return m_challenge; }
@@ -135,6 +138,7 @@ signals:
     void documentSaved();
     void enrollmentCompleted(const QString &recovery);
     void photoCaptured(const QString &preview, const QString &rgb);
+    void accountDeleted(const QString &id);
     void unlocked();
     void displayRequested(const QString &app);
 private:
@@ -260,7 +264,7 @@ private:
     void callGreeting(const QJsonObject &request) {
         if (pendingEnrollment) return;
         const auto action = request.value("action").toString();
-        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified") return;
+        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "delete_profile") return;
         pendingEnrollment = true; m_error.clear(); emit changed();
         auto process = new QProcess(this);
         const auto epoch = generation;
@@ -281,10 +285,23 @@ private:
                 else {
                     const auto result = reply.value("result").toObject();
                     if (action == "profiles") m_profiles = result.value("profiles").toArray().toVariantList();
+                    else if (action == "delete_profile") {
+                        const auto id = result.value("deleted").toString();
+                        auto root = this;
+                        while (auto ancestor = qobject_cast<SessionControl *>(root->parent())) root = ancestor;
+                        auto controls = root->findChildren<SessionControl *>(); controls.prepend(root);
+                        for (auto control : controls) {
+                            ++control->generation;
+                            if (control->m_profile.value("id").toString() == id) control->m_profile.clear();
+                            for (int i = control->m_profiles.size()-1; i >= 0; --i)
+                                if (control->m_profiles[i].toMap().value("id").toString() == id) control->m_profiles.removeAt(i);
+                            emit control->accountDeleted(id); emit control->changed();
+                        }
+                    }
                     else { m_profile = result.value("profile").toObject().toVariantMap(); emit unlocked(); }
                 }
-                emit changed();
             }
+            emit changed();
             process->deleteLater();
         });
         QTimer::singleShot(5000, process, [process] { if (process->state() != QProcess::NotRunning) process->kill(); });

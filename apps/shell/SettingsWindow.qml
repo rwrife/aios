@@ -8,16 +8,17 @@ Window {
     id: settings
     required property var backend
     required property var theme
+    property var profileControl: null
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
     width: Math.min(820, Screen.width - 32); height: Math.min(620, Screen.height - 48)
     minimumWidth: 540; minimumHeight: 400
     x: (Screen.width-width)/2; y: (Screen.height-height)/2
     color: theme.panel
-    onVisibleChanged: { if (!visible) camera.stop(); else models.reload() }
+    onVisibleChanged: { if (!visible) camera.stop(); else { models.reload(); if (pages.currentIndex === 6) accountsPage.refresh(); } }
     onClosing: camera.stop()
     // Add a section here and its page to the StackLayout below.
-    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance"]
+    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "Accounts"]
     component Action: Button {
         id: control
         padding: 12
@@ -158,6 +159,7 @@ Window {
         }
     }
     MediaDevices { id: devices }
+    AccountSettings { id: accountsPage; parent: pages; control: settings.profileControl }
     Camera { id: camera; cameraDevice: devices.defaultVideoInput }
     CaptureSession { camera: camera; videoOutput: viewfinder }
 }

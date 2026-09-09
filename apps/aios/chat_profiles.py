@@ -27,13 +27,17 @@ def dispatch(request, directory=None):
         action = request.get('action')
         if action == 'profiles':
             return {'profiles': [{'id': key, 'name': value['name']} for key, value in records.items()]}
-        if action not in ('enroll_manual', 'enroll_profile', 'activate_verified'):
+        if action not in ('enroll_manual', 'enroll_profile', 'activate_verified', 'delete_profile'):
             raise ValueError('Unsupported profile action')
         name = request.get('name') if action.startswith('enroll') else request.get('owner')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError('Enter a name of up to 80 characters')
         name = name.strip()
         owner = next((key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
+        if action == 'delete_profile':
+            owner = name if name in records else None
+            if request.get('confirmed') is not True:
+                raise ValueError('Confirm account deletion')
         if action.startswith('enroll'):
             if request.get('consent') is not True:
                 raise ValueError('Confirm creation of your local profile')
@@ -51,6 +55,10 @@ def dispatch(request, directory=None):
             atomic_bytes(path, json.dumps(records).encode())
             if not valid:
                 raise ValueError('Profile or PIN was not recognized, or attempts are temporarily locked')
+            if action == 'delete_profile':
+                del records[owner]
+                atomic_bytes(path, json.dumps(records).encode())
+                return {'deleted': owner}
         atomic_bytes(path, json.dumps(records).encode())
         value = records[owner]
         return {'profile': {'id': owner, 'name': value['name'], 'photo': value['photo'], 'detected': False}}

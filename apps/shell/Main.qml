@@ -20,7 +20,7 @@ Window {
     property var settingsWindow: null
     function openSettings() {
         if (sessionControl.enabled) return
-        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme})
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme, profileControl: sessionControl})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
     Component { id: settingsComponent; SettingsWindow {} }

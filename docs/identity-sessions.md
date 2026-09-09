@@ -205,6 +205,14 @@ These profiles personalize the legacy chat; they do not grant broker capabilitie
 encrypt chat history or unlock protected workspace identities. Broker-owned chat
 workers remain required for protected multi-user conversation ownership.
 
+**Settings → Accounts** lists local greeting accounts with sign-in, new-account
+and delete actions. Deletion prompts for that account's PIN/password and requires
+an explicit Delete account submission. Wrong attempts preserve the account and
+use the existing persistent retry limits. The request targets the account UUID;
+success atomically removes its record and clears its greeting from open windows.
+This removes the name, portrait and PIN verifier, not chat messages or protected
+workspace identities. The confirmation explains that scope before submission.
+
 Account creation and selection work with no camera. Name entry gets initial
 keyboard focus; Tab moves to PIN and Enter submits. The account dropdown supports
 arrow keys and Enter to choose an account. A PIN may contain four or more

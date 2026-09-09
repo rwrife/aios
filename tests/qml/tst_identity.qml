@@ -33,6 +33,11 @@ TestCase {
         signal enrollmentCompleted(string recovery)
         signal photoCaptured(string preview, string rgb)
         signal unlocked()
+        signal accountDeleted(string id)
+        property int deletions: 0
+        function deleteAccount(id, pin) {
+            if (id === "test-id" && pin === "1234") { deletions++; accountDeleted(id) }
+        }
         property int enrollments: 0
         property int signins: 0
         property int photosTaken: 0
@@ -56,6 +61,28 @@ TestCase {
     Component { id: statusComponent; IdentityStatus {} }
     Component { id: enrollmentComponent; EnrollmentFlow {} }
     Component { id: bubbleComponent; UserBubble {} }
+    Component { id: accountsComponent; AccountSettings {} }
+    function test_settings_delete_requires_pin_and_clears_prompt() {
+        control.greetingOnly = true
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 420, height: 440})
+        waitForRendering(panel)
+        var button = findChild(panel, "deleteAccount")
+        verify(button !== null)
+        verify(button.visible)
+        mouseClick(button)
+        var prompt = findChild(panel, "deleteAccountDialog")
+        tryCompare(prompt, "opened", true); waitForRendering(prompt.contentItem)
+        var pin = findChild(prompt, "deleteAccountPin")
+        var confirm = findChild(prompt, "confirmDeleteAccount")
+        compare(confirm.enabled, false)
+        compare(pin.echoMode, TextInput.Password)
+        var before = control.deletions
+        pin.forceActiveFocus(); typeKeys("1234"); keyClick(Qt.Key_Return)
+        compare(control.deletions, before + 1)
+        tryCompare(prompt, "opened", false)
+        compare(pin.text, "")
+        panel.destroy()
+    }
     function typeKeys(text) {
         for (var i = 0; i < text.length; ++i) {
             var letter = text[i]

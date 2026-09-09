@@ -45,7 +45,7 @@ Window {
                 Text { text: "Chat"; color: theme.muted; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
-            QuietButton { text: "⋯"; tip: "Model and voice settings"; onClicked: options.open() }
+            QuietButton { text: "⋯"; tip: "Chat settings"; onClicked: options.open() }
             QuietButton { text: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
             QuietButton { text: "×"; tip: "Close this chat"; onClicked: chat.close() }
         }
@@ -165,10 +165,21 @@ Window {
     Popup {
         id: options; parent: chat.contentItem; anchors.centerIn: parent
         width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24)
-        modal: true; padding: 20
+        modal: true; padding: 20; closePolicy: Popup.CloseOnEscape
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 10 }
-        onOpened: modelSettings.reload()
-        contentItem: ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+        onOpened: { modelSettings.reload(); if (optionsTabs.currentIndex === 1) chatAccounts.refresh(); }
+        contentItem: ColumnLayout {
+            TabBar {
+                id: optionsTabs; Layout.fillWidth: true
+                TabButton { text: "AI and voice" }
+                TabButton { objectName: "accountsTab"; text: "Accounts" }
+            }
+            StackLayout {
+                currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true
+                ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+                AccountSettings { id: chatAccounts; control: chat.profileControl }
+            }
+        }
     }
     Connections {
         target: session
