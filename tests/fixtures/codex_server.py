@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 
 scenario = os.environ.get('AIOS_FAKE_SCENARIO', '')
 thread = 'test-thread'
@@ -143,6 +144,12 @@ for line in sys.stdin:
         elif scenario == 'cross-thread-call':
             send({'id': 'tool-request', 'method': 'item/tool/call', 'params': {
                 'threadId': 'other-thread', 'tool': 'application', 'arguments': {}}})
+        elif scenario == 'blocked-tool-response':
+            send({'id': 'tool-request', 'method': 'item/tool/call', 'params': {
+                'threadId': thread, 'tool': 'application',
+                'arguments': {'action': 'search', 'query': 'large'}}})
+            # Stop reading while the adapter attempts a response larger than the pipe capacity.
+            time.sleep(60)
         elif scenario not in ('malformed-thread', 'malformed-turn'):
             if scenario == 'server-request':
                 send({'id': 'server-request', 'method': 'unsupported/request',

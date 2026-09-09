@@ -1,9 +1,12 @@
+import io
 import json
 import os
 from pathlib import Path
+import queue
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -24,13 +27,17 @@ class SubscriptionTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {
             'XDG_CONFIG_HOME': self.temp.name, 'AIOS_FAKE_LOG': str(self.log),
             'AIOS_FAKE_SCENARIO': '', 'OPENAI_API_KEY': 'must-not-inherit',
-            'CODEX_API_KEY': 'must-not-inherit',
+            'CODEX_API_KEY': 'must-not-inherit', 'CODEX_HOME': 'must-not-inherit',
         })
         self.env.start()
         original = subprocess.Popen
         fixture = str(Path(__file__).parent / 'fixtures/codex_server.py')
         self.processes = []
+        self.popen_args = []
+        self.popen_kwargs = []
         def spawn(args, **kwargs):
+            self.popen_args.append(list(args))
+            self.popen_kwargs.append(dict(kwargs))
             process = original([sys.executable, fixture], **kwargs)
             self.processes.append(process)
             return process
@@ -54,6 +61,110 @@ class SubscriptionTests(unittest.TestCase):
         thread = next(r for r in self.requests() if r.get('method') == 'thread/start')
         self.assertEqual(thread['params']['dynamicTools'], [])
         self.assertEqual(thread['params']['baseInstructions'], agent.POLICY)
+
+    def test_all_codex_hardening_flags_and_environment_are_applied(self):
+        list(subscription.chat([{'role': 'user', 'content': 'hello'}]))
+        args = self.popen_args[-1]
+        self.assertEqual(args[:2], ['codex', 'app-server'])
+        self.assertEqual(args[2::2], ['-c'] * ((len(args) - 2) // 2))
+        settings = dict(item.split('=', 1) for item in args[3::2])
+        self.assertEqual(settings['mcp_servers'], '{}')
+        self.assertEqual(settings['web_search'], '"disabled"')
+        self.assertEqual(settings['skip_host_skill_discovery'], 'true')
+        for name in subscription.DISABLED_FEATURES:
+            self.assertEqual(settings[f'features.{name}'], 'false')
+        for name in (
+                'shell_tool', 'unified_exec', 'apps', 'plugins', 'browser_use',
+                'computer_use', 'multi_agent', 'request_permissions_tool',
+                'request_permissions'):
+            self.assertEqual(settings[f'features.{name}'], 'false')
+        self.assertFalse(any('execution_environment' in item for item in settings))
+        env = self.popen_kwargs[-1]['env']
+        self.assertFalse(any(name.startswith('OPENAI_') for name in env))
+        self.assertEqual([name for name in env if name.startswith('CODEX_')], ['CODEX_HOME'])
+        self.assertNotEqual(env['CODEX_HOME'], 'must-not-inherit')
+        thread = next(r for r in self.requests() if r.get('method') == 'thread/start')
+        self.assertEqual(thread['params']['environments'], [])
+
+    def test_outbound_json_is_compatible_bounded_and_safely_reported(self):
+        with subscription.Server() as server:
+            self.assertEqual(self.popen_kwargs[-1]['bufsize'], 0)
+            if os.name == 'posix':
+                self.assertFalse(os.get_blocking(server.process.stdin.fileno()))
+            for value in ({'bad': {1}}, {'large': 'x' * (4 * 1024 * 1024)}):
+                with self.subTest(value=next(iter(value))):
+                    with self.assertRaisesRegex(RuntimeError, 'could not send'):
+                        server.send(value)
+
+    def test_reader_queue_saturation_sets_fatal_state_and_wakes_receive(self):
+        server = subscription.Server()
+        server.events = queue.Queue(maxsize=1)
+        server.process = Mock()
+        server.process.stdout = io.BytesIO(b'{"event":1}\n{"event":2}\n')
+        server._read()
+        self.assertTrue(server._reader_fatal.is_set())
+        started = time.monotonic()
+        with self.assertRaisesRegex(RuntimeError, 'connection closed'):
+            server.receive(timeout=10)
+        self.assertLess(time.monotonic() - started, 0.5)
+
+    def test_teardown_preserves_original_error_and_cleans_after_broken_pipe(self):
+        server = subscription.Server()
+        server.work = tempfile.TemporaryDirectory(prefix='aios-chatgpt-test-')
+        work = Path(server.work.name)
+        server.process = Mock()
+        server.process.poll.return_value = 0
+        server.process.stdin.close.side_effect = BrokenPipeError('closed')
+        server.process.stdout.close.side_effect = OSError('closed')
+        server._reader_thread = Mock()
+
+        def fail():
+            try:
+                raise RuntimeError('curated ChatGPT failure')
+            except RuntimeError:
+                server.__exit__(*sys.exc_info())
+                raise
+
+        with self.assertRaisesRegex(RuntimeError, 'curated ChatGPT failure'):
+            fail()
+        self.assertFalse(work.exists())
+        server.__exit__(None, None, None)
+
+    def test_partial_startup_failure_cleans_work_directory(self):
+        work = []
+
+        def fail(_args, **kwargs):
+            work.append(Path(kwargs['cwd']))
+            raise OSError('missing runtime')
+
+        with (patch.object(subscription.subprocess, 'Popen', side_effect=fail),
+              self.assertRaisesRegex(RuntimeError, 'runtime could not start')):
+            with subscription.Server():
+                self.fail('Server must not start')
+        self.assertEqual(len(work), 1)
+        self.assertFalse(work[0].exists())
+
+    def test_blocked_tool_response_obeys_turn_deadline_and_reaps_everything(self):
+        os.environ['AIOS_FAKE_SCENARIO'] = 'blocked-tool-response'
+        session = Mock()
+        session.codex_tools.return_value = [{
+            'type': 'function', 'name': 'application', 'description': 'Applications',
+            'inputSchema': {'type': 'object'},
+        }]
+        session.system_prompt.return_value = 'AIOS policy'
+        session.progress.return_value = 'Application: search'
+        session.dispatch.return_value = {
+            'blob': 'x' * (subscription.MAX_TOOL_RESULT_BYTES - 100)}
+        started = time.monotonic()
+        with self.assertRaisesRegex(RuntimeError, 'timed out|connection closed'):
+            list(subscription.chat(
+                [{'role': 'user', 'content': 'hello'}],
+                session=session, turn_timeout=0.75))
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertIsNotNone(self.processes[-1].poll())
+        self.assertFalse(Path(self.popen_kwargs[-1]['cwd']).exists())
+        with subscription.account_lock(exclusive=True):
+            pass
 
     def test_account_sanitizes_and_paginates(self):
         events = []
@@ -189,7 +300,7 @@ class SubscriptionTests(unittest.TestCase):
         response = next(r for r in self.requests() if r.get('id') == 'tool-request')
         self.assertFalse(response['result']['success'])
         error = json.loads(response['result']['contentItems'][0]['text'])['error']
-        self.assertEqual(error, 'Tool action failed. Review the request and try again.')
+        self.assertEqual(error, 'The model requested an unavailable tool.')
 
     def test_generic_dispatch_errors_and_invalid_results_are_bounded_and_redacted(self):
         session = Mock()
@@ -201,6 +312,7 @@ class SubscriptionTests(unittest.TestCase):
         session.progress.return_value = 'Application: search'
         for result in (
             OSError('/home/user/secret.sock token=abc'),
+            RuntimeError('secret-provider-token'),
             {'invalid': {1, 2, 3}},
             {'blob': 'x' * (subscription.MAX_TOOL_RESULT_BYTES + 1)},
         ):
@@ -220,6 +332,20 @@ class SubscriptionTests(unittest.TestCase):
                 )
                 self.assertNotIn('secret', text)
                 session.dispatch.reset_mock(side_effect=True, return_value=True)
+
+    def test_null_error_field_does_not_mark_tool_result_failed(self):
+        self.assertTrue(subscription._chat_result(
+            {'value': 1, 'error': None}, 'fallback')['success'])
+
+    def test_activation_note_cannot_push_system_prompt_over_limit(self):
+        session = Mock()
+        session.codex_tools.return_value = []
+        session.system_prompt.return_value = 'x' * agent.MAX_SYSTEM_PROMPT_BYTES
+        with self.assertRaisesRegex(RuntimeError, 'prompt is too large'):
+            list(subscription.chat(
+                [{'role': 'user', 'content': 'hello'}], session=session))
+        self.assertNotIn('thread/start', [r.get('method') for r in self.requests()])
+        self.assertFalse(Path(self.popen_kwargs[-1]['cwd']).exists())
 
     @patch('aios.agent.toolhost.list_tools')
     def test_same_turn_activation_narrows_permissions_without_rewriting_prompt(self, list_tools):
@@ -241,6 +367,10 @@ class SubscriptionTests(unittest.TestCase):
         responses = [r for r in self.requests() if str(r.get('id', '')).startswith('tool-request')]
         self.assertTrue(responses[0]['result']['success'])
         self.assertFalse(responses[1]['result']['success'])
+        self.assertEqual(
+            json.loads(responses[1]['result']['contentItems'][0]['text'])['error'],
+            'The model requested an unavailable tool.',
+        )
         self.assertNotIn('SECRET-INSTRUCTION-MARKER',
                          responses[0]['result']['contentItems'][0]['text'])
         thread = next(r for r in self.requests() if r.get('method') == 'thread/start')
@@ -366,23 +496,21 @@ class SubscriptionTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('AIOS_CODEX_SMOKE') == '1', 'optional real Codex runtime check')
 class RealRuntimeTests(unittest.TestCase):
     def test_signed_out_runtime_and_thread_schema(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'XDG_CONFIG_HOME': temp}):
+        definitions = {'tools': [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)], 'warnings': []}
+        with (tempfile.TemporaryDirectory() as temp,
+              patch.dict(os.environ, {'XDG_CONFIG_HOME': temp}),
+              patch('aios.agent.toolhost.list_tools', return_value=definitions)):
+            session = agent.AgentSession(
+                [{'role': 'user', 'content': 'hello'}], 'signed-out.sock', catalog=[])
+            dynamic_tools = session.codex_tools()
+            self.assertIn('browser', [tool['name'] for tool in dynamic_tools])
+            self.assertIn('application', [tool['name'] for tool in dynamic_tools])
             with subscription.Server() as server:
                 self.assertIsNone(server.request('account/read').get('account'))
                 thread = server.request('thread/start', {
                     'ephemeral': True, 'environments': [], 'sandbox': 'read-only',
                     'approvalPolicy': 'never', 'baseInstructions': 'You are AIOS.',
-                    'dynamicTools': [{
-                        'type': 'function',
-                        'name': 'browser',
-                        'description': 'AIOS browser',
-                        'inputSchema': {
-                            'type': 'object',
-                            'properties': {'action': {'type': 'string'}},
-                            'required': ['action'],
-                            'additionalProperties': False,
-                        },
-                    }],
+                    'dynamicTools': dynamic_tools,
                 })['thread']['id']
                 server.request('thread/inject_items', {'threadId': thread, 'items': [
                     {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': 'hello'}]},

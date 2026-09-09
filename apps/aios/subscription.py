@@ -6,10 +6,12 @@ Only managed ChatGPT authentication is used; API keys are never forwarded.
 """
 import ctypes
 import fcntl
+import io
 import json
 import math
 import os
 import queue
+import select
 import signal
 import subprocess
 import tempfile
@@ -39,6 +41,10 @@ MAX_TOOL_CALLS = 32
 MAX_ARGUMENT_BYTES = 24 * 1024
 MAX_EVENT_WAIT = 120
 MAX_TOOL_RESULT_BYTES = 64 * 1024
+MAX_JSON_LINE_BYTES = 4 * 1024 * 1024
+MAX_SEND_WAIT = 2
+READER_JOIN_WAIT = 2
+RECEIVE_POLL_WAIT = 0.05
 
 
 def private_home():
@@ -72,6 +78,12 @@ class Server:
         self.events = queue.Queue(maxsize=1024)
         self.pending = deque()
         self.sequence = 0
+        self._send_lock = threading.Lock()
+        self._exit_lock = threading.Lock()
+        self._reader_thread = None
+        self._reader_done = threading.Event()
+        self._reader_fatal = threading.Event()
+        self._closed = False
 
     def __enter__(self):
         self.work = tempfile.TemporaryDirectory(prefix='aios-chatgpt-')
@@ -85,16 +97,25 @@ class Server:
                     'mcp_servers': {}, 'analytics.enabled': False,
                     'tools.update_plan.enabled': False, 'tools.experimental_request_user_input.enabled': False}
         settings.update({'features.' + name: False for name in DISABLED_FEATURES})
-        settings['features.skip_host_skill_discovery'] = True
+        settings['skip_host_skill_discovery'] = True
         for key, value in settings.items():
             # JSON scalar values are also valid TOML values; an empty table is {}.
             args.extend(['-c', key + '=' + json.dumps(value)])
         parent = os.getpid()
         try:
-            self.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                            stderr=subprocess.DEVNULL, env=env, cwd=self.work.name,
-                                            preexec_fn=lambda: _parent_guard(parent))
-            threading.Thread(target=self._read, daemon=True).start()
+            options = {
+                'stdin': subprocess.PIPE, 'stdout': subprocess.PIPE,
+                'stderr': subprocess.DEVNULL, 'env': env, 'cwd': self.work.name,
+                'bufsize': 0,
+            }
+            if os.name == 'posix':
+                options['preexec_fn'] = lambda: _parent_guard(parent)
+            self.process = subprocess.Popen(args, **options)
+            if os.name == 'posix':
+                os.set_blocking(self.process.stdin.fileno(), False)
+            self.process.stdout = io.BufferedReader(self.process.stdout)
+            self._reader_thread = threading.Thread(target=self._read, daemon=True)
+            self._reader_thread.start()
             self.request('initialize', {'clientInfo': {'name': 'aios', 'version': '1.0.0'},
                                         'capabilities': {'experimentalApi': True}})
             self.send({'method': 'initialized', 'params': {}})
@@ -107,51 +128,204 @@ class Server:
             raise
 
     def __exit__(self, *_):
-        if self.process:
-            if self.process.poll() is None:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
-                    self.process.wait()
-            self.process.stdin.close()
-            self.process.stdout.close()
-        if self.work:
-            self.work.cleanup()
+        with self._exit_lock:
+            if self._closed:
+                return
+            self._closed = True
+            process = self.process
+            work = self.work
+            try:
+                if process:
+                    try:
+                        running = process.poll() is None
+                    except OSError:
+                        running = False
+                    if running:
+                        try:
+                            process.terminate()
+                        except OSError:
+                            pass
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                process.kill()
+                            except OSError:
+                                pass
+                            try:
+                                process.wait(timeout=2)
+                            except (OSError, subprocess.TimeoutExpired):
+                                pass
+                        except OSError:
+                            pass
+                    if self._reader_thread is not None:
+                        self._reader_thread.join(timeout=READER_JOIN_WAIT)
+                    for stream in (getattr(process, 'stdin', None),
+                                   getattr(process, 'stdout', None)):
+                        if stream is not None:
+                            try:
+                                stream.close()
+                            except OSError:
+                                pass
+            finally:
+                self.process = None
+                self.work = None
+                if work:
+                    try:
+                        work.cleanup()
+                    except OSError:
+                        pass
 
     def _read(self):
+        fatal = False
         try:
+            process = self.process
+            if process is None or process.stdout is None:
+                fatal = True
+                return
             while True:
-                line = self.process.stdout.readline(4 * 1024 * 1024 + 1)
-                if not line or len(line) > 4 * 1024 * 1024:
+                line = process.stdout.readline(MAX_JSON_LINE_BYTES + 1)
+                if not line:
                     break
-                value = json.loads(line)
+                if len(line) > MAX_JSON_LINE_BYTES:
+                    fatal = True
+                    break
+                try:
+                    value = json.loads(line)
+                except (TypeError, ValueError):
+                    fatal = True
+                    break
                 if not isinstance(value, dict):
+                    fatal = True
                     break
-                self.events.put(value)
-        except (ValueError, OSError):
-            pass
+                try:
+                    self.events.put_nowait(value)
+                except queue.Full:
+                    fatal = True
+                    break
+        except OSError:
+            fatal = True
         finally:
-            self.events.put(None)
+            if fatal:
+                self._reader_fatal.set()
+            try:
+                self.events.put_nowait(None)
+            except queue.Full:
+                self._reader_fatal.set()
+            self._reader_done.set()
 
-    def send(self, value):
+    @staticmethod
+    def _send_error():
+        return RuntimeError('ChatGPT could not send this operation. Try again.')
+
+    @staticmethod
+    def _connection_error():
+        return RuntimeError('ChatGPT connection closed. Try again.')
+
+    @staticmethod
+    def _timeout_error():
+        return RuntimeError('ChatGPT operation timed out. Try again.')
+
+    def _send_posix(self, data, deadline, clock):
         try:
-            self.process.stdin.write((json.dumps(value) + '\n').encode())
-            self.process.stdin.flush()
-        except (BrokenPipeError, OSError):
-            raise RuntimeError('ChatGPT connection closed. Try again.') from None
+            stream = self.process.stdin
+            descriptor = stream.fileno()
+        except (AttributeError, OSError, ValueError):
+            raise self._connection_error() from None
+        offset = 0
+        while offset < len(data):
+            remaining = deadline - clock()
+            if remaining <= 0:
+                raise self._timeout_error()
+            try:
+                written = os.write(descriptor, data[offset:])
+            except BlockingIOError:
+                try:
+                    _, writable, _ = select.select([], [descriptor], [], remaining)
+                except (OSError, ValueError):
+                    raise self._connection_error() from None
+                if not writable:
+                    raise self._timeout_error()
+                continue
+            except InterruptedError:
+                continue
+            except (BrokenPipeError, OSError):
+                raise self._connection_error() from None
+            if written <= 0:
+                raise self._connection_error()
+            offset += written
+
+    def _send_fallback(self, data, deadline, clock):
+        done = threading.Event()
+        failed = []
+
+        def write():
+            try:
+                stream = self.process.stdin
+                offset = 0
+                while offset < len(data):
+                    written = stream.write(data[offset:])
+                    if not written:
+                        raise BrokenPipeError
+                    offset += written
+                stream.flush()
+            except (AttributeError, BrokenPipeError, OSError, ValueError):
+                failed.append(True)
+            finally:
+                done.set()
+
+        threading.Thread(target=write, daemon=True).start()
+        remaining = deadline - clock()
+        if remaining <= 0 or not done.wait(remaining):
+            raise self._timeout_error()
+        if failed:
+            raise self._connection_error()
+
+    def send(self, value, deadline=None, clock=time.monotonic):
+        try:
+            if not isinstance(value, dict):
+                raise TypeError
+            data = (json.dumps(
+                value, ensure_ascii=False, separators=(',', ':'),
+                allow_nan=False) + '\n').encode('utf-8')
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            raise self._send_error() from None
+        if len(data) > MAX_JSON_LINE_BYTES:
+            raise self._send_error()
+        if deadline is None:
+            deadline = clock() + MAX_SEND_WAIT
+        remaining = deadline - clock()
+        if remaining <= 0 or not self._send_lock.acquire(timeout=remaining):
+            raise self._timeout_error()
+        try:
+            if self._closed or self.process is None:
+                raise self._connection_error()
+            if os.name == 'posix':
+                self._send_posix(data, deadline, clock)
+            else:
+                self._send_fallback(data, deadline, clock)
+        finally:
+            self._send_lock.release()
 
     def receive(self, timeout=90):
         if timeout <= 0:
             raise RuntimeError('ChatGPT operation timed out. Try again.')
-        try:
-            value = self.events.get(timeout=timeout)
-        except queue.Empty:
-            raise RuntimeError('ChatGPT did not respond in time. Try again.') from None
-        if value is None:
-            raise RuntimeError('ChatGPT connection closed. Try again.')
-        return value
+        deadline = time.monotonic() + timeout
+        while True:
+            if self._reader_fatal.is_set():
+                raise self._connection_error()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('ChatGPT did not respond in time. Try again.')
+            try:
+                value = self.events.get(timeout=min(RECEIVE_POLL_WAIT, remaining))
+            except queue.Empty:
+                if self._reader_done.is_set():
+                    raise self._connection_error()
+                continue
+            if value is None:
+                raise self._connection_error()
+            return value
 
     def next_event(self, timeout=90):
         if timeout <= 0:
@@ -161,8 +335,11 @@ class Server:
     def request(self, method, params=None, timeout=30):
         self.sequence += 1
         request_id = self.sequence
-        self.send({'id': request_id, 'method': method, 'params': params or {}})
         deadline = time.monotonic() + timeout
+        self.send(
+            {'id': request_id, 'method': method, 'params': params or {}},
+            deadline=deadline,
+        )
         while True:
             value = self.receive(deadline - time.monotonic())
             if value.get('id') == request_id and 'method' not in value:
@@ -171,15 +348,16 @@ class Server:
                     raise RuntimeError('ChatGPT could not complete this operation. Check your connection, account, and selected model.')
                 return value.get('result', {})
             if 'id' in value and 'method' in value:
-                self.reject(value)
+                self.reject(value, deadline=deadline)
             else:
                 self.pending.append(value)
                 if len(self.pending) > 1024:
                     raise RuntimeError('ChatGPT sent too many pending events.')
 
-    def reject(self, value):
+    def reject(self, value, deadline=None, clock=time.monotonic):
         self.send({'id': value['id'], 'error': {'code': -32601,
-                   'message': 'This operation is not available in AIOS.'}})
+                   'message': 'This operation is not available in AIOS.'}},
+                  deadline=deadline, clock=clock)
 
 
 def account_info(server):
@@ -229,7 +407,7 @@ def account_action(action, emit, device=False):
                         completed = True
                         break
                     if 'id' in event:
-                        server.reject(event)
+                        server.reject(event, deadline=deadline)
             finally:
                 if not completed:
                     try:
@@ -260,7 +438,7 @@ def _chat_result(value, fallback):
         value = {'error': fallback}
         text = json.dumps(value, separators=(',', ':'))
     failed = isinstance(value, dict) and (
-        'error' in value or value.get('is_error') is True)
+        bool(value.get('error')) or value.get('is_error') is True)
     response = {
         'success': not failed,
         'contentItems': [{'type': 'inputText', 'text': text}],
@@ -313,6 +491,8 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
         if session is not None:
             tools = session.codex_tools()
             base_instructions = session.system_prompt() + '\n\n' + CHATGPT_ACTIVATION_NOTE
+            if len(base_instructions.encode('utf-8')) > agent.MAX_SYSTEM_PROMPT_BYTES:
+                raise RuntimeError('The configured agent prompt is too large.')
         elif browser_socket is not None:
             function = agent.TOOL['function']
             tools = [{
@@ -359,20 +539,20 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
                         or not isinstance(request_id, (str, int))):
                     raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
                 if not isinstance(method, str):
-                    server.reject(event)
+                    server.reject(event, deadline=deadline, clock=clock)
                     raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
                 if method != 'item/tool/call':
-                    server.reject(event)
+                    server.reject(event, deadline=deadline, clock=clock)
                     continue
                 if not isinstance(params, dict):
-                    server.reject(event)
+                    server.reject(event, deadline=deadline, clock=clock)
                     raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
                 event_thread = params.get('threadId')
                 if not isinstance(event_thread, str):
-                    server.reject(event)
+                    server.reject(event, deadline=deadline, clock=clock)
                     raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
                 if event_thread != thread:
-                    server.reject(event)
+                    server.reject(event, deadline=deadline, clock=clock)
                     continue
                 args = params.get('arguments')
                 count += 1
@@ -411,7 +591,12 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
                         remaining = _chat_remaining(deadline, clock)
                         result = session.dispatch(
                             tool, args, timeout=min(toolhost.SOCKET_TIMEOUT, remaining))
-                    except (ValueError, RuntimeError, OSError):
+                    except ValueError as error:
+                        result = {'error': agent._safe_error_text(
+                            str(error),
+                            'Tool action failed. Review the request and try again.',
+                        )}
+                    except (RuntimeError, OSError):
                         result = {
                             'error': 'Tool action failed. Review the request and try again.'}
                     response = _chat_result(
@@ -419,7 +604,11 @@ def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_
                 else:
                     raise RuntimeError(
                         'ChatGPT requested an invalid tool call or reached the action limit.')
-                server.send({'id': request_id, 'result': response})
+                server.send(
+                    {'id': request_id, 'result': response},
+                    deadline=deadline,
+                    clock=clock,
+                )
                 continue
 
             if not isinstance(method, str) or not isinstance(params, dict):
