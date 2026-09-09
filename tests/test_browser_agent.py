@@ -167,6 +167,53 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertNotIn("Never show this inactive body.", prompt)
 
     @patch("aios.agent.toolhost.list_tools")
+    def test_codex_tools_convert_schema_order_advertisement_and_are_independent(self, list_tools):
+        listed = [clone(BROWSER_TOOL), clone(APPLICATION_TOOL), host_tool("mcp_notes_lookup")]
+        list_tools.return_value = {"tools": listed, "warnings": []}
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+
+        converted = session.codex_tools()
+
+        self.assertEqual(
+            [tool["name"] for tool in converted],
+            ["activate_skill", "browser", "application", "mcp_notes_lookup"],
+        )
+        self.assertEqual(session.advertised_names, {tool["name"] for tool in converted})
+        self.assertEqual(converted[1], {
+            "type": "function",
+            "name": "browser",
+            "description": listed[0]["function"]["description"],
+            "inputSchema": listed[0]["function"]["parameters"],
+        })
+        converted[1]["inputSchema"]["properties"]["action"]["description"] = "changed"
+        self.assertNotEqual(
+            listed[0]["function"]["parameters"]["properties"]["action"].get("description"),
+            "changed",
+        )
+        self.assertNotEqual(
+            session.host_tools[0]["function"]["parameters"]["properties"]["action"].get("description"),
+            "changed",
+        )
+
+    @patch("aios.agent.toolhost.list_tools")
+    def test_codex_tools_share_count_and_byte_caps_with_openai_tools(self, list_tools):
+        list_tools.return_value = {
+            "tools": [host_tool(f"tool-{index}") for index in range(toolhost.MAX_TOOLS)],
+            "warnings": [],
+        }
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+        converted = session.codex_tools()
+        self.assertEqual(len(converted), 64)
+        self.assertEqual(converted[0]["name"], "activate_skill")
+        self.assertEqual(converted[-1]["name"], f"tool-{agent.MAX_HOST_TOOLS - 1}")
+
+        session.host_tools = [host_tool("large", description="x" * 500)]
+        with patch.object(agent, "MAX_TOOLS_BYTES", 100), self.assertRaisesRegex(
+            RuntimeError, "tool definitions"
+        ):
+            session.codex_tools()
+
+    @patch("aios.agent.toolhost.list_tools")
     def test_explicit_notes_and_model_activation_recompute_tools(self, list_tools):
         list_tools.return_value = {"tools": [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)], "warnings": []}
         catalog = [
@@ -457,17 +504,13 @@ class BrowserAgentTests(unittest.TestCase):
                 agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
         browser_call.assert_not_called()
 
-    @patch("aios.agent.core.load_config", return_value={"mode": "chatgpt", "agent_mode": "current"})
-    def test_select_provider_and_direct_chatgpt_error(self, _load_config):
+    def test_select_provider_matrix_includes_chatgpt(self):
         current_local = {"mode": "local", "agent_mode": "remote", "agent_url": "https://agent/v1", "agent_model": "agent"}
         current_remote = {"mode": "remote", "agent_mode": "current"}
         current_chatgpt = {"mode": "chatgpt", "agent_mode": "current"}
         self.assertEqual(agent.select_provider(SimpleNamespace(remote_preferred=False), current_local), ("local", "current"))
         self.assertEqual(agent.select_provider(SimpleNamespace(remote_preferred=True), current_remote), ("remote", "current"))
         self.assertEqual(agent.select_provider(SimpleNamespace(remote_preferred=True), current_chatgpt), ("chatgpt", None))
-        with self.assertRaisesRegex(RuntimeError, "ChatGPT.*not yet available") as error:
-            list(agent.chat([{"role": "user", "content": "hello"}], "browser.sock"))
-        self.assertNotIn("Task", str(error.exception))
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
@@ -512,7 +555,7 @@ class BrowserAgentTests(unittest.TestCase):
             self.assertNotIn("secret", str(error.exception))
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
-    def test_chat_routes_current_and_agent_profiles_explicitly(self, _list_tools):
+    def test_chat_routes_current_agent_and_chatgpt_profiles_explicitly(self, _list_tools):
         configs = [
             {
                 "mode": "remote",
@@ -538,22 +581,53 @@ class BrowserAgentTests(unittest.TestCase):
                 "mode": "remote",
                 "agent_mode": "chatgpt",
             },
+            {
+                "mode": "chatgpt",
+                "agent_mode": "current",
+            },
         ]
         fake_sessions = [
             SimpleNamespace(remote_preferred=False),
             SimpleNamespace(remote_preferred=True),
             SimpleNamespace(remote_preferred=True),
+            SimpleNamespace(remote_preferred=False),
         ]
         with patch("aios.agent.core.load_config", side_effect=configs), patch(
             "aios.agent.AgentSession", side_effect=fake_sessions
-        ), patch("aios.agent.openai_chat", side_effect=[iter(()), iter(())]) as openai:
+        ), patch("aios.agent.openai_chat", side_effect=[iter(()), iter(())]) as openai, patch(
+            "aios.subscription.chat", side_effect=[iter([{"type": "token", "text": "subscription"}]), iter(())]
+        ) as subscription_chat:
             self.assertEqual(list(agent.chat([{"role": "user", "content": "ordinary"}], "tools.sock")), [])
             self.assertEqual(list(agent.chat([{"role": "user", "content": "preferred"}], "tools.sock")), [])
-            with self.assertRaisesRegex(RuntimeError, "not yet available"):
-                list(agent.chat([{"role": "user", "content": "subscription"}], "tools.sock"))
+            self.assertEqual(
+                list(agent.chat([{"role": "user", "content": "preferred subscription"}], "tools.sock")),
+                [{"type": "token", "text": "subscription"}],
+            )
+            self.assertEqual(list(agent.chat([{"role": "user", "content": "base subscription"}], "tools.sock")), [])
         self.assertEqual(openai.call_args_list[0].args[1], "current")
         self.assertEqual(openai.call_args_list[1].args[1], "agent")
         self.assertEqual(openai.call_count, 2)
+        self.assertEqual(subscription_chat.call_count, 2)
+        self.assertIs(subscription_chat.call_args_list[0].kwargs["session"], fake_sessions[2])
+        self.assertIs(subscription_chat.call_args_list[1].kwargs["session"], fake_sessions[3])
+
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
+    def test_base_chatgpt_remote_agent_override_remains_authoritative(self, _list_tools):
+        session = SimpleNamespace(remote_preferred=True)
+        config = {
+            "mode": "chatgpt",
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent",
+        }
+        with patch("aios.agent.AgentSession", return_value=session), patch(
+            "aios.agent.core.load_config", return_value=config
+        ), patch("aios.agent.openai_chat", return_value=iter(())) as openai, patch(
+            "aios.subscription.chat"
+        ) as subscription_chat:
+            self.assertEqual(list(agent.chat([{"role": "user", "content": "calculator"}], "tools.sock")), [])
+        openai.assert_called_once_with(session, "agent")
+        subscription_chat.assert_not_called()
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [], "warnings": []})
     def test_openai_agent_profile_uses_agent_model_and_request_profile(self, _list_tools):

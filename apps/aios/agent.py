@@ -37,6 +37,7 @@ ACTIVATE_TOOL = {
 
 MAX_ACTIVE_SKILLS = 3
 MAX_HOST_TOOLS = 63
+MAX_CODEX_TOOLS = 64
 MAX_TOTAL_WARNINGS = 16
 MAX_WARNING_LENGTH = 300
 MAX_CALLS_PER_ROUND = 4
@@ -305,6 +306,27 @@ class AgentSession:
         self.advertised_names = {tool["function"]["name"] for tool in tools}
         return tools
 
+    def codex_tools(self) -> list[dict[str, Any]]:
+        tools = self.tools()
+        converted = [
+            {
+                "type": "function",
+                "name": tool["function"]["name"],
+                "description": tool["function"]["description"],
+                "inputSchema": tool["function"]["parameters"],
+            }
+            for tool in tools
+        ]
+        if len(converted) > MAX_CODEX_TOOLS:
+            raise RuntimeError("The configured tool definitions are invalid.")
+        try:
+            encoded = _json_bytes(converted)
+        except (TypeError, ValueError, RecursionError):
+            raise RuntimeError("The configured tool definitions are invalid.") from None
+        if len(encoded) > MAX_TOOLS_BYTES:
+            raise RuntimeError("The configured tool definitions are too large.")
+        return json.loads(encoded)
+
     def dispatch(self, name, arguments, timeout=None):
         if name not in self.advertised_names:
             raise ValueError("The model requested an unavailable tool.")
@@ -547,5 +569,7 @@ def chat(messages, tool_socket):
     session = AgentSession(messages, tool_socket)
     provider, profile = select_provider(session, core.load_config())
     if provider == "chatgpt":
-        raise RuntimeError("ChatGPT agent tools are not yet available. Choose the current or a remote agent model.")
+        from .subscription import chat as subscription_chat
+        yield from subscription_chat(messages, session=session)
+        return
     yield from openai_chat(session, profile)

@@ -7,6 +7,7 @@ Only managed ChatGPT authentication is used; API keys are never forwarded.
 import ctypes
 import fcntl
 import json
+import math
 import os
 import queue
 import signal
@@ -19,6 +20,7 @@ from contextlib import contextmanager
 from urllib.parse import urlsplit
 
 from . import core
+from .agent import MAX_AGENT_SECONDS
 
 DISABLED_FEATURES = (
     'shell_tool', 'unified_exec', 'apply_patch_freeform', 'apps', 'plugins',
@@ -29,6 +31,14 @@ DISABLED_FEATURES = (
     'skill_search', 'tool_suggest', 'workspace_dependencies', 'deferred_executor',
     'goals', 'sleep_tool', 'token_budget', 'default_mode_request_user_input',
 )
+CHATGPT_ACTIVATION_NOTE = (
+    "ChatGPT activation timing: activate_skill changes tool permissions immediately, "
+    "but newly activated skill instructions take effect on the next user turn."
+)
+MAX_TOOL_CALLS = 32
+MAX_ARGUMENT_BYTES = 24 * 1024
+MAX_EVENT_WAIT = 120
+MAX_TOOL_RESULT_BYTES = 64 * 1024
 
 
 def private_home():
@@ -233,62 +243,213 @@ def account_action(action, emit, device=False):
         emit('subscription-account', account=account_info(server))
 
 
-def chat(messages, browser_socket=None):
-    from .agent import POLICY, TOOL
+def _chat_remaining(deadline, clock):
+    remaining = deadline - clock()
+    if remaining <= 0:
+        raise RuntimeError('ChatGPT operation timed out. Try again.')
+    return remaining
+
+
+def _chat_result(value, fallback):
+    try:
+        text = json.dumps(
+            value, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+        if len(text.encode('utf-8')) > MAX_TOOL_RESULT_BYTES:
+            raise ValueError
+    except (TypeError, ValueError, RecursionError):
+        value = {'error': fallback}
+        text = json.dumps(value, separators=(',', ':'))
+    failed = isinstance(value, dict) and (
+        'error' in value or value.get('is_error') is True)
+    response = {
+        'success': not failed,
+        'contentItems': [{'type': 'inputText', 'text': text}],
+    }
+    if (not isinstance(response['success'], bool)
+            or response['contentItems'][0].get('type') != 'inputText'
+            or not isinstance(response['contentItems'][0].get('text'), str)):
+        raise RuntimeError('ChatGPT could not process a tool result.')
+    return response
+
+
+def _chat_rpc_result(value, kind):
+    if kind == 'thread':
+        item = value.get('thread') if isinstance(value, dict) else None
+    else:
+        item = value.get('turn') if isinstance(value, dict) else None
+    identifier = item.get('id') if isinstance(item, dict) else None
+    if not isinstance(identifier, str) or not identifier:
+        raise RuntimeError('ChatGPT returned an invalid response. Try again.')
+    return identifier
+
+
+def chat(messages, browser_socket=None, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
+         clock=time.monotonic):
+    from . import agent, toolhost
     from .browser import ACTIONS, call
+
+    if browser_socket is not None and session is not None:
+        raise ValueError('Supply either a browser socket or an agent session, not both.')
     if (not messages or messages[-1].get('role') != 'user' or
             any(m.get('role') not in ('user', 'assistant', 'system') or
                 not isinstance(m.get('content'), str) for m in messages)):
         raise ValueError('Invalid conversation.')
+    try:
+        duration = float(turn_timeout)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError('Choose a valid ChatGPT turn timeout.') from None
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError('Choose a valid ChatGPT turn timeout.')
+    deadline = clock() + duration
+
     with account_lock(), Server() as server:
-        account = server.request('account/read').get('account')
-        if not account or account.get('type') != 'chatgpt':
+        account_result = server.request(
+            'account/read', timeout=min(30, _chat_remaining(deadline, clock)))
+        account = account_result.get('account') if isinstance(account_result, dict) else None
+        if not isinstance(account, dict) or account.get('type') != 'chatgpt':
             raise RuntimeError('Sign in with ChatGPT in AI models settings first.')
         config = core.load_config()
         model = config.get('subscription_model') or None
-        function = TOOL['function']
-        tools = [{'type': 'function', 'name': 'browser', 'description': function['description'],
-                  'inputSchema': function['parameters']}] if browser_socket else []
-        thread = server.request('thread/start', {
+        if session is not None:
+            tools = session.codex_tools()
+            base_instructions = session.system_prompt() + '\n\n' + CHATGPT_ACTIVATION_NOTE
+        elif browser_socket is not None:
+            function = agent.TOOL['function']
+            tools = [{
+                'type': 'function',
+                'name': 'browser',
+                'description': function['description'],
+                'inputSchema': function['parameters'],
+            }]
+            base_instructions = agent.POLICY
+        else:
+            tools = []
+            base_instructions = agent.POLICY
+        started = server.request('thread/start', {
             'model': model, 'modelProvider': 'openai', 'ephemeral': True,
             'cwd': server.work.name, 'sandbox': 'read-only', 'approvalPolicy': 'never',
-            'baseInstructions': POLICY, 'environments': [], 'dynamicTools': tools,
-        })['thread']['id']
+            'baseInstructions': base_instructions, 'environments': [], 'dynamicTools': tools,
+        }, timeout=min(30, _chat_remaining(deadline, clock)))
+        thread = _chat_rpc_result(started, 'thread')
         if len(messages) > 1:
             history = [{'type': 'message', 'role': m['role'], 'content': [
                 {'type': 'output_text' if m['role'] == 'assistant' else 'input_text',
                  'text': m['content']}]} for m in messages[:-1]]
-            server.request('thread/inject_items', {'threadId': thread, 'items': history})
-        server.request('turn/start', {'threadId': thread, 'input': [
-            {'type': 'text', 'text': messages[-1]['content']}]})
+            server.request(
+                'thread/inject_items',
+                {'threadId': thread, 'items': history},
+                timeout=min(30, _chat_remaining(deadline, clock)),
+            )
+        turn_result = server.request('turn/start', {'threadId': thread, 'input': [
+            {'type': 'text', 'text': messages[-1]['content']}]},
+            timeout=min(30, _chat_remaining(deadline, clock)))
+        _chat_rpc_result(turn_result, 'turn')
         count = 0
-        deadline = time.monotonic() + 1800
+        content_bytes = 0
         while True:
-            event = server.next_event(min(120, deadline - time.monotonic()))
-            method, params = event.get('method'), event.get('params', {})
+            event = server.next_event(min(
+                MAX_EVENT_WAIT, _chat_remaining(deadline, clock)))
+            if not isinstance(event, dict):
+                raise RuntimeError('ChatGPT returned an invalid event. Try again.')
+            method = event.get('method')
+            params = event.get('params', {})
             if 'id' in event:
-                if method != 'item/tool/call' or params.get('threadId') != thread:
+                request_id = event.get('id')
+                if (isinstance(request_id, bool)
+                        or not isinstance(request_id, (str, int))):
+                    raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
+                if not isinstance(method, str):
+                    server.reject(event)
+                    raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
+                if method != 'item/tool/call':
+                    server.reject(event)
+                    continue
+                if not isinstance(params, dict):
+                    server.reject(event)
+                    raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
+                event_thread = params.get('threadId')
+                if not isinstance(event_thread, str):
+                    server.reject(event)
+                    raise RuntimeError('ChatGPT returned an invalid tool request. Try again.')
+                if event_thread != thread:
                     server.reject(event)
                     continue
                 args = params.get('arguments')
                 count += 1
-                if (params.get('tool') != 'browser' or not browser_socket or count > 32
-                        or not isinstance(args, dict) or args.get('action') not in ACTIONS
-                        or len(json.dumps(args)) > 24000):
-                    raise RuntimeError('ChatGPT requested an unsupported browser action or reached the action limit.')
-                yield {'type': 'progress', 'text': 'Browser · ' + args['action']}
+                tool = params.get('tool')
                 try:
-                    result = call(browser_socket, args)
-                except (ValueError, RuntimeError, OSError):
-                    result = {'error': 'Browser action failed. Take a new snapshot before trying again.'}
-                server.send({'id': event['id'], 'result': {'success': 'error' not in result,
-                             'contentItems': [{'type': 'inputText', 'text': json.dumps(result)}]}})
-            elif params.get('threadId') == thread:
+                    encoded_args = json.dumps(
+                        args, ensure_ascii=False, separators=(',', ':'),
+                        allow_nan=False).encode('utf-8')
+                except (TypeError, ValueError, RecursionError):
+                    encoded_args = b''
+                if (count > MAX_TOOL_CALLS or not isinstance(tool, str) or not tool
+                        or not isinstance(args, dict) or not encoded_args
+                        or len(encoded_args) > MAX_ARGUMENT_BYTES):
+                    if browser_socket is not None:
+                        raise RuntimeError(
+                            'ChatGPT requested an unsupported browser action or reached the action limit.')
+                    raise RuntimeError(
+                        'ChatGPT requested an invalid tool call or reached the action limit.')
+                if browser_socket is not None:
+                    if tool != 'browser' or args.get('action') not in ACTIONS:
+                        raise RuntimeError(
+                            'ChatGPT requested an unsupported browser action or reached the action limit.')
+                    yield {'type': 'progress', 'text': 'Browser · ' + args['action']}
+                    try:
+                        result = call(browser_socket, args)
+                    except (ValueError, RuntimeError, OSError):
+                        result = {
+                            'error': 'Browser action failed. Take a new snapshot before trying again.'}
+                    response = _chat_result(
+                        result,
+                        'Browser action failed. Take a new snapshot before trying again.',
+                    )
+                elif session is not None:
+                    yield {'type': 'progress', 'text': session.progress(tool, args)}
+                    try:
+                        remaining = _chat_remaining(deadline, clock)
+                        result = session.dispatch(
+                            tool, args, timeout=min(toolhost.SOCKET_TIMEOUT, remaining))
+                    except (ValueError, RuntimeError, OSError):
+                        result = {
+                            'error': 'Tool action failed. Review the request and try again.'}
+                    response = _chat_result(
+                        result, 'Tool action failed. Review the request and try again.')
+                else:
+                    raise RuntimeError(
+                        'ChatGPT requested an invalid tool call or reached the action limit.')
+                server.send({'id': request_id, 'result': response})
+                continue
+
+            if not isinstance(method, str) or not isinstance(params, dict):
+                raise RuntimeError('ChatGPT returned an invalid event. Try again.')
+            if 'threadId' not in params:
+                continue
+            event_thread = params.get('threadId')
+            if not isinstance(event_thread, str):
+                raise RuntimeError('ChatGPT returned an invalid event. Try again.')
+            if event_thread == thread:
                 if method == 'item/agentMessage/delta':
-                    yield {'type': 'token', 'text': params['delta']}
+                    delta = params.get('delta')
+                    if not isinstance(delta, str):
+                        raise RuntimeError('ChatGPT returned an invalid reply. Try again.')
+                    content_bytes += len(delta.encode('utf-8'))
+                    if content_bytes > agent.MAX_CONTENT_BYTES:
+                        raise RuntimeError('ChatGPT reply was too large. Try again.')
+                    yield {'type': 'token', 'text': delta}
                 elif method == 'turn/completed':
-                    if params['turn']['status'] != 'completed':
+                    turn = params.get('turn')
+                    status = turn.get('status') if isinstance(turn, dict) else None
+                    if not isinstance(status, str):
+                        raise RuntimeError('ChatGPT returned an invalid completion. Try again.')
+                    if status != 'completed':
                         raise RuntimeError('ChatGPT could not finish the reply. Check your subscription limits or try again.')
                     return
-                elif method == 'error' and not params.get('willRetry'):
+                elif method == 'error':
+                    will_retry = params.get('willRetry', False)
+                    if not isinstance(will_retry, bool):
+                        raise RuntimeError('ChatGPT returned an invalid event. Try again.')
+                    if will_retry:
+                        continue
                     raise RuntimeError('ChatGPT could not finish the reply. Check your account and usage limits.')
