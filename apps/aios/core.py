@@ -35,7 +35,7 @@ def write_json(path, value):
 
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": False, "theme_color": "blue",
+                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": True, "theme_color": "blue",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
                 "speech_model_path": ""}
