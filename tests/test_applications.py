@@ -3,9 +3,12 @@ import contextlib
 import io
 import os
 import shutil
+import signal
 import stat
+import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -613,6 +616,132 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertTrue(state["server"].shutdown_called)
         self.assertTrue(state["server"].server_close_called)
         self.assertTrue(state["server"].joined.is_set())
+
+    def test_main_returns_sigterm_code_and_runs_cleanup_without_traceback(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Signal", "request": "Build a signal page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>signal</p>"})
+        store.publish({"id": created["id"], "summary": "Signal summary", "keywords": ["signal"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        cleanup = {"profile": False, "pids": []}
+        installed = {}
+
+        class FakeProfile:
+            name = str(Path(self.tmp.name) / "profile")
+
+            def cleanup(self_nonlocal):
+                cleanup["profile"] = True
+
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+        previous_sighup = signal.getsignal(signal.SIGHUP) if hasattr(signal, "SIGHUP") else None
+        proc = mock.Mock()
+        proc.pid = 8765
+        proc.poll.return_value = None
+
+        def wait_side_effect(timeout=None):
+            if timeout is None:
+                installed["sigterm"] = signal.getsignal(signal.SIGTERM)
+                if hasattr(signal, "SIGHUP"):
+                    installed["sighup"] = signal.getsignal(signal.SIGHUP)
+                installed["sigterm"](signal.SIGTERM, None)
+            return 0
+
+        proc.wait.side_effect = wait_side_effect
+
+        stderr = io.StringIO()
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.tempfile, "TemporaryDirectory", return_value=FakeProfile()), \
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
+            mock.patch.object(app_runner, "_terminate_process", side_effect=lambda process: cleanup["pids"].append(process.pid), create=True), \
+            contextlib.redirect_stderr(stderr):
+            exit_code = app_runner.main([str(folder)])
+
+        self.assertEqual(exit_code, 143)
+        self.assertIn("sigterm", installed)
+        self.assertIsNot(installed["sigterm"], previous_sigterm)
+        self.assertTrue(callable(installed["sigterm"]))
+        if hasattr(signal, "SIGHUP"):
+            self.assertIn("sighup", installed)
+            self.assertIsNot(installed["sighup"], previous_sighup)
+            self.assertTrue(callable(installed["sighup"]))
+            self.assertIs(signal.getsignal(signal.SIGHUP), previous_sighup)
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous_sigterm)
+        self.assertEqual(cleanup["pids"], [8765])
+        self.assertTrue(cleanup["profile"])
+        self.assertIsNotNone(state["server"])
+        self.assertTrue(state["server"].shutdown_called)
+        self.assertTrue(state["server"].server_close_called)
+        self.assertTrue(state["server"].joined.is_set())
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertNotIn(str(folder), stderr.getvalue())
+
+    def test_run_terminates_chromium_process_group_after_cleanup_timeout(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Group", "request": "Build a group page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>group</p>"})
+        store.publish({"id": created["id"], "summary": "Group summary", "keywords": ["group"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        proc = mock.Mock()
+        proc.pid = 2468
+        proc.poll.return_value = None
+        cleanup_timeouts = []
+
+        def wait_side_effect(timeout=None):
+            if timeout is None:
+                return 0
+            cleanup_timeouts.append(timeout)
+            if len(cleanup_timeouts) == 1:
+                raise subprocess.TimeoutExpired(cmd="chromium", timeout=timeout)
+            return 0
+
+        proc.wait.side_effect = wait_side_effect
+        fake_os = types.SimpleNamespace(killpg=mock.Mock())
+
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
+            mock.patch.object(app_runner, "os", fake_os, create=True):
+            app_runner.run(folder)
+
+        self.assertEqual(fake_os.killpg.mock_calls, [
+            mock.call(proc.pid, signal.SIGTERM),
+            mock.call(proc.pid, signal.SIGKILL),
+        ])
+        self.assertEqual(len(cleanup_timeouts), 2)
+        proc.terminate.assert_not_called()
+        proc.kill.assert_not_called()
+
+    def test_run_skips_signals_when_chromium_already_exited(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Exited", "request": "Build an exited page"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>exited</p>"})
+        store.publish({"id": created["id"], "summary": "Exited summary", "keywords": ["exited"]})
+        folder = self.root / created["id"]
+
+        state, server_class = self._fake_server_class()
+        proc = mock.Mock()
+        proc.pid = 1357
+        proc.poll.return_value = 0
+        proc.wait.return_value = 0
+        fake_os = types.SimpleNamespace(killpg=mock.Mock())
+
+        with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
+            mock.patch.object(app_runner, "os", fake_os, create=True):
+            app_runner.run(folder)
+
+        fake_os.killpg.assert_not_called()
+        proc.terminate.assert_not_called()
+        proc.kill.assert_not_called()
 
     def test_main_requires_exactly_one_folder_argument(self):
         from aios import app_runner

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -43,6 +46,88 @@ _APP_CSP = (
 )
 _GENERIC_LOAD_ERROR = "Choose a published application directory."
 _GENERIC_RUN_ERROR = "Application runner failed."
+_CLEANUP_WAIT_SECONDS = 5
+
+
+class _TerminationSignal(BaseException):
+    def __init__(self, signum: int):
+        super().__init__(signum)
+        self.exit_code = 128 + signum
+
+
+def _raise_termination(signum: int, _frame: object) -> None:
+    raise _TerminationSignal(signum)
+
+
+def _termination_signals() -> tuple[int, ...]:
+    signals = [signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+    return tuple(signals)
+
+
+def _install_termination_handlers() -> dict[int, object]:
+    previous_handlers: dict[int, object] = {}
+    for signum in _termination_signals():
+        previous_handlers[signum] = signal.getsignal(signum)
+        signal.signal(signum, _raise_termination)
+    return previous_handlers
+
+
+def _restore_termination_handlers(previous_handlers: dict[int, object]) -> None:
+    for signum, handler in previous_handlers.items():
+        signal.signal(signum, handler)
+
+
+def _wait_for_process_exit(process: subprocess.Popen[bytes] | subprocess.Popen[str] | object) -> bool:
+    try:
+        process.wait(timeout=_CLEANUP_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return False
+    except (OSError, ProcessLookupError):
+        return True
+    return True
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes] | subprocess.Popen[str] | object) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return
+        raise
+    if _wait_for_process_exit(process):
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return
+        raise
+    _wait_for_process_exit(process)
+
+
+def _terminate_process(process: subprocess.Popen[bytes] | subprocess.Popen[str] | object) -> None:
+    if process.poll() is not None:
+        return
+    if callable(getattr(os, "killpg", None)):
+        try:
+            _terminate_process_group(process)
+            return
+        except OSError:
+            pass
+    try:
+        process.terminate()
+        if _wait_for_process_exit(process):
+            return
+        process.kill()
+        _wait_for_process_exit(process)
+    except Exception:
+        pass
 
 
 def _valid_published_manifest(folder: Path) -> dict[str, object]:
@@ -222,16 +307,8 @@ def run(folder: Path | str) -> None:
         )
         process.wait()
     finally:
-        if process is not None and process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=5)
-            except Exception:
-                try:
-                    process.kill()
-                    process.wait(timeout=5)
-                except Exception:
-                    pass
+        if process is not None:
+            _terminate_process(process)
         if profile is not None:
             profile.cleanup()
         server.shutdown()
@@ -244,12 +321,20 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) != 1:
         print("Usage: python -m aios.app_runner FOLDER", file=sys.stderr)
         return 2
+    previous_handlers = _install_termination_handlers()
     try:
-        run(Path(args[0]))
-    except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
-        print(_GENERIC_RUN_ERROR, file=sys.stderr)
-        return 1
-    return 0
+        try:
+            run(Path(args[0]))
+        except _TerminationSignal as interrupted:
+            return interrupted.exit_code
+        except KeyboardInterrupt:
+            return 130
+        except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+            print(_GENERIC_RUN_ERROR, file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        _restore_termination_handlers(previous_handlers)
 
 
 if __name__ == "__main__":
