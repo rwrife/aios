@@ -10,13 +10,14 @@ Window {
     required property var session
     required property var theme
     property var profileControl: null
+    property bool ownsProfileControl: false
     title: "AIOS Chat"
     visible: true
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
     width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
     x: (Screen.width - width)/2; y: (Screen.height - height)/2
     color: theme.panel
-    onClosing: { session.closeSession(); Qt.callLater(chat.destroy) }
+    onClosing: { session.closeSession(); if (ownsProfileControl && profileControl) profileControl.dispose(); Qt.callLater(chat.destroy) }
     Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
     function submit() {
         if (session.busy || session.recording) return;
@@ -54,7 +55,7 @@ Window {
             Column {
                 visible: session.messages.length === 0; anchors.centerIn: parent; width: parent.width - 24; spacing: 18
                 Text { width: parent.width; text: userProfile.greeting; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
-                Button { visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.openPicker() }
+                Button { visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.createAccount() }
             }
             ListView {
                 id: conversation; objectName: "conversation"

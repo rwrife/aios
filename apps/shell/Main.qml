@@ -5,15 +5,18 @@ import QtQuick.Window
 
 Window {
     id: desktop
-    visible: true
+    property bool chatPreview: Qt.application.arguments.indexOf("--chat") >= 0
+    property bool windowed: chatPreview || Qt.application.arguments.indexOf("--windowed") >= 0
+    visible: !chatPreview
     title: "AIOS Desktop"
-    width: Screen.width; height: Screen.height
-    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
+    height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
+    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
     Theme { id: theme; selected: backend.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme, profileControl: sessionControl}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme, profileControl: sessionControl.chatProfile(), ownsProfileControl: true}); if (window) { window.show(); window.raise(); window.requestActivate() } }
     property var settingsWindow: null
     function openSettings() {
         if (sessionControl.enabled) return

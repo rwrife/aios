@@ -195,10 +195,20 @@ pixels, generates a metadata-free PNG and stores it with the encrypted identity
 record. No image path, remote URL, full-resolution image or EXIF is retained.
 Camera hardware verification remains paused.
 
-The ordinary desktop chat still uses legacy workers. It shows the guest bubble
-but cannot unlock protected accounts there; the picker explains this limitation.
-Broker-owned chat workers and independent ownership for multiple simultaneous
-chat windows remain required before enabling account switching in those windows.
+The ordinary desktop chat uses a separate local greeting-profile store. Clicking
+its bubble opens name-and-PIN entry directly, with saved names available in a
+selector. Creating or signing into a profile immediately updates that window's
+greeting. Each window has its own selected greeting profile. PINs are salted
+scrypt verifiers with persistent retry limits; they are never stored as plaintext.
+These profiles personalize the legacy chat; they do not grant broker capabilities,
+encrypt chat history or unlock protected workspace identities. Broker-owned chat
+workers remain required for protected multi-user conversation ownership.
+
+For a WSLg preview, run `sh scripts/preview-chat.sh`. Keep that foreground process
+running so WSL does not close the GUI connection. The preview opens only a normal
+chat window, saves local profiles in the `aios-chat-preview-data` Docker volume,
+and caches its build separately. `--windowed` also opens a bounded desktop window;
+normal appliance boot retains its full-screen desktop.
 
 Enrollment now writes an encrypted intent before creating storage. After the
 principal mapping is committed, restart completes the identity record and name

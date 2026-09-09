@@ -11,9 +11,11 @@ Item {
     readonly property string name: profile.name || ""
     readonly property string greeting: name ? "Hello, " + name + ". How may I help you?" : "Welcome. Set up an account with a PIN to make this space yours."
     implicitWidth: 52; implicitHeight: 52
+    function createAccount() { enrollment.creating = true; enrollment.open(); }
     function openPicker() {
         if (control && control.personalAvailable) control.listProfiles()
-        picker.open()
+        if (control && control.greetingOnly) createAccount()
+        else picker.open()
     }
     Button {
         id: bubble; objectName: "userBubble"; anchors.fill: parent

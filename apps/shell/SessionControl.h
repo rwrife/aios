@@ -7,12 +7,14 @@
 #include <QJsonArray>
 #include <QTimer>
 #include "ProfilePhoto.h"
+#include <QProcess>
 
 // Broker UI has no link to the chat worker or model tool registry. Experimental
 // mode is explicit. The normal desktop retains its existing behavior.
 class SessionControl : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool enabled READ enabled CONSTANT)
+    Q_PROPERTY(bool greetingOnly READ greetingOnly CONSTANT)
     Q_PROPERTY(bool shield READ shield NOTIFY changed)
     Q_PROPERTY(bool simulator READ simulator NOTIFY changed)
     Q_PROPERTY(QString authority READ authority NOTIFY changed)
@@ -41,6 +43,9 @@ public:
         if (enabled()) timer.start();
     }
     bool enabled() const { return !path.isEmpty(); }
+    bool greetingOnly() const { return !enabled(); }
+    Q_INVOKABLE QObject *chatProfile() { return new SessionControl(this); }
+    Q_INVOKABLE void dispose() { deleteLater(); }
     bool shield() const { return m_shield; }
     bool simulator() const { return m_simulator; }
     QString authority() const { return m_authority; }
@@ -51,11 +56,11 @@ public:
     bool busy() const { return pendingEnrollment; }
     bool embeddedDisplay() const { return m_embedded; }
     bool secureInput() const { return m_secureInput; }
-    bool personalAvailable() const { return m_personalAvailable; }
+    bool personalAvailable() const { return greetingOnly() || m_personalAvailable; }
     QVariantMap profile() const { return m_profile; }
     QVariantList profiles() const { return m_profiles; }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
-    Q_INVOKABLE void takeProfilePhoto() { if (m_secureInput && m_personalAvailable) photoCapture.take(); }
+    Q_INVOKABLE void takeProfilePhoto() { if (m_secureInput && personalAvailable()) photoCapture.take(); }
     Q_INVOKABLE void setSecureInput(bool active) { m_secureInput = active; if (!active) photoCapture.cancel(); emit changed(); }
     QVariantMap challenge() const { return m_challenge; }
     Q_INVOKABLE void simulate(const QString &state) { if (m_simulator) demoState = state; }
@@ -90,7 +95,7 @@ public:
         call({{"action", "enroll_profile"}, {"name", name}, {"pin", pin}, {"consent", consent}, {"photo", photo}});
     }
     Q_INVOKABLE void unlock(const QString &name, const QString &pin) {
-        clearPersonal();
+        if (enabled()) clearPersonal();
         call({{"action", "activate_verified"}, {"owner", name}, {"pin", pin},
               {"title", QJsonValue::Null}, {"session", QJsonValue::Null}});
     }
@@ -160,7 +165,7 @@ private:
         clearPersonal();
     }
     void call(const QJsonObject &request) {
-        if (!enabled()) return;
+        if (!enabled()) { callGreeting(request); return; }
         const QString action = request.value("action").toString();
         if (pendingEnrollment) return;
         if (action == "enroll_manual" || action == "enroll_profile") { pendingEnrollment = true; emit changed(); }
@@ -251,5 +256,38 @@ private:
             socket->abort(); socket->deleteLater();
         });
         socket->connectToServer(path);
+    }
+    void callGreeting(const QJsonObject &request) {
+        if (pendingEnrollment) return;
+        const auto action = request.value("action").toString();
+        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified") return;
+        pendingEnrollment = true; m_error.clear(); emit changed();
+        auto process = new QProcess(this);
+        const auto epoch = generation;
+        connect(process, &QProcess::started, process, [process, request] {
+            process->write(QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n'); process->closeWriteChannel();
+        });
+        connect(process, &QProcess::readyReadStandardError, process, [process] { process->readAllStandardError(); });
+        connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError) {
+            m_error = "Could not open local profiles"; pendingEnrollment = false; emit changed(); process->deleteLater();
+        });
+        connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+                [this, process, epoch, action](int code, QProcess::ExitStatus) {
+            pendingEnrollment = false;
+            if (epoch == generation) {
+                const auto bytes = process->readAllStandardOutput();
+                const auto reply = bytes.size() <= 262144 ? QJsonDocument::fromJson(bytes).object() : QJsonObject();
+                if (code || !reply.value("ok").toBool()) m_error = reply.value("error").toString("Could not open local profiles");
+                else {
+                    const auto result = reply.value("result").toObject();
+                    if (action == "profiles") m_profiles = result.value("profiles").toArray().toVariantList();
+                    else { m_profile = result.value("profile").toObject().toVariantMap(); emit unlocked(); }
+                }
+                emit changed();
+            }
+            process->deleteLater();
+        });
+        QTimer::singleShot(5000, process, [process] { if (process->state() != QProcess::NotRunning) process->kill(); });
+        process->start("python3", {"-m", "aios.chat_profiles"});
     }
 };

@@ -22,6 +22,7 @@ TestCase {
         property bool busy: false
         property bool secureInput: false
         property bool personalAvailable: true
+        property bool greetingOnly: false
         property var profile: ({})
         property var profiles: [{id: "test-id", name: "Test profile"}]
         function listProfiles() {}
@@ -38,7 +39,10 @@ TestCase {
             if (name === "Test profile" && secret === "test-recovery-secret" && pin === "246802") recoveries++
         }
         function enroll(name, pin, consent) {
-            if (name === "Test profile" && pin === "123456" && consent) enrollments++
+            if (name === "Test profile" && pin === "123456" && consent) {
+                enrollments++
+                if (greetingOnly) { profile = {name: name}; unlocked() }
+            }
         }
         function cancelChallenge() { challenge = ({}) }
         function suspend() { shield = false }
@@ -48,6 +52,23 @@ TestCase {
     Component { id: statusComponent; IdentityStatus {} }
     Component { id: enrollmentComponent; EnrollmentFlow {} }
     Component { id: bubbleComponent; UserBubble {} }
+    function test_desktop_bubble_opens_name_pin_and_greets_after_create() {
+        control.greetingOnly = true
+        var bubble = bubbleComponent.createObject(test, {control: control})
+        bubble.openPicker()
+        var form = findChild(bubble, "bubbleEnrollment")
+        tryCompare(form, "opened", true)
+        waitForRendering(form.contentItem)
+        findChild(bubble, "profileName").text = "Test profile"
+        findChild(bubble, "enrollmentPin").text = "123456"
+        var submit = findChild(bubble, "profileSubmit")
+        tryCompare(submit, "enabled", true)
+        mouseClick(submit)
+        tryCompare(form, "opened", false)
+        compare(bubble.greeting, "Hello, Test profile. How may I help you?")
+        bubble.destroy()
+        control.greetingOnly = false; control.profile = {}
+    }
     function test_profile_bubble_greeting_and_fallback() {
         var bubble = bubbleComponent.createObject(test, {control: control})
         control.profile = {name: "Alice", detected: true, photo: ""}

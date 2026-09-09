@@ -10,7 +10,8 @@ Dialog {
     property string selectedProfile: ""
     property string photoRgb: ""
     property string photoPreview: ""
-    title: creating ? "Create a private profile" : recovering ? "Reset your PIN" : "Unlock your profile"
+    readonly property bool greetingOnly: control && control.greetingOnly === true
+    title: greetingOnly ? "Your name and PIN" : creating ? "Create a private profile" : recovering ? "Reset your PIN" : "Unlock your profile"
     modal: true; width: 440
     standardButtons: control.busy ? Dialog.NoButton : Dialog.Close
     closePolicy: control.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -29,9 +30,16 @@ Dialog {
         anchors.fill: parent; spacing: 10
         Label {
             Layout.fillWidth: true; wrapMode: Text.Wrap
-            text: "PIN access works without a camera and locks after two minutes. Biometric enrollment is separate."
+            text: dialog.greetingOnly ? "Create a profile for your greeting, or choose a saved name to sign in." : "PIN access works without a camera and locks after two minutes. Biometric enrollment is separate."
+        }
+        ComboBox {
+            visible: dialog.greetingOnly && control.profiles && control.profiles.length > 0
+            Layout.fillWidth: true; textRole: "name"; model: control.profiles || []
+            currentIndex: -1; displayText: currentIndex < 0 ? "Choose a saved profile…" : currentText
+            onActivated: { profileName.text = currentText; dialog.creating = false; pin.clear(); }
         }
         TextField { id: profileName; objectName: "profileName"; placeholderText: "Profile name"; maximumLength: 80; Layout.fillWidth: true }
+        Button { visible: dialog.greetingOnly && !dialog.creating; text: "Create a different profile"; onClicked: { dialog.creating = true; profileName.clear(); pin.clear(); } }
         RowLayout {
             visible: dialog.creating
             Image { source: dialog.photoPreview; cache: false; visible: source.toString().length > 0; Layout.preferredWidth: 64; Layout.preferredHeight: 64 }
@@ -40,7 +48,7 @@ Dialog {
         }
         Label { visible: dialog.creating; text: "Optional · Uses your camera once. Your photo appears on your user bubble."; Layout.fillWidth: true; wrapMode: Text.Wrap }
         CheckBox {
-            objectName: "recoverProfile"; visible: !dialog.creating
+            objectName: "recoverProfile"; visible: !dialog.creating && !dialog.greetingOnly
             text: "I have a recovery code"; checked: dialog.recovering
             onToggled: { dialog.recovering = checked; pin.clear(); recoveryInput.clear(); recovery.clear(); }
         }
@@ -57,22 +65,23 @@ Dialog {
             Layout.fillWidth: true
         }
         CheckBox {
-            id: consent; objectName: "profileConsent"; visible: dialog.creating
-            text: "Create a local encrypted workspace"
+            id: consent; objectName: "profileConsent"; visible: dialog.creating && !dialog.greetingOnly
+            text: dialog.greetingOnly ? "Save my greeting profile on this device" : "Create a local encrypted workspace"
         }
         Button {
             objectName: "profileSubmit"
             text: dialog.creating ? "Create profile" : dialog.recovering ? "Reset PIN" : "Unlock"
-            enabled: !control.busy && profileName.text.trim().length > 0 && pin.text.length >= 6 && (!dialog.creating || consent.checked) && (!dialog.recovering || recoveryInput.text.length > 0)
+            enabled: !control.busy && profileName.text.trim().length > 0 && pin.text.length >= 6 && (!dialog.creating || dialog.greetingOnly || consent.checked) && (!dialog.recovering || recoveryInput.text.length > 0)
             onClicked: {
-                if (dialog.creating && dialog.photoRgb) control.enrollProfile(profileName.text, pin.text, consent.checked, dialog.photoRgb)
-                else if (dialog.creating) control.enroll(profileName.text, pin.text, consent.checked)
+                if (dialog.creating && dialog.photoRgb) control.enrollProfile(profileName.text, pin.text, dialog.greetingOnly || consent.checked, dialog.photoRgb)
+                else if (dialog.creating) control.enroll(profileName.text, pin.text, dialog.greetingOnly || consent.checked)
                 else if (dialog.recovering) control.recover(profileName.text, recoveryInput.text, pin.text)
                 else control.unlock(profileName.text, pin.text)
                 pin.clear(); recoveryInput.clear()
             }
         }
-        Label { visible: control.busy; text: "Creating your encrypted workspace…"; Layout.fillWidth: true }
+        Label { visible: control.busy; text: dialog.greetingOnly ? "Opening your profile…" : "Creating your encrypted workspace…"; Layout.fillWidth: true }
+        Label { visible: dialog.greetingOnly; text: "This personalizes your chat. Protected workspaces use separate sign-in."; Layout.fillWidth: true; wrapMode: Text.Wrap }
         Label {
             visible: recovery.text.length > 0; Layout.fillWidth: true; wrapMode: Text.Wrap
             text: "Save this recovery code somewhere private. It is shown only now. Then close this dialog and unlock your profile."
