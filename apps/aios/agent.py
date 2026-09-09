@@ -53,6 +53,7 @@ PROGRESS_SEPARATOR = ": "
 TOOL_RESULT_OMITTED = '{"previous_tool_result_omitted":true}'
 WARNING_OMISSION = "Additional capability warnings were omitted."
 HOST_TOOL_OMISSION_WARNING = "Additional host tools were omitted."
+TOOL_BYTES_OMISSION_WARNING = "Additional tool definitions were omitted because the agent prompt limit was reached."
 
 
 def _safe_error_text(message: str, fallback: str) -> str:
@@ -240,6 +241,7 @@ class AgentSession:
         self.host_by_name = {tool["function"]["name"]: tool for tool in self.host_tools}
         self._source_warnings = [*catalog_warnings, *host_warnings]
         self._host_tools_omitted = False
+        self._tool_bytes_omitted = False
         self.warnings = _bounded_warnings(self._source_warnings)
         self.active = {
             skill.name: skill
@@ -286,10 +288,28 @@ class AgentSession:
         else:
             selected = list(self.host_tools)
         self._host_tools_omitted = len(selected) > MAX_HOST_TOOLS
-        selected = selected[:MAX_HOST_TOOLS]
-        required_warnings = [HOST_TOOL_OMISSION_WARNING] if self._host_tools_omitted else []
+        accepted: list[dict[str, Any]] = []
+        self._tool_bytes_omitted = False
+        for tool in selected:
+            if len(accepted) >= MAX_HOST_TOOLS:
+                self._host_tools_omitted = True
+                continue
+            candidate = [ACTIVATE_TOOL, *accepted, tool]
+            try:
+                fits = len(_json_bytes(candidate)) <= MAX_TOOLS_BYTES
+            except (TypeError, ValueError, RecursionError):
+                raise RuntimeError("The configured tool definitions are invalid.") from None
+            if not fits:
+                self._tool_bytes_omitted = True
+                continue
+            accepted.append(tool)
+        required_warnings = []
+        if self._host_tools_omitted:
+            required_warnings.append(HOST_TOOL_OMISSION_WARNING)
+        if self._tool_bytes_omitted:
+            required_warnings.append(TOOL_BYTES_OMISSION_WARNING)
         self.warnings = _bounded_warnings(self._source_warnings, required_warnings)
-        tools = [ACTIVATE_TOOL, *selected]
+        tools = [ACTIVATE_TOOL, *accepted]
         try:
             encoded = _json_bytes(tools)
         except (TypeError, ValueError, RecursionError):
@@ -316,8 +336,6 @@ class AgentSession:
             encoded = _json_bytes(converted)
         except (TypeError, ValueError, RecursionError):
             raise RuntimeError("The configured tool definitions are invalid.") from None
-        if len(encoded) > MAX_TOOLS_BYTES:
-            raise RuntimeError("The configured tool definitions are too large.")
         return json.loads(encoded)
 
     def dispatch(self, name, arguments, timeout=None):

@@ -64,25 +64,28 @@ def _tool_error_result(message):
     }
 
 
-def _valid_input_schema(schema):
+def _normalized_input_schema(schema):
     if not isinstance(schema, dict) or schema.get("type") not in (None, "object"):
-        return False
+        return None
     try:
-        encoded = _json_dumps(schema).encode("utf-8")
+        normalized = json.loads(_json_dumps(schema))
     except (TypeError, ValueError, RecursionError):
-        return False
+        return None
+    if normalized.get("type") is None:
+        normalized["type"] = "object"
+    encoded = _json_dumps(normalized).encode("utf-8")
     if len(encoded) > SCHEMA_LIMIT:
-        return False
-    stack = [(schema, 1)]
+        return None
+    stack = [(normalized, 1)]
     while stack:
         value, depth = stack.pop()
         if depth > SCHEMA_DEPTH_LIMIT:
-            return False
+            return None
         if isinstance(value, dict):
             stack.extend((item, depth + 1) for item in value.values() if isinstance(item, (dict, list)))
         elif isinstance(value, list):
             stack.extend((item, depth + 1) for item in value if isinstance(item, (dict, list)))
-    return True
+    return normalized
 
 
 def _sanitize_identifier(value):
@@ -642,8 +645,10 @@ class McpClient:
             if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
                 raise RuntimeError("MCP tools list was invalid.")
             for item in result["tools"]:
-                if (not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"]
-                        or not _valid_input_schema(item.get("inputSchema"))):
+                if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"]:
+                    raise RuntimeError("MCP tools list was invalid.")
+                schema = _normalized_input_schema(item.get("inputSchema"))
+                if schema is None:
                     raise RuntimeError("MCP tools list was invalid.")
                 if "description" in item and item["description"] is not None and not isinstance(item["description"], str):
                     raise RuntimeError("MCP tools list was invalid.")
@@ -652,7 +657,9 @@ class McpClient:
                 if item["name"] in seen:
                     raise RuntimeError("MCP tools list was invalid.")
                 seen.add(item["name"])
-                tools.append(item)
+                normalized_item = dict(item)
+                normalized_item["inputSchema"] = schema
+                tools.append(normalized_item)
                 if len(tools) > MAX_TOOLS:
                     raise RuntimeError("MCP tools list was too large.")
             cursor = result.get("nextCursor")

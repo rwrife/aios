@@ -144,6 +144,14 @@ def tools_page(cursor):
         value = tool("echo", "Wrong schema type")
         value["inputSchema"]["type"] = "string"
         return {"tools": [value]}
+    if SCENARIO == "typeless-schema":
+        value = tool("echo", "Type-less schema")
+        del value["inputSchema"]["type"]
+        return {"tools": [value]}
+    if SCENARIO == "null-schema-type":
+        value = tool("echo", "Null schema type")
+        value["inputSchema"]["type"] = None
+        return {"tools": [value]}
     if SCENARIO == "many-tools":
         return {"tools": [tool(f"tool-{index}") for index in range(TOOL_COUNT)]}
     return {"tools": [tool("echo", "Echo back text"), tool("hidden", "Hidden tool")]}

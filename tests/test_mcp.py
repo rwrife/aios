@@ -10,9 +10,11 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from aios import core, mcp
+from aios import agent, core, mcp
+from aios.applications import ApplicationStore
+from aios.toolhost import ToolHost
 
 
 class McpTests(unittest.TestCase):
@@ -984,6 +986,36 @@ class McpTests(unittest.TestCase):
                     registry.close()
                 self.assertEqual(definitions, [])
                 self.assertTrue(warnings)
+
+    def test_typeless_schema_is_normalized_and_accepted_by_agent(self):
+        for scenario in ("typeless-schema", "null-schema-type"):
+            with self.subTest(scenario=scenario):
+                self.write_config({
+                    "fixture": self.server_settings(tools=["echo"], scenario=scenario),
+                })
+                registry = self.make_registry()
+                try:
+                    definitions, warnings = registry.definitions()
+                    self.assertEqual(warnings, [])
+                    self.assertEqual(definitions[0]["function"]["parameters"]["type"], "object")
+                    result = registry.call("mcp_fixture_echo", {"value": "hello"})
+                    self.assertEqual(result["text"], "echo:hello")
+
+                    host = ToolHost(browser=Mock(), applications=Mock(spec=ApplicationStore), mcp=registry)
+                    listed = host.definitions()
+                    with patch("aios.agent.toolhost.list_tools", return_value=listed):
+                        session = agent.AgentSession(
+                            [{"role": "user", "content": "hello"}],
+                            "tools.sock",
+                            catalog=[],
+                        )
+                    self.assertIn("mcp_fixture_echo", session.host_by_name)
+                    self.assertEqual(
+                        session.host_by_name["mcp_fixture_echo"]["function"]["parameters"]["type"],
+                        "object",
+                    )
+                finally:
+                    registry.close()
 
     def test_total_exposed_definitions_are_capped(self):
         servers = {}

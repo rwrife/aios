@@ -245,11 +245,17 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual(converted[0]["name"], "activate_skill")
         self.assertEqual(converted[-1]["name"], f"tool-{agent.MAX_HOST_TOOLS - 1}")
 
-        session.host_tools = [host_tool("large", description="x" * 500)]
-        with patch.object(agent, "MAX_TOOLS_BYTES", 100), self.assertRaisesRegex(
-            RuntimeError, "tool definitions"
-        ):
-            session.codex_tools()
+        session.host_tools = [
+            host_tool("large", description="x" * 500),
+            host_tool("small"),
+        ]
+        activate_bytes = len(agent._json_bytes([agent.ACTIVATE_TOOL]))
+        small_bytes = len(agent._json_bytes([agent.ACTIVATE_TOOL, host_tool("small")]))
+        with patch.object(agent, "MAX_TOOLS_BYTES", small_bytes):
+            converted = session.codex_tools()
+        self.assertEqual([tool["name"] for tool in converted], ["activate_skill", "small"])
+        self.assertIn(agent.TOOL_BYTES_OMISSION_WARNING, session.warnings)
+        self.assertGreater(small_bytes, activate_bytes)
 
     @patch("aios.agent.toolhost.list_tools")
     def test_explicit_notes_and_model_activation_recompute_tools(self, list_tools):
@@ -768,9 +774,18 @@ class BrowserAgentTests(unittest.TestCase):
             session.system_prompt()
 
         tool_session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
-        tool_session.host_tools = [host_tool("large", description="x" * 500)]
-        with patch.object(agent, "MAX_TOOLS_BYTES", 100), self.assertRaisesRegex(RuntimeError, "tool definitions"):
-            tool_session.tools()
+        tool_session.host_tools = [
+            host_tool("large", description="x" * 500),
+            host_tool("small"),
+        ]
+        byte_limit = len(agent._json_bytes([agent.ACTIVATE_TOOL, host_tool("small")]))
+        with patch.object(agent, "MAX_TOOLS_BYTES", byte_limit):
+            advertised = tool_session.tools()
+        self.assertEqual(
+            [tool["function"]["name"] for tool in advertised],
+            ["activate_skill", "small"],
+        )
+        self.assertIn(agent.TOOL_BYTES_OMISSION_WARNING, tool_session.warnings)
 
         body_session = agent.AgentSession(
             [{"role": "user", "content": "x" * 500}],
@@ -833,6 +848,32 @@ class BrowserAgentTests(unittest.TestCase):
         body = request.call_args.args[1]
         self.assertEqual(len(body["tools"]), agent.MAX_HOST_TOOLS + 1)
         self.assertIn("Additional host tools were omitted.", body["messages"][0]["content"])
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local"})
+    @patch("aios.agent.toolhost.list_tools")
+    def test_tool_byte_budget_omits_large_definitions_without_failing_turn(self, list_tools, _load_config):
+        schema_text = "x" * (31 * 1024)
+        large_tools = [
+            host_tool(
+                f"large-{index}",
+                parameters={"type": "object", "description": schema_text},
+            )
+            for index in range(17)
+        ]
+        small = host_tool("small")
+        list_tools.return_value = {"tools": [*large_tools, small], "warnings": []}
+        session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
+
+        with patch("aios.agent.core.request", return_value=stream([{"content": "Done."}])) as request:
+            events = list(agent.openai_chat(session))
+
+        body = request.call_args.args[1]
+        self.assertLessEqual(len(agent._json_bytes(body["tools"])), agent.MAX_TOOLS_BYTES)
+        names = [tool["function"]["name"] for tool in body["tools"]]
+        self.assertIn("small", names)
+        self.assertLess(len(names), len(large_tools) + 2)
+        self.assertIn(agent.TOOL_BYTES_OMISSION_WARNING, body["messages"][0]["content"])
+        self.assertEqual(events[-1], {"type": "token", "text": "Done."})
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local"})
     @patch("aios.agent.toolhost.list_tools")
