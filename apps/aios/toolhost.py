@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -20,9 +21,9 @@ REQUEST_LIMIT = 128 * 1024
 RESPONSE_LIMIT = 2 * 1024 * 1024
 MAX_TOOL_NAME_LENGTH = 128
 MAX_TOOLS = 256
-STARTUP_RETRY_SECONDS = 5.0
 RETRY_DELAY_SECONDS = 0.05
 SOCKET_TIMEOUT = 60
+SOCKET_BACKLOG = 8
 
 SAFE_INVALID_REQUEST = "Invalid tool request."
 SAFE_INVALID_RESPONSE = "Tool service returned an invalid response."
@@ -36,10 +37,10 @@ SAFE_UNKNOWN_TOOL = "Unknown tool."
 SAFE_TOOL_NAME = "Tool name must be a string."
 SAFE_TOOL_ARGUMENTS = "Tool arguments must be an object."
 SAFE_APPLICATION_ACTION = "Unknown application action."
+SAFE_SOCKET_EXISTS = "Tool service socket already exists."
 SAFE_MCP_FILTER_WARNING = "MCP some tool definitions were ignored."
 SAFE_MCP_LIMIT_WARNING = "MCP some tool definitions were ignored because the tool limit was reached."
-
-TOOL = BROWSER_TOOL
+SAFE_MCP_BUDGET_WARNING = "MCP some tool definitions were ignored because the response size limit was reached."
 
 _STATIC_TOOLS = (BROWSER_TOOL, APPLICATION_TOOL)
 _APPLICATION_ACTIONS = (
@@ -50,6 +51,13 @@ _APPLICATION_ACTIONS = (
     "publish",
     "launch",
 )
+_MCP_WARNING_RESERVE = (
+    SAFE_MCP_FILTER_WARNING,
+    SAFE_MCP_LIMIT_WARNING,
+    SAFE_MCP_BUDGET_WARNING,
+)
+_RETRIABLE_CONNECT_ERRNOS = {errno.EAGAIN, errno.EWOULDBLOCK}
+_MISSING = object()
 
 
 def _json_dumps(value: Any) -> str:
@@ -62,6 +70,18 @@ def _encode_json(value: Any) -> bytes:
 
 def _serialize_line(value: Any) -> bytes:
     return _encode_json(value) + b"\n"
+
+
+def _envelope_payload(*, result: Any = _MISSING, error: Any = _MISSING) -> dict[str, Any]:
+    if (result is _MISSING) == (error is _MISSING):
+        raise ValueError("exactly one envelope field is required")
+    if result is not _MISSING:
+        return {"result": result}
+    return {"error": error}
+
+
+def _encode_envelope(*, result: Any = _MISSING, error: Any = _MISSING) -> bytes:
+    return _serialize_line(_envelope_payload(result=result, error=error))
 
 
 def _definition_name(definition: Any) -> str | None:
@@ -96,14 +116,13 @@ def _static_tools() -> list[dict[str, Any]]:
     return tools
 
 
-def _bounded_json_line(value: Any, limit: int, too_large_message: str) -> bytes:
+def _validate_result_envelope(result: Any) -> None:
     try:
-        encoded = _serialize_line(value)
+        encoded = _encode_envelope(result=result)
     except (TypeError, ValueError, RecursionError):
         raise RuntimeError(SAFE_RESULT_NOT_JSON) from None
-    if len(encoded) > limit:
-        raise RuntimeError(too_large_message)
-    return encoded
+    if len(encoded) > RESPONSE_LIMIT:
+        raise RuntimeError(SAFE_RESULT_TOO_LARGE)
 
 
 def _readline(stream: Any, limit: int) -> bytes:
@@ -119,13 +138,32 @@ def _existing_socket(path: str) -> bool:
     return os.path.lexists(path)
 
 
-def _safe_remove_socket(path: str) -> None:
+def _socket_identity(path: str) -> tuple[int, int] | None:
     try:
-        mode = os.lstat(path).st_mode
+        info = os.lstat(path)
     except FileNotFoundError:
-        return
-    if stat.S_ISSOCK(mode):
-        Path(path).unlink(missing_ok=True)
+        return None
+    if not stat.S_ISSOCK(info.st_mode):
+        return None
+    return info.st_dev, info.st_ino
+
+
+def _safe_remove_socket(path: str, identity: tuple[int, int] | None) -> bool:
+    if identity is None:
+        return True
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return True
+    if not stat.S_ISSOCK(info.st_mode):
+        return False
+    if (info.st_dev, info.st_ino) != identity:
+        return False
+    try:
+        Path(path).unlink()
+    except FileNotFoundError:
+        return True
+    return True
 
 
 def _socket_signals() -> list[int]:
@@ -154,20 +192,151 @@ def _restore_signal_handlers(previous) -> None:
         signal.signal(signum, handler)
 
 
+def _warning_strings(values: list[Any]) -> list[str]:
+    warnings = []
+    seen = set()
+    for value in values:
+        if not isinstance(value, str) or not value or value in seen:
+            continue
+        warnings.append(value)
+        seen.add(value)
+    return warnings
+
+
+def _definitions_result(tools: list[dict[str, Any]], warnings: list[str]) -> dict[str, Any]:
+    return {"tools": tools, "warnings": warnings}
+
+
+def _definitions_fit(tools: list[dict[str, Any]], warnings: list[str]) -> bool:
+    try:
+        return len(_encode_envelope(result=_definitions_result(tools, warnings))) <= RESPONSE_LIMIT
+    except (TypeError, ValueError, RecursionError):
+        return False
+
+
+def _pack_definition_warnings(
+    tools: list[dict[str, Any]],
+    optional_warnings: list[str],
+    required_warnings: tuple[str, ...] | list[str] = (),
+) -> list[str] | None:
+    required = _warning_strings(list(required_warnings))
+    if not _definitions_fit(tools, required):
+        return None
+    kept = []
+    for warning in _warning_strings(optional_warnings):
+        trial = kept + [warning]
+        if _definitions_fit(tools, trial + required):
+            kept = trial
+    return kept + required
+
+
+def _service_unavailable_error() -> RuntimeError:
+    return RuntimeError(SAFE_SERVICE_UNAVAILABLE)
+
+
+def _remaining_time(deadline: float) -> float:
+    return deadline - time.monotonic()
+
+
+def _sleep_until_retry(deadline: float) -> None:
+    remaining = _remaining_time(deadline)
+    if remaining > 0:
+        time.sleep(min(RETRY_DELAY_SECONDS, remaining))
+
+
+def _is_retriable_connect_error(error: BaseException) -> bool:
+    if isinstance(error, (FileNotFoundError, ConnectionRefusedError, NotADirectoryError, TimeoutError, socket.timeout)):
+        return True
+    if isinstance(error, BlockingIOError):
+        return getattr(error, "errno", errno.EAGAIN) in _RETRIABLE_CONNECT_ERRNOS
+    return False
+
+
+def _connect_client(path: str, deadline: float) -> socket.socket:
+    while True:
+        remaining = _remaining_time(deadline)
+        if remaining <= 0:
+            raise _service_unavailable_error() from None
+        client = socket.socket(socket.AF_UNIX)
+        try:
+            client.settimeout(remaining)
+            client.connect(path)
+            return client
+        except BaseException as error:
+            client.close()
+            if _is_retriable_connect_error(error):
+                if _remaining_time(deadline) <= 0:
+                    raise _service_unavailable_error() from None
+                _sleep_until_retry(deadline)
+                continue
+            if isinstance(error, OSError):
+                raise _service_unavailable_error() from None
+            raise
+
+
+def _probe_socket_live(path: str) -> bool:
+    with socket.socket(socket.AF_UNIX) as probe:
+        probe.settimeout(RETRY_DELAY_SECONDS)
+        try:
+            probe.connect(path)
+            return True
+        except (ConnectionRefusedError, FileNotFoundError):
+            return False
+        except (TimeoutError, socket.timeout, BlockingIOError, NotADirectoryError, OSError):
+            raise RuntimeError(SAFE_SOCKET_EXISTS) from None
+
+
+def _prepare_socket_path(path: str) -> None:
+    if not _existing_socket(path):
+        return
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISSOCK(info.st_mode):
+        raise RuntimeError(SAFE_SOCKET_EXISTS)
+    identity = info.st_dev, info.st_ino
+    if _probe_socket_live(path):
+        raise RuntimeError(SAFE_SOCKET_EXISTS)
+    if not _safe_remove_socket(path, identity):
+        raise RuntimeError(SAFE_SOCKET_EXISTS)
+
+
+def _safe_error_text(error: BaseException) -> str:
+    message = str(error)
+    return message if message else SAFE_OPERATION_FAILED
+
+
+def _response_bytes(payload: dict[str, Any]) -> bytes:
+    try:
+        encoded = _serialize_line(payload)
+    except (TypeError, ValueError, RecursionError):
+        encoded = _serialize_line({"error": SAFE_OPERATION_FAILED})
+    if len(encoded) <= RESPONSE_LIMIT:
+        return encoded
+    fallback = _serialize_line({"error": SAFE_RESPONSE_TOO_LARGE})
+    if len(fallback) > RESPONSE_LIMIT:
+        return b'{"error":"Tool operation failed."}\n'
+    return fallback
+
+
 class ToolHost:
     def __init__(self, browser: Browser | None = None, applications: ApplicationStore | None = None, mcp: McpRegistry | None = None):
         self.browser = browser if browser is not None else Browser()
         self.applications = applications if applications is not None else ApplicationStore()
         self.mcp = mcp if mcp is not None else McpRegistry()
+        self._advertised_mcp = {}
         self._closed = False
 
     def definitions(self) -> dict[str, Any]:
         tools = _static_tools()
         names = {item["function"]["name"] for item in tools}
         mcp_definitions, mcp_warnings = self.mcp.definitions()
-        warnings = [warning for warning in mcp_warnings if isinstance(warning, str)]
+        source_warnings = _warning_strings(mcp_warnings)
         filtered = False
         trimmed = False
+        budgeted = False
+        advertised_mcp = {}
 
         for definition in mcp_definitions:
             name = _definition_name(definition)
@@ -177,14 +346,27 @@ class ToolHost:
             if len(tools) >= MAX_TOOLS:
                 trimmed = True
                 continue
-            tools.append(definition)
+            candidate_tools = tools + [definition]
+            if _pack_definition_warnings(candidate_tools, source_warnings, _MCP_WARNING_RESERVE) is None:
+                budgeted = True
+                continue
+            tools = candidate_tools
             names.add(name)
+            advertised_mcp[name] = definition
 
+        summary_warnings = []
         if filtered:
-            warnings.append(SAFE_MCP_FILTER_WARNING)
+            summary_warnings.append(SAFE_MCP_FILTER_WARNING)
         if trimmed:
-            warnings.append(SAFE_MCP_LIMIT_WARNING)
-        return {"tools": tools, "warnings": warnings}
+            summary_warnings.append(SAFE_MCP_LIMIT_WARNING)
+        if budgeted:
+            summary_warnings.append(SAFE_MCP_BUDGET_WARNING)
+        warnings = _pack_definition_warnings(tools, source_warnings, summary_warnings)
+        if warnings is None:
+            warnings = _warning_strings(summary_warnings)
+
+        self._advertised_mcp = dict(advertised_mcp)
+        return _definitions_result(tools, warnings)
 
     def call(self, name: str, arguments: dict[str, Any]) -> Any:
         if not isinstance(name, str):
@@ -195,11 +377,11 @@ class ToolHost:
             result = self.browser.act(arguments)
         elif name == "application":
             result = self._call_application(arguments)
-        elif name.startswith("mcp_"):
+        elif name in self._advertised_mcp:
             result = self.mcp.call(name, arguments)
         else:
             raise ValueError(SAFE_UNKNOWN_TOOL)
-        _bounded_json_line(result, RESPONSE_LIMIT, SAFE_RESULT_TOO_LARGE)
+        _validate_result_envelope(result)
         return result
 
     def _call_application(self, arguments: dict[str, Any]) -> Any:
@@ -237,22 +419,26 @@ def request(path: os.PathLike[str] | str, value: dict[str, Any], timeout: float 
     if len(request_bytes) > REQUEST_LIMIT:
         raise ValueError("Tool request is too large.")
 
-    deadline = time.monotonic() + min(float(timeout), STARTUP_RETRY_SECONDS)
-    with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(timeout)
-        while True:
-            try:
-                client.connect(os.fspath(path))
-                break
-            except (FileNotFoundError, ConnectionRefusedError, NotADirectoryError, socket.timeout):
-                if time.monotonic() >= deadline:
-                    raise RuntimeError(SAFE_SERVICE_UNAVAILABLE) from None
-                time.sleep(RETRY_DELAY_SECONDS)
-            except OSError:
-                raise RuntimeError(SAFE_SERVICE_UNAVAILABLE) from None
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    client = _connect_client(os.fspath(path), deadline)
+    try:
+        remaining = _remaining_time(deadline)
+        if remaining <= 0:
+            raise _service_unavailable_error() from None
+        client.settimeout(remaining)
         client.sendall(request_bytes)
+        remaining = _remaining_time(deadline)
+        if remaining <= 0:
+            raise _service_unavailable_error() from None
+        client.settimeout(remaining)
         with client.makefile("rb") as stream:
             raw = _readline(stream, RESPONSE_LIMIT)
+    except RuntimeError:
+        raise
+    except (TimeoutError, socket.timeout, BrokenPipeError, ConnectionResetError, OSError):
+        raise _service_unavailable_error() from None
+    finally:
+        client.close()
     try:
         response = json.loads(raw)
     except (TypeError, ValueError):
@@ -307,32 +493,24 @@ def _parse_request(raw: bytes) -> tuple[str, str | None, dict[str, Any] | None]:
     raise ValueError(SAFE_INVALID_REQUEST)
 
 
-def _response_bytes(payload: dict[str, Any]) -> bytes:
-    try:
-        encoded = _serialize_line(payload)
-    except (TypeError, ValueError, RecursionError):
-        encoded = _serialize_line({"error": SAFE_OPERATION_FAILED})
-    if len(encoded) <= RESPONSE_LIMIT:
-        return encoded
-    fallback = _serialize_line({"error": SAFE_RESPONSE_TOO_LARGE})
-    if len(fallback) > RESPONSE_LIMIT:
-        return b'{"error":"Tool operation failed."}\n'
-    return fallback
-
-
 def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
     host = host if host is not None else ToolHost()
     path_text = os.fspath(path)
     created_socket = False
+    socket_identity = None
     previous_handlers = _install_signal_handlers()
     try:
-        if _existing_socket(path_text):
-            raise RuntimeError("Tool service socket already exists.")
+        _prepare_socket_path(path_text)
         with socket.socket(socket.AF_UNIX) as server:
-            server.bind(path_text)
+            old_umask = os.umask(0o177)
+            try:
+                server.bind(path_text)
+            finally:
+                os.umask(old_umask)
             created_socket = True
+            socket_identity = _socket_identity(path_text)
             os.chmod(path_text, 0o600)
-            server.listen(1)
+            server.listen(SOCKET_BACKLOG)
             stop_requested = False
             while not stop_requested:
                 connection, _ = server.accept()
@@ -350,7 +528,7 @@ def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
                             payload = {"result": {"closed": True}}
                             stop_requested = True
                     except (ValueError, RuntimeError) as error:
-                        payload = {"error": str(error)}
+                        payload = {"error": _safe_error_text(error)}
                     except Exception:
                         payload = {"error": SAFE_OPERATION_FAILED}
                     try:
@@ -362,7 +540,7 @@ def serve(path: os.PathLike[str] | str, host: ToolHost | None = None) -> None:
             host.close()
         finally:
             if created_socket:
-                _safe_remove_socket(path_text)
+                _safe_remove_socket(path_text, socket_identity)
             _restore_signal_handlers(previous_handlers)
 
 
