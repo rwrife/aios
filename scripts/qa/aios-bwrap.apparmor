@@ -1,0 +1,9 @@
+# Test-runner policy only. Keep Ubuntu's global unprivileged-userns restriction
+# enabled; grant the namespace exception to the exact bubblewrap executable.
+# Alpine does not need this Ubuntu-specific host policy.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile aios-test-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}

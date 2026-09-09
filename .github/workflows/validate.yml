@@ -20,8 +20,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Enable disposable encrypted-volume test support
         run: sudo modprobe dm_crypt && sudo modprobe loop
+      - name: Permit bubblewrap user namespaces on the Ubuntu test host
+        run: sudo apparmor_parser -r scripts/qa/aios-bwrap.apparmor
       - name: Test real namespaces, process teardown and encrypted workspaces
         run: bash scripts/test-identity-linux.sh
+      - name: Show kernel sandbox denials on failure
+        if: failure()
+        run: sudo dmesg | tail -n 60
   image:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
