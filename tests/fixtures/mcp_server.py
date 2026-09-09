@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 
@@ -10,12 +11,14 @@ SCENARIO = os.environ.get("AIOS_MCP_SCENARIO", "happy")
 LOG_PATH = os.environ.get("AIOS_MCP_LOG")
 ENV_PATH = os.environ.get("AIOS_MCP_ENV_LOG")
 GRANDCHILD_PATH = os.environ.get("AIOS_MCP_GRANDCHILD_PID")
+FLOOD_SIGNAL_PATH = os.environ.get("AIOS_MCP_FLOOD_SIGNAL")
 SECRET = os.environ.get("AIOS_MCP_SECRET", "secret-provider-token")
 TOOL_COUNT = int(os.environ.get("AIOS_MCP_TOOL_COUNT", "20"))
 
 LIST_GENERATION = 0
 LIST_CHANGED_SENT = False
 SERVER_REQUEST_SENT = False
+TOOL_CALL_COUNT = 0
 
 
 def write_env_snapshot():
@@ -68,6 +71,21 @@ def flood_client_requests():
             "params": {"payload": payload},
         })
         request_id += 1
+
+
+def start_flood(target):
+    def flood():
+        while FLOOD_SIGNAL_PATH and not os.path.exists(FLOOD_SIGNAL_PATH):
+            time.sleep(0.005)
+        target()
+
+    threading.Thread(target=flood, daemon=True).start()
+
+
+def flood_notifications():
+    payload = "x" * (16 * 1024)
+    while True:
+        notify("fixture/noise", {"payload": payload})
 
 
 def tool(name, description=None, title=None):
@@ -188,7 +206,9 @@ def handle_tools_list(value):
         while True:
             time.sleep(60)
     if SCENARIO == "flood-client-requests":
-        flood_client_requests()
+        start_flood(flood_client_requests)
+    if SCENARIO == "flood-notifications":
+        start_flood(flood_notifications)
     if SCENARIO == "grandchild-holds-stdout":
         child = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],
@@ -204,6 +224,11 @@ def handle_tools_list(value):
 
 
 def handle_tools_call(value):
+    global TOOL_CALL_COUNT
+    TOOL_CALL_COUNT += 1
+    if SCENARIO == "call-error-once" and TOOL_CALL_COUNT == 1:
+        fail(value["id"], SECRET, code=-32602)
+        return
     if SCENARIO == "call-error":
         fail(value["id"], SECRET)
         return

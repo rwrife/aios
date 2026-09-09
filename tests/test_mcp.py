@@ -1,4 +1,5 @@
 import json
+import io
 import os
 from pathlib import Path
 import queue
@@ -76,7 +77,7 @@ class McpTests(unittest.TestCase):
             "tools": tools if tools is not None else ["echo"],
         }
 
-    def make_registry(self, timeout=1.0, **kwargs):
+    def make_registry(self, timeout=3.0, **kwargs):
         registry = mcp.McpRegistry(config_path=self.config_path, request_timeout=timeout, **kwargs)
         self.registries.append(registry)
         return registry
@@ -131,6 +132,14 @@ class McpTests(unittest.TestCase):
 
     def read_child_env(self):
         return json.loads(self.env_log.read_text(encoding="utf-8"))
+
+    def wait_until(self, predicate, timeout=1.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return predicate()
 
     def test_missing_config_has_no_servers_or_warnings(self):
         registry = self.make_registry()
@@ -197,7 +206,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(len(list_calls), 1)
 
     @unittest.skipUnless(os.name == "posix", "POSIX pipe behavior required")
-    def test_child_pipes_are_unbuffered(self):
+    def test_child_stdin_is_unbuffered_and_stdout_is_buffered(self):
         self.write_config({
             "fixture": self.server_settings(tools=["echo"]),
         })
@@ -206,7 +215,8 @@ class McpTests(unittest.TestCase):
             registry.definitions()
             client = registry._clients["fixture"]
             self.assertEqual(client.process.stdin.__class__.__name__, "FileIO")
-            self.assertEqual(client.process.stdout.__class__.__name__, "FileIO")
+            self.assertFalse(os.get_blocking(client.process.stdin.fileno()))
+            self.assertIsInstance(client.process.stdout, io.BufferedReader)
         finally:
             registry.close()
 
@@ -317,6 +327,34 @@ class McpTests(unittest.TestCase):
         self.assertTrue(flags_seen)
         self.assertTrue(flags_seen[0] & os.O_NOFOLLOW)
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_fifo_config_is_rejected_without_blocking(self):
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(self.config_path)
+        registry = self.make_registry()
+
+        def unblock_fifo():
+            try:
+                descriptor = os.open(self.config_path, os.O_WRONLY | os.O_NONBLOCK)
+            except OSError:
+                return
+            os.close(descriptor)
+
+        try:
+            finished, outcome, elapsed = self.bounded(
+                registry.definitions,
+                timeout=0.5,
+                cleanup=unblock_fifo,
+            )
+        finally:
+            registry.close()
+        self.assertTrue(finished, f"FIFO configuration blocked for {elapsed:.3f}s")
+        self.assertTrue(outcome[0])
+        definitions, warnings = outcome[1]
+        self.assertEqual(definitions, [])
+        self.assertTrue(warnings)
+        self.assertNotIn("secret-provider-token", " ".join(warnings))
+
     @unittest.skipUnless(hasattr(os, "symlink"), "symlink support required")
     def test_env_inheritance_is_filtered_and_explicit_values_override(self):
         self.write_config({
@@ -350,6 +388,7 @@ class McpTests(unittest.TestCase):
         registry = self.make_registry()
         try:
             definitions, warnings = registry.definitions()
+            remaining_clients = set(registry._clients)
         finally:
             registry.close()
         names = [item["function"]["name"] for item in definitions]
@@ -359,6 +398,7 @@ class McpTests(unittest.TestCase):
         self.assertIn("broken", joined)
         self.assertNotIn("mcp_alpha_spare", names)
         self.assertNotIn("mcp_broken_echo", names)
+        self.assertEqual(remaining_clients, {"alpha", "good"})
 
     def test_server_requests_are_rejected_with_method_not_found(self):
         self.write_config({
@@ -367,6 +407,10 @@ class McpTests(unittest.TestCase):
         registry = self.make_registry()
         try:
             definitions, warnings = registry.definitions()
+            self.assertTrue(self.wait_until(
+                lambda: any(item.get("id") == "srv-1" for item in self.read_log()),
+                timeout=1.0,
+            ))
         finally:
             registry.close()
         self.assertEqual(len(definitions), 2)
@@ -409,8 +453,13 @@ class McpTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "POSIX pipe behavior required")
     def test_server_request_flood_keeps_call_and_close_bounded(self):
+        flood_signal = self.root / "request-flood"
         self.write_config({
-            "fixture": self.server_settings(tools=["echo"], scenario="flood-client-requests"),
+            "fixture": self.server_settings(
+                tools=["echo"],
+                scenario="flood-client-requests",
+                env={"AIOS_MCP_FLOOD_SIGNAL": str(flood_signal)},
+            ),
         })
         registry = self.make_registry(timeout=0.3)
         try:
@@ -424,7 +473,7 @@ class McpTests(unittest.TestCase):
             client = registry._clients["fixture"]
             process = client.process
             process_group = client._process_group
-            time.sleep(0.1)
+            flood_signal.write_text("start", encoding="utf-8")
             finished, outcome, elapsed = self.bounded(
                 lambda: registry.call("mcp_fixture_echo", {"value": "x" * (512 * 1024)}),
                 timeout=0.9,
@@ -443,6 +492,62 @@ class McpTests(unittest.TestCase):
         finally:
             self.kill_registry_processes(registry)
             registry.close()
+
+    @unittest.skipUnless(os.name == "posix", "POSIX pipe behavior required")
+    def test_notification_flood_marks_client_busy_and_removes_stale_tools(self):
+        flood_signal = self.root / "notification-flood"
+        self.write_config({
+            "fixture": self.server_settings(
+                tools=["echo"],
+                scenario="flood-notifications",
+                env={"AIOS_MCP_FLOOD_SIGNAL": str(flood_signal)},
+            ),
+        })
+        registry = self.make_registry(timeout=0.3)
+        try:
+            definitions, warnings = registry.definitions()
+            self.assertEqual([item["function"]["name"] for item in definitions], ["mcp_fixture_echo"])
+            self.assertEqual(warnings, [])
+            client = registry._clients["fixture"]
+            process = client.process
+            process_group = client._process_group
+            flood_signal.write_text("start", encoding="utf-8")
+            self.assertTrue(self.wait_until(lambda: client._fatal == "busy", timeout=1.5))
+            self.assertFalse(client.is_usable())
+
+            definitions, warnings = registry.definitions()
+            self.assertEqual(definitions, [])
+            self.assertTrue(warnings)
+            self.assertNotIn("mcp_fixture_echo", registry._tool_map)
+
+            finished, outcome, elapsed = self.bounded(
+                registry.close,
+                timeout=0.9,
+                cleanup=lambda: self.kill_process_group(process, process_group),
+            )
+            self.assertTrue(finished, f"close blocked for {elapsed:.3f}s")
+            self.assertTrue(outcome[0])
+        finally:
+            self.kill_registry_processes(registry)
+            registry.close()
+
+    def test_inbound_budget_allows_one_maximum_size_valid_line(self):
+        prefix = b'{"jsonrpc":"2.0","method":"fixture/noise","params":{"payload":"'
+        suffix = b'"}}\n'
+        line = prefix + (b"x" * (mcp.LINE_LIMIT - len(prefix) - len(suffix))) + suffix
+        self.assertEqual(len(line), mcp.LINE_LIMIT)
+
+        class Stdout:
+            def __init__(self):
+                self.lines = [line, b""]
+
+            def readline(self, limit):
+                return self.lines.pop(0)
+
+        client = mcp.McpClient("fixture", self.server_settings(), request_timeout=0.1)
+        client.process = SimpleNamespace(stdout=Stdout())
+        client._read_loop()
+        self.assertEqual(client._fatal, "closed")
 
     def test_outbound_messages_over_line_limit_are_rejected_before_write(self):
         writes = []
@@ -606,6 +711,43 @@ class McpTests(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertNotIn("definitely-not-a-real-command-secret", " ".join(warnings))
 
+    def test_tool_response_error_is_normalized_without_dropping_healthy_client(self):
+        self.write_config({
+            "fixture": self.server_settings(tools=["echo"], scenario="call-error-once"),
+        })
+        registry = self.make_registry()
+        try:
+            definitions, warnings = registry.definitions()
+            self.assertEqual(warnings, [])
+            self.assertEqual([item["function"]["name"] for item in definitions], ["mcp_fixture_echo"])
+            client = registry._clients["fixture"]
+            process = client.process
+
+            first = registry.call("mcp_fixture_echo", {"value": "first"})
+            self.assertEqual(first, {
+                "text": "MCP tool call failed.",
+                "structured": None,
+                "is_error": True,
+            })
+            self.assertIs(registry._clients["fixture"], client)
+            self.assertIs(client.process, process)
+            self.assertIsNone(process.poll())
+            self.assertEqual(registry._tool_map["mcp_fixture_echo"], ("fixture", "echo"))
+            self.assertNotIn("secret-provider-token", json.dumps(first))
+
+            second = registry.call("mcp_fixture_echo", {"value": "second"})
+            self.assertEqual(second, {
+                "text": "echo:second",
+                "structured": {"value": "second"},
+                "is_error": False,
+            })
+            refreshed, warnings = registry.definitions()
+            self.assertEqual([item["function"]["name"] for item in refreshed], ["mcp_fixture_echo"])
+            self.assertEqual(warnings, [])
+            self.assertIs(registry._clients["fixture"], client)
+        finally:
+            registry.close()
+
     def test_call_validation_and_result_normalization_fail_safely(self):
         self.write_config({
             "fixture": self.server_settings(tools=["echo"]),
@@ -620,7 +762,7 @@ class McpTests(unittest.TestCase):
         finally:
             registry.close()
 
-        for scenario in ("unsupported-content", "oversized-result", "call-nondict", "call-error"):
+        for scenario in ("unsupported-content", "oversized-result", "call-nondict"):
             with self.subTest(scenario=scenario):
                 self.write_config({
                     "fixture": self.server_settings(tools=["echo"], scenario=scenario),
@@ -682,13 +824,55 @@ class McpTests(unittest.TestCase):
                 },
             )
         self.write_config(servers)
-        registry = self.make_registry(timeout=0.5)
+        registry = self.make_registry()
         try:
             definitions, warnings = registry.definitions()
+            remaining_clients = set(registry._clients)
         finally:
             registry.close()
         self.assertLessEqual(len(definitions), 256)
         self.assertTrue(warnings)
+        self.assertEqual(remaining_clients, {f"server-{index}" for index in range(12)})
+
+    def test_definitions_timeout_is_aggregate_and_skips_later_server_spawns(self):
+        servers = {}
+        for index in range(4):
+            servers[f"server-{index}"] = self.server_settings(
+                tools=["echo"],
+                scenario="init-timeout",
+                env={
+                    "AIOS_MCP_LOG": str(self.root / f"server-{index}.jsonl"),
+                    "AIOS_MCP_ENV_LOG": str(self.root / f"server-{index}-env.json"),
+                },
+            )
+        self.write_config(servers)
+        spawned = []
+        original = mcp.subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            process = original(*args, **kwargs)
+            spawned.append(process)
+            return process
+
+        with patch.object(mcp.subprocess, "Popen", side_effect=spawn):
+            registry = self.make_registry(timeout=2.0, definitions_timeout=0.35)
+            try:
+                finished, outcome, elapsed = self.bounded(
+                    registry.definitions,
+                    timeout=0.9,
+                    cleanup=lambda: self.kill_registry_processes(registry),
+                )
+            finally:
+                registry.close()
+        self.assertTrue(finished, f"definitions exceeded aggregate deadline after {elapsed:.3f}s")
+        self.assertTrue(outcome[0])
+        definitions, warnings = outcome[1]
+        self.assertEqual(definitions, [])
+        self.assertEqual(len(warnings), 4)
+        self.assertLess(elapsed, 0.9)
+        self.assertEqual(len(spawned), 1)
+        self.assertTrue(all(process.poll() is not None for process in spawned))
+
 
     def test_dead_server_does_not_advertise_cached_tools(self):
         self.write_config({
@@ -725,6 +909,102 @@ class McpTests(unittest.TestCase):
         self.assertIsNot(first, second)
         self.assertEqual(warnings, [])
         self.assertEqual(len(definitions), 1)
+
+    def test_client_start_and_close_race_cannot_orphan_spawned_process(self):
+        client = mcp.McpClient("fixture", self.server_settings(), request_timeout=0.5)
+        original = mcp.subprocess.Popen
+        spawned = []
+        spawned_event = threading.Event()
+        release = threading.Event()
+        outcomes = queue.Queue()
+
+        def spawn(*args, **kwargs):
+            process = original(*args, **kwargs)
+            spawned.append(process)
+            spawned_event.set()
+            release.wait(1)
+            return process
+
+        def start_client():
+            try:
+                client.start()
+                outcomes.put(("start", None))
+            except BaseException as error:
+                outcomes.put(("start", error))
+
+        def close_client():
+            try:
+                client.close()
+                outcomes.put(("close", None))
+            except BaseException as error:
+                outcomes.put(("close", error))
+
+        with patch.object(mcp.subprocess, "Popen", side_effect=spawn):
+            starter = threading.Thread(target=start_client, daemon=True)
+            closer = threading.Thread(target=close_client, daemon=True)
+            starter.start()
+            self.assertTrue(spawned_event.wait(0.5))
+            closer.start()
+            time.sleep(0.05)
+            release.set()
+            starter.join(1.5)
+            closer.join(1.5)
+        try:
+            self.assertFalse(starter.is_alive())
+            self.assertFalse(closer.is_alive())
+            results = dict(outcomes.get_nowait() for _ in range(outcomes.qsize()))
+            self.assertIsNone(results["close"])
+            self.assertTrue(spawned)
+            self.assertTrue(all(process.poll() is not None for process in spawned))
+        finally:
+            release.set()
+            for process in spawned:
+                self.kill_process_group(process)
+            client.close()
+
+    def test_concurrent_definitions_then_close_reaps_every_spawned_process(self):
+        self.write_config({
+            f"server-{index}": self.server_settings(
+                tools=["echo"],
+                env={
+                    "AIOS_MCP_LOG": str(self.root / f"server-{index}.jsonl"),
+                    "AIOS_MCP_ENV_LOG": str(self.root / f"server-{index}-env.json"),
+                },
+            )
+            for index in range(4)
+        })
+        registry = self.make_registry()
+        spawned = []
+        spawn_lock = threading.Lock()
+        original = mcp.subprocess.Popen
+        ready = threading.Barrier(6)
+
+        def spawn(*args, **kwargs):
+            process = original(*args, **kwargs)
+            with spawn_lock:
+                spawned.append(process)
+            time.sleep(0.03)
+            return process
+
+        def define():
+            ready.wait()
+            registry.definitions()
+
+        with patch.object(mcp.subprocess, "Popen", side_effect=spawn):
+            threads = [threading.Thread(target=define, daemon=True) for _ in range(6)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+            registry.close()
+        try:
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+            self.assertTrue(spawned)
+            self.assertTrue(all(process.poll() is not None for process in spawned))
+        finally:
+            for process in spawned:
+                self.kill_process_group(process)
+            registry.close()
 
     @unittest.skipUnless(os.name == "posix", "POSIX process groups required")
     def test_close_kills_process_group_after_direct_child_exits(self):
@@ -791,6 +1071,39 @@ class McpTests(unittest.TestCase):
         thread.join(timeout=1)
         self.assertIsNotNone(process.poll())
         self.assertFalse(thread.is_alive())
+
+    def test_close_does_not_block_closing_stdout_while_reader_is_active(self):
+        read_descriptor, write_descriptor = os.pipe()
+        stdout = io.BufferedReader(os.fdopen(read_descriptor, "rb", buffering=0))
+        client = mcp.McpClient("fixture", self.server_settings(), request_timeout=0.1)
+        client.process = SimpleNamespace(
+            stdin=None,
+            stdout=stdout,
+            poll=lambda: 0,
+            wait=lambda timeout=None: 0,
+        )
+        client._reader = threading.Thread(target=client._read_loop, daemon=True)
+        client._reader.start()
+        self.assertTrue(client._reader.is_alive())
+
+        try:
+            finished, outcome, elapsed = self.bounded(
+                client.close,
+                timeout=0.5,
+                cleanup=lambda: os.close(write_descriptor),
+            )
+            if finished:
+                os.close(write_descriptor)
+            write_descriptor = None
+            self.assertTrue(finished, f"close blocked on buffered stdout for {elapsed:.3f}s")
+            self.assertTrue(outcome[0])
+            client._reader.join(1)
+            self.assertFalse(client._reader.is_alive())
+            stdout.close()
+        finally:
+            if write_descriptor is not None:
+                os.close(write_descriptor)
+            client.close()
 
 
 if __name__ == "__main__":

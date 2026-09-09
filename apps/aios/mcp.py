@@ -1,5 +1,7 @@
 """Allowlisted stdio MCP tools."""
+from collections import deque
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -21,6 +23,9 @@ MAX_SERVERS = 16
 MAX_PAGES = 20
 MAX_TOOLS = 256
 QUEUE_LIMIT = 128
+INBOUND_WINDOW_SECONDS = 1.0
+INBOUND_BYTE_LIMIT = 8 * 1024 * 1024
+INBOUND_MESSAGE_LIMIT = 512
 DESCRIPTION_LIMIT = 300
 SCHEMA_LIMIT = 32 * 1024
 SCHEMA_DEPTH_LIMIT = 32
@@ -151,9 +156,13 @@ class _ConfigTooLarge(Exception):
     pass
 
 
+class _McpResponseError(RuntimeError):
+    pass
+
+
 def _read_config(path):
     if os.name == "posix" and hasattr(os, "O_NOFOLLOW"):
-        flags = os.O_RDONLY | os.O_NOFOLLOW
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         if hasattr(os, "O_CLOEXEC"):
             flags |= os.O_CLOEXEC
         descriptor = os.open(path, flags)
@@ -239,6 +248,7 @@ class McpClient:
         self._request_lock = threading.Lock()
         self._response_lock = threading.Lock()
         self._close_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
         self._issued_ids = set()
         self._active_ids = set()
         self._sequence = 0
@@ -250,92 +260,104 @@ class McpClient:
         self._tools_dirty = True
         self._tool_changes = 0
 
-    def start(self):
-        if self._closed:
-            raise RuntimeError("MCP connection closed.")
-        if self.process is not None:
-            if self._fatal is not None or self.process.poll() is not None:
+    def start(self, deadline=None):
+        with self._lifecycle_lock:
+            if self._closed:
                 raise RuntimeError("MCP connection closed.")
-            return
-        options = {
-            "args": [self.settings["command"], *self.settings["args"]],
-            "stdin": subprocess.PIPE,
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.DEVNULL,
-            "env": _child_env(self.settings["env"]),
-            "bufsize": 0,
-        }
-        if os.name == "posix":
-            options["start_new_session"] = True
-        try:
-            self.process = subprocess.Popen(**options)
+            if self.process is not None:
+                if self._fatal is not None or self.process.poll() is not None:
+                    raise RuntimeError("MCP connection closed.")
+                return
+            options = {
+                "args": [self.settings["command"], *self.settings["args"]],
+                "stdin": subprocess.PIPE,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.DEVNULL,
+                "env": _child_env(self.settings["env"]),
+                "bufsize": 0,
+            }
             if os.name == "posix":
-                self._process_group = os.getpgid(self.process.pid)
-                os.set_blocking(self.process.stdin.fileno(), False)
-            self._reader = threading.Thread(target=self._read_loop, name=f"mcp-{self.server_name}", daemon=True)
-            self._reader.start()
-            self._initialize()
-        except OSError:
-            self.close()
-            raise RuntimeError("MCP server could not start.") from None
-        except BaseException:
-            self.close()
-            raise
+                options["start_new_session"] = True
+            try:
+                self.process = subprocess.Popen(**options)
+                self.process.stdout = io.BufferedReader(self.process.stdout)
+                if os.name == "posix":
+                    self._process_group = os.getpgid(self.process.pid)
+                    os.set_blocking(self.process.stdin.fileno(), False)
+                self._reader = threading.Thread(target=self._read_loop, name=f"mcp-{self.server_name}", daemon=True)
+                self._reader.start()
+                self._initialize(deadline)
+            except OSError:
+                self.close()
+                raise RuntimeError("MCP server could not start.") from None
+            except BaseException:
+                self.close()
+                raise
 
     def close(self):
-        with self._close_lock:
-            if self._closed:
-                return
-            self._closed = True
-            self._set_fatal("closed")
-            process = self.process
-            process_group = self._process_group
-            stdin = getattr(process, "stdin", None) if process else None
-            stdout = getattr(process, "stdout", None) if process else None
-            if process:
-                if os.name == "posix":
-                    group_alive = process_group is not None and self._signal_group(process_group, signal.SIGTERM)
+        with self._lifecycle_lock:
+            with self._close_lock:
+                if self._closed and self.process is None:
+                    return
+                self._closed = True
+                self._set_fatal("closed")
+                process = self.process
+                process_group = self._process_group
+                stdin = getattr(process, "stdin", None) if process else None
+                stdout = getattr(process, "stdout", None) if process else None
+                if process:
+                    if os.name == "posix":
+                        group_alive = process_group is not None and self._group_exists(process_group)
+                        if group_alive:
+                            self._signal_group(process_group, signal.SIGTERM)
+                        try:
+                            process.wait(timeout=0.1)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        deadline = time.monotonic() + 0.2
+                        while group_alive and time.monotonic() < deadline:
+                            group_alive = self._group_exists(process_group)
+                            if not group_alive:
+                                break
+                            time.sleep(0.01)
+                        if group_alive and self._group_exists(process_group):
+                            self._signal_group(process_group, signal.SIGKILL)
+                    elif process.poll() is None:
+                        try:
+                            process.terminate()
+                        except OSError:
+                            pass
+                        try:
+                            process.wait(timeout=0.2)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                process.kill()
+                            except OSError:
+                                pass
+                if self._reader:
+                    self._reader.join(timeout=0.25)
+                if stdin:
                     try:
-                        process.wait(timeout=0.1)
-                    except subprocess.TimeoutExpired:
-                        pass
-                    deadline = time.monotonic() + 0.2
-                    while group_alive and time.monotonic() < deadline:
-                        group_alive = self._group_exists(process_group)
-                        if not group_alive:
-                            break
-                        time.sleep(0.01)
-                    if group_alive:
-                        self._signal_group(process_group, signal.SIGKILL)
-                elif process.poll() is None:
-                    try:
-                        process.terminate()
+                        stdin.close()
                     except OSError:
                         pass
+                reader_alive = self._reader is not None and self._reader.is_alive()
+                if reader_alive:
+                    process.stdout = None
+                elif stdout:
+                    try:
+                        stdout.close()
+                    except OSError:
+                        pass
+                if self._reader and self._reader.is_alive():
+                    self._reader.join(timeout=0.1)
+                if process:
                     try:
                         process.wait(timeout=0.2)
                     except subprocess.TimeoutExpired:
-                        try:
-                            process.kill()
-                        except OSError:
-                            pass
-            if self._reader:
-                self._reader.join(timeout=0.25)
-            for stream in (stdin, stdout):
-                if stream:
-                    try:
-                        stream.close()
-                    except OSError:
                         pass
-            if self._reader and self._reader.is_alive():
-                self._reader.join(timeout=0.1)
-            if process:
-                try:
-                    process.wait(timeout=0.2)
-                except subprocess.TimeoutExpired:
-                    pass
-            self.process = None
-            self._process_group = None
+                self.process = None
+                self._process_group = None
 
     @staticmethod
     def _signal_group(process_group, sig):
@@ -375,6 +397,8 @@ class McpClient:
             pass
 
     def _read_loop(self):
+        inbound = deque()
+        inbound_bytes = 0
         try:
             while True:
                 line = self.process.stdout.readline(LINE_LIMIT + 1)
@@ -383,6 +407,15 @@ class McpClient:
                     return
                 if len(line) > LINE_LIMIT or not line.endswith(b"\n"):
                     self._set_fatal("invalid")
+                    return
+                now = time.monotonic()
+                while inbound and now - inbound[0][0] >= INBOUND_WINDOW_SECONDS:
+                    _, expired_bytes = inbound.popleft()
+                    inbound_bytes -= expired_bytes
+                inbound.append((now, len(line)))
+                inbound_bytes += len(line)
+                if inbound_bytes > INBOUND_BYTE_LIMIT or len(inbound) > INBOUND_MESSAGE_LIMIT:
+                    self._set_fatal("busy")
                     return
                 try:
                     value = json.loads(line.decode("utf-8"))
@@ -526,9 +559,12 @@ class McpClient:
         except RuntimeError:
             self._set_fatal("blocked")
 
-    def _request(self, method, params=None):
-        self.start()
-        deadline = time.monotonic() + self.request_timeout
+    def _request(self, method, params=None, deadline=None):
+        self.start(deadline)
+        request_deadline = time.monotonic() + self.request_timeout
+        if deadline is not None:
+            request_deadline = min(request_deadline, deadline)
+        deadline = request_deadline
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not self._request_lock.acquire(timeout=remaining):
             raise RuntimeError("MCP request timed out.")
@@ -548,7 +584,7 @@ class McpClient:
                 if value.get("id") != request_id:
                     continue
                 if "error" in value:
-                    raise RuntimeError("MCP request failed.")
+                    raise _McpResponseError
                 return value.get("result")
         finally:
             if request_id is not None:
@@ -562,22 +598,25 @@ class McpClient:
                         break
             self._request_lock.release()
 
-    def _initialize(self):
+    def _initialize(self, deadline=None):
         result = self._request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {"name": "AIOS", "version": "0.1"},
-        })
+        }, deadline)
         if (not isinstance(result, dict) or result.get("protocolVersion") != PROTOCOL_VERSION
                 or not isinstance(result.get("capabilities"), dict)
                 or not isinstance(result["capabilities"].get("tools"), dict)):
             raise RuntimeError("MCP server rejected initialization.")
+        send_deadline = time.monotonic() + self.request_timeout
+        if deadline is not None:
+            send_deadline = min(send_deadline, deadline)
         self._send(
             {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
-            time.monotonic() + self.request_timeout,
+            send_deadline,
         )
 
-    def list_tools(self):
+    def list_tools(self, deadline=None):
         with self._tools_lock:
             if self._tools is not None and not self._tools_dirty:
                 return list(self._tools)
@@ -587,7 +626,7 @@ class McpClient:
         cursor = None
         for _ in range(MAX_PAGES):
             params = {} if cursor is None else {"cursor": cursor}
-            result = self._request("tools/list", params)
+            result = self._request("tools/list", params, deadline)
             if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
                 raise RuntimeError("MCP tools list was invalid.")
             for item in result["tools"]:
@@ -615,7 +654,14 @@ class McpClient:
         raise RuntimeError("MCP tools list was too large.")
 
     def call_tool(self, tool_name, arguments):
-        result = self._request("tools/call", {"name": tool_name, "arguments": arguments})
+        try:
+            result = self._request("tools/call", {"name": tool_name, "arguments": arguments})
+        except _McpResponseError:
+            return {
+                "text": "MCP tool call failed.",
+                "structured": None,
+                "is_error": True,
+            }
         if not isinstance(result, dict):
             raise RuntimeError("MCP tool returned an invalid result.")
         content = result.get("content", [])
@@ -655,16 +701,19 @@ class McpRegistry:
         self,
         config_path=None,
         request_timeout=10,
+        definitions_timeout=15,
         failure_cooldown=DEFAULT_FAILURE_COOLDOWN,
         clock=time.monotonic,
     ):
         self.config_path = _config_path(config_path)
         self.request_timeout = request_timeout
+        self.definitions_timeout = definitions_timeout
         self.failure_cooldown = failure_cooldown
         self._clock = clock
         self._clients = {}
         self._failures = {}
         self._tool_map = {}
+        self._lock = threading.RLock()
 
     def _drop_client(self, name):
         client = self._clients.pop(name, None)
@@ -695,7 +744,12 @@ class McpRegistry:
         }
 
     def definitions(self):
+        with self._lock:
+            return self._definitions()
+
+    def _definitions(self):
         servers, warnings = _load_servers(self.config_path)
+        deadline = time.monotonic() + self.definitions_timeout
         active = {name for name, _ in servers}
         for name in list(self._clients):
             if name not in active:
@@ -718,6 +772,9 @@ class McpRegistry:
             if client is not None and client._closed:
                 self._drop_client(name)
                 client = None
+            if time.monotonic() >= deadline:
+                warnings.append(_safe_server_message(name, "is unavailable"))
+                continue
             elif client is not None and not client.is_usable():
                 self._drop_client(name)
                 self._record_failure(name, settings)
@@ -730,7 +787,7 @@ class McpRegistry:
                 if client is None:
                     client = McpClient(name, settings, self.request_timeout)
                     self._clients[name] = client
-                tools = client.list_tools()
+                tools = client.list_tools(deadline)
             except RuntimeError:
                 self._drop_client(name)
                 self._record_failure(name, settings)
@@ -756,9 +813,11 @@ class McpRegistry:
                 })
                 pending_map[exposed] = (name, tool["name"])
             if invalid or any(exposed in tool_map for exposed in pending_map):
+                self._drop_client(name)
                 warnings.append(_safe_server_message(name, "has conflicting tool names and was ignored"))
                 continue
             if len(definitions) + len(pending_defs) > MAX_TOOLS:
+                self._drop_client(name)
                 warnings.append(_safe_server_message(name, "has too many tools and was ignored"))
                 continue
             definitions.extend(pending_defs)
@@ -767,6 +826,10 @@ class McpRegistry:
         return definitions, warnings
 
     def call(self, exposed_name, arguments):
+        with self._lock:
+            return self._call(exposed_name, arguments)
+
+    def _call(self, exposed_name, arguments):
         if not isinstance(arguments, dict):
             raise ValueError("MCP tool arguments must be an object.")
         try:
@@ -811,5 +874,6 @@ class McpRegistry:
             raise RuntimeError("MCP tool is unavailable.") from None
 
     def close(self):
-        for name in list(self._clients):
-            self._drop_client(name)
+        with self._lock:
+            for name in list(self._clients):
+                self._drop_client(name)
