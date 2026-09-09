@@ -1,5 +1,23 @@
 # Desktop settings
 
+On first launch, an optional setup wizard walks through internet connection,
+ChatGPT account sign-in, camera availability, and local chat/speech models.
+Every step can be skipped. Close setup (or press Escape) at any time; completed
+changes remain, while unfinished wizard downloads/sign-in are canceled and the
+camera stops. Dismissing or finishing suppresses automatic setup on subsequent
+launches for that desktop user. **Run setup wizard** in Settings reopens it.
+Live sessions forget this preference on reboot, like other settings. The wizard
+does not run in the experimental session-broker desktop.
+
+The account step can create a local name/PIN profile with an optional camera
+photo, and can separately connect a ChatGPT service account.
+Camera checks are opt-in previews only: this build has no supported biometric
+enrollment service, so face login is explicitly unavailable even with a camera.
+The existing experimental recognition adapters are not an enrollment flow.
+The starter model reuses the bundled copy or downloads 101 MiB when missing;
+optional local speech downloads 75 MiB. Nothing downloads merely by opening or
+advancing through the wizard. Network setup opens the existing connection tool.
+
 Appearance offers eight saved theme colors: Ocean (default), Lagoon, Sage,
 Amber, Copper, Rose, Dusk, and Slate. A selection immediately updates the AIOS
 background, wave crests and fades, launcher, and open chat/settings panels.

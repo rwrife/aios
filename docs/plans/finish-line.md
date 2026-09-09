@@ -10,7 +10,7 @@ Updated 2026-09-08. Detailed execution evidence is in
 | T03 Ordinary user and recovery | Done; forced shell failure tested | Broader failure injection |
 | T04 Native UI and inference feasibility | Done; real local and HTTPS remote answers | Additional hardware/provider coverage |
 | T05 LLM runtime/configuration/CLI | Done; shell-owned local server and shared Python backend | Model failure and timeout coverage |
-| T06 Desktop and launcher | Done; a fresh centered window/session per activation, terminal, power | Keyboard, small-screen and multi-monitor QA |
+| T06 Desktop and launcher | Done; restores minimized chats newest-first, otherwise creates a centered session; terminal and power | Keyboard, small-screen and multi-monitor QA |
 | T07 Streaming chat | Done; independent sessions, subtle controls, text/PDF attachments, copy, stop | Interactive cancellation and long-reply QA |
 | T08 Onboarding and persistence | Done; download, import, remote configuration, saved history | Interrupted download/storage exhaustion QA |
 | T09 Ambient theme | Done; original waves, software renderer, reduced motion option | Reduced-motion and resolution QA |

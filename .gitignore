@@ -9,6 +9,7 @@ distro/alpine/.work/
 
 # local throwaway VM disk used by run script
 .tmp-aios-live.qcow2
+.tmp-aios-boot.log
 __pycache__/
 *.pyc
 build/

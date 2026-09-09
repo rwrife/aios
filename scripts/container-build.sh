@@ -4,6 +4,12 @@ apk add --no-cache abuild apk-tools alpine-conf busybox fakeroot xorriso squashf
   mtools grub grub-efi syslinux git bash coreutils tar findutils build-base cmake ninja \
   qt6-qtbase-dev qt6-qtdeclarative-dev qt6-qtmultimedia-dev curl-dev linux-headers python3 font-dejavu
 mkdir -p /build/home /build/signing /build/work /workspace/distro/alpine/out
+case "${AIOS_IDENTITY_BUILD:-0}" in
+  0) ;;
+  1) apk add --no-cache qt6-qtwayland-dev ;;
+  *) echo 'AIOS_IDENTITY_BUILD must be 0 or 1' >&2; exit 1 ;;
+esac
+export AIOS_IDENTITY_BUILD="${AIOS_IDENTITY_BUILD:-0}"
 id builder >/dev/null 2>&1 || adduser -D -h /build/home builder
 addgroup builder abuild
 if [ ! -f /build/signing/aios.rsa ]; then
@@ -16,5 +22,8 @@ chmod 600 /build/signing/aios.rsa
 chmod +x /workspace/scripts/*.sh /workspace/distro/alpine/mkimage.sh /workspace/distro/alpine/apkovl/genapkovl-aios.sh
 export PACKAGER_PRIVKEY=/build/signing/aios.rsa
 export APORTS_DIR=/build/aports OUT_DIR=/workspace/distro/alpine/out WORK_DIR=/build/work
+# A Windows worktree's .git pointer is not valid inside this Linux container.
+# Build scripts use absolute paths; keep Git's working directory outside it.
+cd /build
 su builder -s /bin/sh -c 'exec "$@"' -- sh /workspace/scripts/build-iso.sh "$@"
 chown -R "$HOST_UID:$HOST_GID" /workspace/distro/alpine/out

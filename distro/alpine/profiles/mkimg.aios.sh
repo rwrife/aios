@@ -3,7 +3,10 @@
 aios_apkovl_section() {
 	[ -n "$apkovl" ] && [ -n "$hostname" ] || return 0
 	local content_hash
-	content_hash=$(find "$AIOS_OVERLAY_DIR" "$AIOS_STAGE_DIR" -type f -exec sha256sum {} \; | sort | checksum)
+	content_hash=$({ find "$AIOS_OVERLAY_DIR" "$AIOS_STAGE_DIR" -type f -exec sha256sum {} \;;
+		cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI";
+		[ -z "${AIOS_WORLD_IDENTITY:-}" ] || cat "$AIOS_WORLD_IDENTITY";
+	} | sort | checksum)
 	build_section apkovl "$hostname" "$(checksum < "$apkovl")" "$content_hash"
 }
 
@@ -27,6 +30,9 @@ aios_grub_config() {
 
 profile_aios() {
 	profile_standard
+	# NetworkManager manages this desktop. Upstream network-extras pulls in
+	# legacy vlan scripts that conflict with Alpine's ifupdown-ng package.
+	apks="$(printf '%s\n' "$apks" | tr '[:space:]' '\n' | sed '/^network-extras$/d' | tr '\n' ' ')"
 	section_apkovl() { aios_apkovl_section; }
 	syslinux_gen_config() { aios_syslinux_config; }
 	grub_gen_config() { aios_grub_config; }
@@ -60,6 +66,9 @@ profile_aios() {
 
 	hostname="aios"
 	apks="$apks $(cat "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI" | tr '\n' ' ')"
+	if [ -n "${AIOS_WORLD_IDENTITY:-}" ]; then
+		apks="$apks $(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_IDENTITY" | tr '\n' ' ')"
+	fi
 	kernel_addons=
 	apkovl="$AIOS_APKOVL_SCRIPT"
 }

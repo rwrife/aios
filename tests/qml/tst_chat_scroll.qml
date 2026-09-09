@@ -79,6 +79,18 @@ TestCase {
         chat.height -= 70
         tryVerify(function() { return view.atYEnd }, 1000)
     }
+    function test_empty_chat_setup_button_opens_account_form() {
+        compare(view.count, 0)
+        var button = findChild(chat, "setupAccount")
+        verify(button !== null)
+        waitForRendering(button)
+        mouseClick(button)
+        var form = findChild(chat, "bubbleEnrollment")
+        verify(form !== null)
+        tryCompare(form, "opened", true)
+        compare(form.creating, true)
+        form.close()
+    }
     function test_reading_history_and_resuming() {
         seed()
         mouseWheel(view, view.width / 2, view.height / 2, 0, 240)

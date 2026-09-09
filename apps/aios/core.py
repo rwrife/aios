@@ -8,6 +8,7 @@ from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+from .principals import current as current_principal
 
 BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
 THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
@@ -17,10 +18,16 @@ SAFE_REQUEST_VALUE_ERROR = "The model request could not be constructed safely."
 
 
 def config_dir():
+    principal = current_principal()
+    if principal is not None:
+        return principal.directory('config')
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "aios"
 
 
 def data_dir():
+    principal = current_principal()
+    if principal is not None:
+        return principal.directory('data')
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "aios"
 
 
@@ -38,7 +45,7 @@ def write_json(path, value):
 
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": False, "theme_color": "blue",
+                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": True, "theme_color": "blue",
                 "agent_mode": "current", "agent_url": "", "agent_model": "", "agent_api_key": "",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
@@ -116,6 +123,9 @@ def save_config(values):
             raise ValueError("Choose an existing GGUF model file.")
         config["model_path"] = str(path)
     write_json(config_dir() / "config.json", config)
+    if "theme_color" in values:
+        from .terminal_theme import apply_chrome
+        apply_chrome(config["theme_color"])
     return config
 
 

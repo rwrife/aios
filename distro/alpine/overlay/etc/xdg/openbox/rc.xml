@@ -6,8 +6,21 @@
     <screen_edge_strength>20</screen_edge_strength>
   </resistance>
 
+  <theme>
+    <name>AIOS</name>
+    <titleLayout>LC</titleLayout>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+    <font place="ActiveWindow">
+      <name>DejaVu Sans</name><size>16</size><weight>Normal</weight><slant>Normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>DejaVu Sans</name><size>16</size><weight>Normal</weight><slant>Normal</slant>
+    </font>
+  </theme>
+
   <keyboard>
-    <keybind key="W-Return"><action name="Execute"><command>xterm</command></action></keybind>
+    <keybind key="W-Return"><action name="Execute"><command>aios-terminal</command></action></keybind>
     <keybind key="A-Tab"><action name="NextWindow"/></keybind>
     <keybind key="A-F4"><action name="Close"/></keybind>
   </keyboard>
@@ -26,6 +39,10 @@
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
       <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
       <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Frame">
+      <!-- Borderless windows can still be resized from anywhere inside. -->
+      <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
     </context>
     <context name="Client">
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
@@ -55,6 +72,10 @@
     </application>
     <application title="AIOS Chat">
       <position force="yes"><x>center</x><y>center</y></position>
+      <focus>yes</focus>
+    </application>
+    <application class="AIOS-Terminal">
+      <position force="no"><x>center</x><y>center</y></position>
       <focus>yes</focus>
     </application>
     <application title="AIOS Power">

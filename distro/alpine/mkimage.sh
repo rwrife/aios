@@ -50,6 +50,12 @@ export AIOS_WORLD_X11="$ROOT_DIR/apks/world.x11"
 export AIOS_WORLD_VM="$ROOT_DIR/apks/world.vm"
 export AIOS_WORLD_DEVEL="$ROOT_DIR/apks/world.devel"
 export AIOS_WORLD_AI="$ROOT_DIR/apks/world.ai"
+export AIOS_IDENTITY_BUILD="${AIOS_IDENTITY_BUILD:-0}"
+case "$AIOS_IDENTITY_BUILD" in
+  0) export AIOS_WORLD_IDENTITY= ;;
+  1) export AIOS_WORLD_IDENTITY="$ROOT_DIR/apks/world.identity" ;;
+  *) echo 'AIOS_IDENTITY_BUILD must be 0 or 1' >&2; exit 1 ;;
+esac
 export AIOS_STAGE_DIR="$WORK_DIR/stage"
 export AIOS_REPOSITORIES="$REPO_MAIN $REPO_COMMUNITY"
 export AIOS_APKOVL_SCRIPT="genapkovl-aios.sh"

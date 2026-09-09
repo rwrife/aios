@@ -5,21 +5,90 @@ import QtQuick.Window
 
 Window {
     id: desktop
-    visible: true
+    property bool chatPreview: Qt.application.arguments.indexOf("--chat") >= 0
+    property bool windowed: chatPreview || Qt.application.arguments.indexOf("--windowed") >= 0
+    visible: !chatPreview
     title: "AIOS Desktop"
-    width: Screen.width; height: Screen.height
-    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
+    height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
+    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
-    Theme { id: theme; selected: backend.config.theme_color || "blue" }
+    property var backendApi: typeof backend === "undefined" ? null : backend
+    property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
+    property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
+    property var minimizedChats: []
+    readonly property int minimizedChatCount: minimizedChats.length
+    Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
-    property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    property bool reducedMotion: backendApi.config.reduced_motion === true
+    function removeMinimizedChat(window) {
+        var remaining = []
+        for (var i = 0; i < minimizedChats.length; ++i) {
+            if (minimizedChats[i] !== window)
+                remaining.push(minimizedChats[i])
+        }
+        minimizedChats = remaining
+    }
+    function trackMinimizedChat(window) {
+        removeMinimizedChat(window)
+        var updated = minimizedChats.slice()
+        updated.push(window)
+        minimizedChats = updated
+    }
+    function restoreMinimizedChat() {
+        var pending = minimizedChats.slice()
+        while (pending.length > 0) {
+            var window = pending.pop()
+            minimizedChats = pending.slice()
+            if (!window || window.visibility !== Window.Minimized)
+                continue
+            window.showNormal()
+            window.raise()
+            window.requestActivate()
+            return window
+        }
+        return null
+    }
+    function openChat() {
+        if (sessionControlApi.enabled)
+            return null
+        var restored = restoreMinimizedChat()
+        if (restored)
+            return restored
+        var window = chatComponent.createObject(desktop, {
+            backend: backendApi,
+            session: backendApi.createSession(),
+            theme: theme,
+            profileControl: sessionControlApi.chatProfile(),
+            ownsProfileControl: true
+        })
+        if (!window)
+            return null
+        window.minimized.connect(function() { desktop.trackMinimizedChat(window) })
+        window.removed.connect(function() { desktop.removeMinimizedChat(window) })
+        window.show()
+        window.raise()
+        window.requestActivate()
+        return window
+    }
     property var settingsWindow: null
+    property var setupWindow: null
+    function openSetup() {
+        if (sessionControlApi.enabled) return
+        if (!setupWindow) setupWindow = setupComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
+        if (setupWindow) { setupWindow.show(); setupWindow.raise(); setupWindow.requestActivate() }
+    }
+    Connections {
+        target: backendApi
+        function onLoaded() { if (backendApi.setupPending()) desktop.openSetup() }
+    }
+    Component { id: setupComponent; SetupWizard {} }
     function openSettings() {
-        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme})
+        if (sessionControlApi.enabled) return
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
-    Component { id: settingsComponent; SettingsWindow {} }
+    Component { id: settingsComponent; SettingsWindow { onSetupRequested: desktop.openSetup() } }
     property real phase: 0
     NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 48000; loops: Animation.Infinite; running: !desktop.reducedMotion && desktop.visible }
     onReducedMotionChanged: waves.requestPaint()
@@ -79,6 +148,28 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
+    Loader {
+        x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
+        active: displayBridgeApi.enabled && sessionControlApi.embeddedDisplay
+        onActiveChanged: {
+            if (active) setSource("PrivateDisplay.qml", {control: sessionControlApi, bridge: displayBridgeApi})
+            else setSource("")
+        }
+    }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
+    Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
+    SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }
+    Rectangle {
+        anchors.fill: parent; z: 100000; color: "#101b27"
+        visible: displayBridgeApi.enabled && sessionControlApi.enabled && sessionControlApi.shield
+        MouseArea { anchors.fill: parent }
+        Column {
+            anchors.centerIn: parent; spacing: 16
+            Label { text: "Personal work is hidden"; color: "white"; font.pixelSize: 28 }
+            Button { text: "Return to anonymous"; onClicked: sessionControlApi.suspend() }
+        }
+    }
     ChatOrb {
         id: launcher
         anchors.horizontalCenter: parent.horizontalCenter
@@ -98,7 +189,7 @@ Window {
                 }
             } }
         }
-        QuietButton { text: ">_"; tip: "Terminal"; onClicked: backend.terminal() }
+        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal() }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
@@ -122,14 +213,124 @@ Window {
         background: Rectangle { color: theme.input; radius: 6; border.color: parent.activeFocus ? theme.accent : theme.line }
     }
     Component { id: chatComponent; ChatWindow {} }
-    Dialog {
-        id: powerDialog; parent: desktop.contentItem; anchors.centerIn: parent; title: "AIOS Power"; modal: true; width: 360; popupType: Popup.Window
-        background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
-        contentItem: Row { spacing: 12
-            QuietButton { text: "Cancel"; onClicked: powerDialog.close() }
-            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backend.power("reboot") } }
-            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backend.power("poweroff") } }
+    // Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4
+    Popup {
+        id: powerDialog
+        objectName: "powerDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(420, parent.width - 32)
+        padding: 28
+        modal: true
+        dim: true
+        focus: true
+        // Keep rounded corners on the desktop surface, without native window edges.
+        popupType: Popup.Item
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: cancelPower.forceActiveFocus(Qt.TabFocusReason)
+        Overlay.modal: Rectangle {
+            color: Qt.rgba(theme.night.r, theme.night.g, theme.night.b, 0.62)
+            Behavior on opacity { NumberAnimation { duration: desktop.reducedMotion ? 0 : 160 } }
         }
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: desktop.reducedMotion ? 0 : 160; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: desktop.reducedMotion ? 0 : 100 }
+        }
+        background: Rectangle {
+            color: theme.panel
+            radius: 24
+            border.color: Qt.rgba(theme.line.r, theme.line.g, theme.line.b, 0.55)
+        }
+        contentItem: ColumnLayout {
+            spacing: 20
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Text {
+                    text: "Ready to leave?"
+                    color: theme.ink
+                    font.pixelSize: 26
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    text: "Save your work before you go."
+                    color: theme.muted
+                    font.pixelSize: 15
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                PowerAction {
+                    text: "Restart"
+                    symbol: "restart"
+                    onClicked: { powerDialog.close(); backendApi.power("reboot") }
+                }
+                PowerAction {
+                    text: "Shut down"
+                    symbol: "power"
+                    onClicked: { powerDialog.close(); backendApi.power("poweroff") }
+                }
+            }
+            QuietButton {
+                id: cancelPower
+                text: "Cancel"
+                Layout.fillWidth: true
+                onClicked: powerDialog.close()
+                ToolTip.visible: false
+            }
+        }
+    }
+    component PowerAction: Button {
+        id: action
+        property string symbol
+        Layout.fillWidth: true
+        implicitHeight: 108
+        hoverEnabled: true
+        Accessible.name: text
+        contentItem: ColumnLayout {
+            spacing: 12
+            Canvas {
+                id: powerActionIcon
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                onPaint: {
+                    var c = getContext("2d"); c.reset()
+                    c.strokeStyle = theme.accent; c.lineWidth = 1.8; c.lineCap = "round"; c.lineJoin = "round"
+                    c.beginPath()
+                    if (action.symbol === "power") {
+                        c.arc(14, 15, 9, -Math.PI / 3, Math.PI * 4 / 3)
+                        c.stroke(); c.beginPath(); c.moveTo(14, 3); c.lineTo(14, 13)
+                    } else {
+                        c.arc(14, 14, 9, -Math.PI / 2, Math.PI)
+                        c.stroke(); c.beginPath(); c.moveTo(3, 9); c.lineTo(5, 15); c.lineTo(11, 13)
+                    }
+                    c.stroke()
+                }
+                Connections { target: theme; function onAccentChanged() { powerActionIcon.requestPaint() } }
+            }
+            Text {
+                text: action.text
+                color: theme.ink
+                font.pixelSize: 16
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+        background: Rectangle {
+            radius: 16
+            color: action.down ? theme.line : action.hovered ? Qt.lighter(theme.input, 1.18) : theme.input
+            border.width: action.visualFocus ? 2 : 0
+            border.color: theme.accent
+            Behavior on color { ColorAnimation { duration: desktop.reducedMotion ? 0 : 100 } }
+        }
+        opacity: enabled ? 1 : 0.5
     }
 
 }

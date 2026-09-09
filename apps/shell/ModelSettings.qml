@@ -50,7 +50,7 @@ Item {
             spacing: 12
             RowLayout {
                 Layout.fillWidth: true
-                Choice { id: settingsTab; model: ["Model", "Voice"]; Layout.fillWidth: true }
+                Choice { id: settingsTab; model: ["Chat", "Voice"]; Layout.fillWidth: true }
                 QuietButton { text: "×"; tip: "Close settings"; visible: settings.showClose; onClicked: settings.closeRequested() }
             }
             ScrollView {

@@ -18,8 +18,14 @@
 #include <QNetworkReply>
 #include <QUuid>
 #include <QTemporaryDir>
+#include <QSettings>
 #include <QDesktopServices>
 #include "voice.h"
+#include "SessionControl.h"
+#include "DisplayBridge.h"
+#ifdef AIOS_EMBEDDED_DISPLAY
+#include "PrivateCompositor.h"
+#endif
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
 #include <signal.h>
@@ -108,7 +114,8 @@ public:
             sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             m_config = owner->config();
             connect(owner, &Backend::changed, this, [this] { m_config = owner->config(); emit changed(); });
-        } else QTimer::singleShot(0, this, [this] { run({{"action", "load"}}); });
+        } else if (qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET"))
+            QTimer::singleShot(0, this, [this] { run({{"action", "load"}}); });
     }
     ~Backend() {
         voice.cancel();
@@ -183,13 +190,13 @@ public:
     }
     Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
     Q_INVOKABLE void copy(const QString &text) { QGuiApplication::clipboard()->setText(text); }
-    Q_INVOKABLE void terminal() { QProcess::startDetached("xterm", {"-fa", "DejaVu Sans Mono", "-fs", "11"}); }
+    Q_INVOKABLE void terminal() { QProcess::startDetached("aios-terminal", {}); }
     Q_INVOKABLE void openSystemSettings(const QString &section) {
         QString program;
         QStringList args;
         if (section == "sound") program = "pavucontrol";
         else if (section == "display") program = "arandr";
-        else if (section == "network") { program = "xterm"; args = {"-T", "AIOS Network & Wi-Fi", "-fa", "DejaVu Sans Mono", "-fs", "11", "-e", "nmtui"}; }
+        else if (section == "network") { program = "aios-terminal"; args = {"-title", "AIOS Network & Wi-Fi", "-e", "nmtui"}; }
         else return;
         if (!QProcess::startDetached(program, args)) {
             m_status = "Could not open " + section + " settings. Check that the system settings packages are installed.";
@@ -228,7 +235,20 @@ public:
         m_busy = true; m_status = "Downloading starter model…"; emit changed();
         run({{"action", "setup-local"}});
     }
+    Q_INVOKABLE bool setupPending() const {
+        return !QSettings("aios", "setup").value("dismissed", false).toBool();
+    }
+    Q_INVOKABLE void dismissSetup() {
+        QSettings settings("aios", "setup");
+        settings.setValue("dismissed", true);
+        settings.sync();
+        if (settings.status() != QSettings::NoError) {
+            m_status = "Could not save setup preference. Setup may appear again next time.";
+            emit changed();
+        }
+    }
 signals:
+    void loaded();
     void changed();
     void configured();
     void transcribed(const QString &text);
@@ -306,6 +326,7 @@ private:
                 if (type == "loaded") {
                     m_config = value.value("config").toObject().toVariantMap();
                     m_messages = value.value("messages").toArray().toVariantList(); startLocal();
+                    emit loaded();
                 } else if (type == "token" && !m_messages.isEmpty()) {
                     auto last = m_messages.last().toMap(); last["content"] = last.value("content").toString() + value.value("text").toString();
                     m_messages.last() = last; m_status = "Replying…";
@@ -363,6 +384,11 @@ private:
 };
 
 int main(int argc, char **argv) {
+#ifdef AIOS_EMBEDDED_DISPLAY
+    if (!qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET"))
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    qmlRegisterType<PrivateCompositor>("AIOS.Display", 1, 0, "PrivateCompositor");
+#endif
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     QGuiApplication app(argc, argv);
     app.setFont(QFont("DejaVu Sans", 10));
@@ -380,16 +406,31 @@ int main(int argc, char **argv) {
     app.setOrganizationName("AIOS");
     app.setQuitOnLastWindowClosed(false);
     Backend backend;
+    SessionControl sessionControl;
+    DisplayBridge displayBridge;
+    QObject::connect(&sessionControl, &SessionControl::displayRequested, &app, [&] {
+        if (!displayBridge.enabled()) sessionControl.displayFailed();
+    });
+    QObject::connect(&sessionControl, &SessionControl::privacyLost, &app, [] {
+        QGuiApplication::clipboard()->clear();
+    });
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
+    engine.rootContext()->setContextProperty("sessionControl", &sessionControl);
+    engine.rootContext()->setContextProperty("displayBridge", &displayBridge);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(QUrl("qrc:/Main.qml"));
     const auto arguments = app.arguments();
+    if (arguments.contains("--prepare-display") && displayBridge.enabled()) {
+        QTimer::singleShot(1500, &sessionControl, [&sessionControl] {
+            emit sessionControl.displayRequested("");
+        });
+    }
     if (arguments.contains("--chat") && !engine.rootObjects().isEmpty())
         QMetaObject::invokeMethod(engine.rootObjects().first(), "openChat");
     const int capture = arguments.indexOf("--capture");
     if (capture >= 0 && capture + 1 < arguments.size()) {
-        QTimer::singleShot(1500, &app, [&app, arguments, capture] {
+        QTimer::singleShot(arguments.contains("--prepare-display") ? 5000 : 1500, &app, [&app, arguments, capture] {
             bool saved = false;
             for (auto window : app.allWindows()) {
                 if (window->isVisible() && (window->title() == "AIOS Chat" || !arguments.contains("--chat"))) {

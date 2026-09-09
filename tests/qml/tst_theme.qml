@@ -47,6 +47,21 @@ TestCase {
         backend.configuring = false
         window.destroy()
     }
+    function test_background_motion_can_be_enabled() {
+        backend.config = ({theme_color: "blue", reduced_motion: true})
+        var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
+        verify(window !== null)
+        window.show()
+        findChild(window, "settingsPages").currentIndex = 5
+        wait(100)
+        var motionToggle = findChild(window, "motionToggle")
+        verify(motionToggle !== null)
+        compare(motionToggle.text, "Enable motion")
+        mouseClick(motionToggle)
+        tryCompare(backend.config, "reduced_motion", false)
+        compare(motionToggle.text, "Reduce motion")
+        window.destroy()
+    }
     function test_unknown_theme_falls_back() {
         palette.selected = "unknown"
         compare(palette.paletteIndex, 0)

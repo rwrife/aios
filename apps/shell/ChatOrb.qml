@@ -86,7 +86,4 @@ Button {
     onActivityLevelChanged: surface.requestPaint()
     onAwakenedChanged: surface.requestPaint()
     Connections { target: orb.theme; ignoreUnknownSignals: true; function onPaletteIndexChanged() { surface.requestPaint() } }
-    ToolTip.visible: hovered || activeFocus
-    ToolTip.text: "New chat"
-    ToolTip.delay: 900
 }

@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+[ "$(id -u)" = 0 ] || { echo 'Run setup as root on the target AIOS system.' >&2; exit 1; }
+[ -f /etc/alpine-release ] || { echo 'This setup wrapper is for Alpine AIOS only.' >&2; exit 1; }
+[ ! -e /etc/aios/sessiond.json ] && [ ! -e /var/lib/aios-identity ] || {
+    echo 'Existing identity state will not be overwritten.' >&2; exit 1;
+}
+# Explicit IDs stay outside the reserved personal-workspace range (30000–39999).
+# Refuse collisions rather than borrowing another service's identity.
+for account in aios-identity aios-anonymous; do
+    if ! id "$account" >/dev/null 2>&1; then
+        case "$account" in aios-identity) uid=21000 ;; aios-anonymous) uid=21001 ;; esac
+        if awk -F: -v uid="$uid" '$3 == uid { found=1 } END { exit !found }' /etc/passwd; then
+            echo "UID $uid is already allocated; provision distinct service accounts first." >&2; exit 1
+        fi
+        adduser -D -H -s /sbin/nologin -u "$uid" "$account"
+    fi
+done
+getent group aios-broker >/dev/null 2>&1 || addgroup aios-broker
+addgroup aios aios-broker
+addgroup aios-identity aios-broker
+export PYTHONPATH=/usr/local/share/aios
+exec python3 -m aios.identity_setup "$@"

@@ -10,5 +10,6 @@ mkdir -p "$ROOT_DIR/distro/alpine/out"
 exec "$RUNTIME" run --rm --platform linux/amd64 \
   -e ARCH="$ARCH" -e RELEASE_TAG="${RELEASE_TAG:-$(date -u +%Y%m%d)}" \
   -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -e AIOS_IDENTITY_BUILD="${AIOS_IDENTITY_BUILD:-0}" \
   -v "$ROOT_DIR:/workspace" -v aios-build-cache:/build -w /workspace \
   "${AIOS_BUILDER_IMAGE:-$IMAGE}" sh /workspace/scripts/container-build.sh "$@"

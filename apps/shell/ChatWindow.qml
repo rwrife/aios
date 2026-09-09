@@ -9,13 +9,26 @@ Window {
     required property var backend
     required property var session
     required property var theme
+    property var profileControl: null
+    property bool ownsProfileControl: false
     title: "AIOS Chat"
     visible: true
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
     width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
     x: (Screen.width - width)/2; y: (Screen.height - height)/2
     color: theme.panel
-    onClosing: { session.closeSession(); Qt.callLater(chat.destroy) }
+    signal minimized()
+    signal removed()
+    onVisibilityChanged: function() {
+        if (chat.visibility === Window.Minimized)
+            minimized()
+    }
+    onClosing: {
+        removed()
+        session.closeSession()
+        if (ownsProfileControl && profileControl) profileControl.dispose()
+        Qt.callLater(chat.destroy)
+    }
     Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
     function submit() {
         if (session.busy || session.recording) return;
@@ -37,20 +50,27 @@ Window {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 56
             Item {
                 Layout.fillWidth: true; implicitHeight: 36
                 Text { text: "Chat"; color: theme.muted; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
-            QuietButton { text: "⋯"; tip: "Model and voice settings"; onClicked: options.open() }
+            QuietButton { text: "⋯"; tip: "Chat settings"; onClicked: options.open() }
             QuietButton { text: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
             QuietButton { text: "×"; tip: "Close this chat"; onClicked: chat.close() }
         }
+        UserBubble { id: userProfile; parent: chat.contentItem; anchors.top: parent.top; anchors.topMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; control: chat.profileControl; ink: theme.ink; surface: theme.input }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
-            Text { visible: session.messages.length === 0; anchors.centerIn: parent; text: "What’s on your mind?"; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
+            Column {
+                visible: session.messages.length === 0; anchors.centerIn: parent; width: parent.width - 24; spacing: 18
+                Text { width: parent.width; text: userProfile.greeting; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
+                Button { objectName: "setupAccount"; visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.createAccount() }
+            }
             ListView {
                 id: conversation; objectName: "conversation"
+                visible: count > 0
                 anchors.fill: parent; clip: true; spacing: 24
                 model: ListModel { id: messageRows; dynamicRoles: true }
                 property bool followLatest: true
@@ -156,10 +176,21 @@ Window {
     Popup {
         id: options; parent: chat.contentItem; anchors.centerIn: parent
         width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24)
-        modal: true; padding: 20
+        modal: true; padding: 20; closePolicy: Popup.CloseOnEscape
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 10 }
-        onOpened: modelSettings.reload()
-        contentItem: ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+        onOpened: { modelSettings.reload(); if (optionsTabs.currentIndex === 1) chatAccounts.refresh(); }
+        contentItem: ColumnLayout {
+            TabBar {
+                id: optionsTabs; Layout.fillWidth: true
+                TabButton { text: "AI and voice" }
+                TabButton { objectName: "accountsTab"; text: "Accounts" }
+            }
+            StackLayout {
+                currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true
+                ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+                AccountSettings { id: chatAccounts; control: chat.profileControl }
+            }
+        }
     }
     Connections {
         target: session

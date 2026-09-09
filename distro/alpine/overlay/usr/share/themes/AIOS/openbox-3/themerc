@@ -1,0 +1,94 @@
+# Hallmark · component: window chrome · genre: modern-minimal · theme: AIOS Ocean
+# Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4
+
+border.width: 0
+padding.width: 24
+padding.height: 18
+window.handle.width: 0
+window.client.padding.width: 0
+window.label.text.justify: Left
+
+window.active.border.color: #4c6574
+window.inactive.border.color: #354e60
+window.active.client.color: #4c6574
+window.inactive.client.color: #354e60
+window.active.title.separator.color: #4c6574
+window.inactive.title.separator.color: #354e60
+
+window.active.title.bg: Flat Solid
+window.active.title.bg.color: #172633
+window.active.label.bg: Parentrelative
+window.active.label.text.color: #f1f5f6
+window.active.label.text.font: shadow=n
+
+window.inactive.title.bg: Flat Solid
+window.inactive.title.bg.color: #172633
+window.inactive.label.bg: Parentrelative
+window.inactive.label.text.color: #f1f5f6
+window.inactive.label.text.font: shadow=n
+
+window.active.button.unpressed.bg: Parentrelative
+window.active.button.unpressed.image.color: #b2c3cd
+window.active.button.hover.bg: Flat Solid
+window.active.button.hover.bg.color: #203340
+window.active.button.hover.image.color: #b2c3cd
+window.active.button.pressed.bg: Flat Solid
+window.active.button.pressed.bg.color: #354e60
+window.active.button.pressed.image.color: #f1f5f6
+window.active.button.disabled.bg: Parentrelative
+window.active.button.disabled.image.color: #6f8794
+window.active.button.toggled.unpressed.bg: Parentrelative
+window.active.button.toggled.unpressed.image.color: #bde4e6
+window.active.button.toggled.hover.bg: Flat Solid
+window.active.button.toggled.hover.bg.color: #203340
+window.active.button.toggled.hover.image.color: #f1f5f6
+window.active.button.toggled.pressed.bg: Flat Solid
+window.active.button.toggled.pressed.bg.color: #354e60
+window.active.button.toggled.pressed.image.color: #f1f5f6
+
+window.inactive.button.unpressed.bg: Parentrelative
+window.inactive.button.unpressed.image.color: #b2c3cd
+window.inactive.button.hover.bg: Flat Solid
+window.inactive.button.hover.bg.color: #203340
+window.inactive.button.hover.image.color: #b2c3cd
+window.inactive.button.pressed.bg: Flat Solid
+window.inactive.button.pressed.bg.color: #203340
+window.inactive.button.pressed.image.color: #b2c3cd
+window.inactive.button.disabled.bg: Parentrelative
+window.inactive.button.disabled.image.color: #4c6574
+window.inactive.button.toggled.unpressed.bg: Parentrelative
+window.inactive.button.toggled.unpressed.image.color: #6f8794
+window.inactive.button.toggled.hover.bg: Flat Solid
+window.inactive.button.toggled.hover.bg.color: #172633
+window.inactive.button.toggled.hover.image.color: #b2c3cd
+window.inactive.button.toggled.pressed.bg: Flat Solid
+window.inactive.button.toggled.pressed.bg.color: #203340
+window.inactive.button.toggled.pressed.image.color: #b2c3cd
+
+window.active.handle.bg: Flat Solid
+window.active.handle.bg.color: #172633
+window.active.grip.bg: Parentrelative
+window.inactive.handle.bg: Flat Solid
+window.inactive.handle.bg.color: #101b27
+window.inactive.grip.bg: Parentrelative
+
+menu.border.width: 1
+menu.border.color: #4c6574
+menu.title.bg: Flat Solid
+menu.title.bg.color: #172633
+menu.title.text.color: #f1f5f6
+menu.title.text.justify: Left
+menu.items.bg: Flat Solid
+menu.items.bg.color: #172633
+menu.items.text.color: #b2c3cd
+menu.items.active.bg: Flat Solid
+menu.items.active.bg.color: #203340
+menu.items.active.text.color: #f1f5f6
+menu.items.disabled.text.color: #6f8794
+
+osd.border.width: 1
+osd.border.color: #4c6574
+osd.bg: Flat Solid
+osd.bg.color: #172633
+osd.label.bg: Parentrelative
+osd.label.text.color: #f1f5f6

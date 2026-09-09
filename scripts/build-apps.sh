@@ -8,7 +8,12 @@ mkdir -p "$BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
 python3 "$ROOT/scripts/stage-codex.py" "$BUILD" "$DEST"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
 git config --global --add safe.directory "$BUILD/llama"
-cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+case "${AIOS_IDENTITY_BUILD:-0}" in
+  0) embedded_display=OFF ;;
+  1) embedded_display=ON ;;
+  *) echo 'AIOS_IDENTITY_BUILD must be 0 or 1' >&2; exit 1 ;;
+esac
+cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DAIOS_EMBEDDED_DISPLAY="$embedded_display"
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
 rm -rf "$DEST/usr/local/share/aios/examples"

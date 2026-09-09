@@ -12,11 +12,19 @@ if [ -f "$HOME/.screenlayout/default.sh" ]; then
 fi
 openbox &
 wm=$!
-trap 'kill "$wm" 2>/dev/null || true' EXIT INT TERM
+picom --config /etc/xdg/picom.conf >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+compositor=$!
+trap 'kill "$compositor" "$wm" 2>/dev/null || true' EXIT INT TERM
 # Software rendering is a predictable baseline on virtual machines.
 export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
+# Match multimedia to the software-rendered desktop: avoid probing unavailable
+# GPU media drivers in a VM. Audio capture/playback still uses PulseAudio.
+# A comma is Qt's explicit empty hardware-backend list (an empty value is not).
+export QT_FFMPEG_DECODING_HW_DEVICE_TYPES="${QT_FFMPEG_DECODING_HW_DEVICE_TYPES:-,}"
+export QT_FFMPEG_ENCODING_HW_DEVICE_TYPES="${QT_FFMPEG_ENCODING_HW_DEVICE_TYPES:-,}"
+export QT_DISABLE_HW_TEXTURES_CONVERSION="${QT_DISABLE_HW_TEXTURES_CONVERSION:-1}"
 pulseaudio --start --exit-idle-time=-1 >>"$HOME/.local/state/aios/audio.log" 2>&1 || true
 aios-shell >>"$HOME/.local/state/aios/session.log" 2>&1 || {
-  xterm -e sh -c 'printf "Desktop failed. Logs: ~/.local/state/aios/session.log\n"; exec bash'
+  aios-terminal -title "AIOS Recovery" -e sh -c 'printf "Desktop failed. Logs: ~/.local/state/aios/session.log\n"; exec bash'
 }
 wait "$wm"
