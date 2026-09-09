@@ -82,6 +82,9 @@ public:
         call({{"action", "activate_verified"}, {"owner", name}, {"pin", pin},
               {"title", QJsonValue::Null}, {"session", QJsonValue::Null}});
     }
+    Q_INVOKABLE void recover(const QString &name, const QString &secret, const QString &pin) {
+        call({{"action", "recover"}, {"owner", name}, {"recovery", secret}, {"pin", pin}});
+    }
     Q_INVOKABLE void launch(const QString &app) {
         if (m_embedded) { emit displayRequested(app); return; }
         launchReady(app);
@@ -207,7 +210,7 @@ private:
                     const auto app = pendingApp; pendingApp.clear();
                     if (!app.isEmpty()) launchReady(app);
                 }
-                else if (action == "enroll_manual") emit enrollmentCompleted(result.value("recovery").toString());
+                else if (action == "enroll_manual" || action == "recover") emit enrollmentCompleted(result.value("recovery").toString());
                 else if (action == "document_read") emit documentLoaded(result.value("content").toString());
                 else if (action == "document_save") emit documentSaved();
                 else if (action == "request_capability") m_challenge = result.toVariantMap();

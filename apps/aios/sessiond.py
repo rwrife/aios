@@ -27,6 +27,7 @@ FIELDS = {
     'history': ('before',), 'summarize': ('summary',),
     'document_read': ('path',), 'document_save': ('path', 'content'),
     'enroll_manual': ('name', 'pin', 'consent'),
+    'recover': ('owner', 'recovery', 'pin'),
     'activate_verified': ('owner', 'pin', 'title', 'session'),
     'display_acquire': (), 'display_ready': ('lease',),
     'display_attest': ('platform', 'embedded'),
@@ -130,7 +131,7 @@ class Service:
         if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
             if action not in ('status', 'suspend', 'evidence', 'display_attest'):
                 raise PermissionError('Personal requests require the registered display process')
-        if action in ('activate', 'activate_verified', 'enroll_manual', 'search',
+        if action in ('activate', 'activate_verified', 'enroll_manual', 'recover', 'search',
                       'request_capability', 'verify', 'github_profile') and not self._can_personal():
             raise PermissionError("Personal mode requires a validated isolated display and trusted input path")
         if action == 'status':
@@ -154,6 +155,8 @@ class Service:
             return {'session': s.activate_verified(request['owner'], request['pin'], request['title'], request['session'])}
         elif action == 'enroll_manual':
             return s.enroll(request['name'], request['pin'], request['consent'], None)
+        elif action == 'recover':
+            return {'recovery': s.recover(request['owner'], request['recovery'], request['pin'])}
         elif action == 'display_acquire':
             if self.peer_pid is None or self.peer_pid != self.display_pid:
                 raise PermissionError('Only the registered display process may acquire a listener')

@@ -29,6 +29,10 @@ TestCase {
         signal enrollmentCompleted(string recovery)
         signal unlocked()
         property int enrollments: 0
+        property int recoveries: 0
+        function recover(name, secret, pin) {
+            if (name === "Test profile" && secret === "test-recovery-secret" && pin === "246802") recoveries++
+        }
         function enroll(name, pin, consent) {
             if (name === "Test profile" && pin === "123456" && consent) enrollments++
         }
@@ -39,6 +43,28 @@ TestCase {
     Component { id: pinComponent; SecurePinPrompt {} }
     Component { id: statusComponent; IdentityStatus {} }
     Component { id: enrollmentComponent; EnrollmentFlow {} }
+    function test_recovery_submits_and_clears_both_secrets() {
+        var surface = enrollmentComponent.createObject(test, {control: control, recovering: true})
+        surface.open()
+        var name = findChild(surface, "profileName")
+        var pin = findChild(surface, "enrollmentPin")
+        var secret = findChild(surface, "recoveryInput")
+        var submit = findChild(surface, "profileSubmit")
+        name.text = "Test profile"
+        pin.text = "246802"
+        secret.text = "test-recovery-secret"
+        compare(secret.echoMode, TextInput.Password)
+        var before = control.recoveries
+        tryCompare(submit, "enabled", true)
+        mouseClick(submit)
+        compare(control.recoveries, before + 1)
+        compare(pin.text, "")
+        compare(secret.text, "")
+        secret.text = "private"
+        control.privacyLost()
+        tryCompare(secret, "text", "")
+        surface.destroy()
+    }
     function test_enrollment_submits_masked_pin_and_clears_it() {
         var surface = enrollmentComponent.createObject(test, {control: control, creating: true})
         surface.open()

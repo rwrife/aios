@@ -86,6 +86,26 @@ class SessionTests(unittest.TestCase):
         restarted.activate_verified('Alice', '123456')
         restarted.suspend()
 
+    def test_recovery_rotates_secret_and_revokes_active_session(self):
+        profile = self.s.enroll('Carol', '135790', True, None)
+        self.s.activate_verified('Carol', '135790', 'Private notes')
+        work = self.s.work
+        challenge = self.s.request_capability('secrets.github.profile', 'github')
+        token = self.s.verify(challenge['id'], '135790', False)
+        replacement = self.s.recover('Carol', profile['recovery'], '246802')
+        self.assertIsNone(self.s.owner)
+        self.assertNotIn(token, self.s.capabilities.tokens)
+        with self.assertRaises(PermissionError):
+            self.s.recover('Carol', profile['recovery'], '999999')
+        self.s.activate_verified('Carol', '246802', session=work)
+        self.assertEqual(self.s.work, work)
+        self.s.suspend()
+        self.assertNotEqual(replacement, profile['recovery'])
+        with self.assertRaises(PermissionError):
+            Service(self.s, 1000, 1001).dispatch(
+                {'action': 'recover', 'owner': 'Carol', 'recovery': replacement, 'pin': '123456'}, 1000)
+        self.s.recover('Carol', replacement, '123456')
+
     def activate(self, owner=None):
         self.recognize(owner or self.a)
         return self.s.activate('Résumé')

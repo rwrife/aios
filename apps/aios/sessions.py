@@ -145,16 +145,7 @@ class Sessions:
 
     def activate_verified(self, owner, pin, title=None, session=None):
         self.tick()
-        if not isinstance(owner, str) or len(owner) > 80:
-            raise ValueError('Enter a profile name')
-        try:
-            identity_id(owner)
-        except ValueError:
-            owners = [key for key, name in self.store.get('identities', {}).items()
-                      if name.casefold() == owner.strip().casefold()]
-            if len(owners) != 1:
-                raise PermissionError('Verification failed or temporarily locked')
-            owner = owners[0]
+        owner = self._resolve_owner(owner)
         record = self.store.get('identity-' + owner)
         if not record:
             raise PermissionError('Verification failed or temporarily locked')
@@ -175,6 +166,19 @@ class Sessions:
         self.manual_owner = owner
         self.manual_until = self.verified_until = self.clock() + 120
         return work
+
+    def _resolve_owner(self, owner):
+        if not isinstance(owner, str) or len(owner) > 80:
+            raise ValueError('Enter a profile name')
+        try:
+            identity_id(owner)
+        except ValueError:
+            owners = [key for key, name in self.store.get('identities', {}).items()
+                      if name.casefold() == owner.strip().casefold()]
+            if len(owners) != 1:
+                raise PermissionError('Verification failed or temporarily locked')
+            owner = owners[0]
+        return owner
 
     def _activate_for(self, candidate, title, session):
         if self.fusion.reason in ('conflict', 'ambiguous'):
@@ -401,7 +405,10 @@ class Sessions:
         return {'identity': owner, 'recovery': recovery}
 
     def recover(self, owner, recovery, new_pin):
-        identity_id(owner)
+        self.tick()
+        owner = self._resolve_owner(owner)
+        if self.owner and self.owner != owner:
+            raise PermissionError('Suspend current personal work first')
         record = self.store.get('identity-' + owner)
         if not isinstance(recovery, str) or len(recovery) > 128 or not record or not secrets.compare_digest(
             record['recovery'], hashlib.sha256(recovery.encode()).hexdigest()

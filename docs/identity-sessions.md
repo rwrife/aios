@@ -101,6 +101,13 @@ Protected resources still require their own operation-scoped challenge. Save the
 one-time recovery code when creating the profile. These controls are also usable
 with fictional profiles in the simulator, without kernel-isolation claims.
 
+In **Unlock your profile**, select **I have a recovery code** to enter the code
+and choose a replacement PIN. Recovery ends that profile's active lease, revokes
+capabilities, and rotates the recovery code. Save the replacement code shown once,
+then unlock normally. It neither enrolls a new identity nor merges workspaces.
+The old recovery code cannot be reused, and recovery uses the same protected
+display gate as PIN entry. Both entered secrets clear on submission or focus loss.
+
 `aios.isolation.LinuxIsolation` is a root-only adapter for broker-provisioned
 LUKS volumes, fixed UID mappings, cgroup v2 scopes and bubblewrap launches. Apps
 receive only the artifact directory, system binaries and a private Wayland socket;
@@ -191,7 +198,7 @@ appliance boot path. Physical display validation is still required.
 | 2 | New encrypted-volume provisioning, PIN-only profile UI, durable history paging, summary search, safe text-document save/resume and committed-enrollment replay implemented. Artifact claim, broader application adapters and administrator recovery of incomplete allocations remain. |
 | 3 | Face/model/tracker adapters implemented. Continuous identity daemon, consent/enrollment UI, calibrated quality thresholds and liveness hardware integration remain. |
 | 4 | Speaker encoder interface and conservative fusion implemented. Microphone capture/VAD, lip synchronization, direction-of-arrival and adversarial attribution testing remain. |
-| 5 | Scoped capability/PIN/recovery logic and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
+| 5 | Scoped capability/PIN/recovery logic, recovery-code PIN reset UI and restricted GitHub adapter implemented. Separate secrets process, provisioning UI, transaction UI, protected configuration and TPM integration remain. |
 | 6 | Embedded per-lease Wayland prototype, clipped application surfaces, in-window PIN overlay and protocol/rendering/input checks implemented. Protected appliance startup, physical display/input validation, deletion workflow and accessibility remain. |
 
 No claim is made that the seven-phase definition of done has been achieved.
