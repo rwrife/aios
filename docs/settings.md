@@ -14,7 +14,12 @@ provide the extension point for future settings.
 
 - **AI models:** shared with chat's ellipsis menu. Choose a local GGUF or bundled
   starter model, or configure a compatible remote endpoint, model and API key. The
-  Voice tab configures remote speech or local Whisper/eSpeak. Save applies the
+  Agent tasks controls choose Current chat model, ChatGPT subscription, or a
+  separate remote OpenAI-compatible endpoint/model/key for skills marked
+  `remote-preferred`. Current is the default; ordinary chat remains on the primary
+  provider, and AIOS never silently falls back to a paid provider. Changing the
+  Agent tasks remote endpoint clears its saved key unless a replacement is entered.
+  The Voice tab configures remote speech or local Whisper/eSpeak. Save applies the
   selected tab; closing without saving discards uncommitted field edits on reopen.
 - **Sound:** opens PulseAudio Volume Control for input/output devices, volume,
   mute and per-application audio. Set fallback devices for subsequent voice use.
@@ -40,4 +45,7 @@ by opening Settings.
 
 System tools are launched from a fixed allowlist; no arbitrary command comes
 from QML settings input. AI credentials retain the existing private config-file
-storage and separate chat/speech endpoint behavior.
+storage and separate primary chat, Agent tasks, and speech endpoint behavior.
+CLI users can set the same route with `--agent-mode`, `--agent-url`,
+`--agent-model`, and the non-echoing `--ask-agent-key`. See
+[agentic tools](agentic-tools.md).

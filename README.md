@@ -29,9 +29,14 @@ remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
-Chromium is available through chat with a tool-capable model, without a desktop
-browser icon. See [browser tools](docs/browser.md). The starter model has limited
-reasoning ability and is not a reliable browser agent; larger models can be imported.
+Tool-capable models can use AIOS Agent Skills, approved stdio MCP tools, and
+built-in browser/application tools. For example, try `I need a calculator` with
+a capable configured model to build or reuse a cached offline app. Agent tasks
+can stay on the current model or be explicitly routed to ChatGPT or a separate
+remote service. See [agentic tools](docs/agentic-tools.md). Chromium remains
+available as one built-in tool, without a desktop browser icon; see
+[browser tools](docs/browser.md). The starter model has limited reasoning
+ability and is not a reliable tool agent; larger models can be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.
 Secure Boot and physical hardware have not yet been validated.
@@ -44,6 +49,7 @@ aios-llm serve
 # In another terminal:
 aios-llm chat 'Hello'
 aios-llm configure --mode remote --url https://your-provider.example/v1 --model MODEL --ask-key
+aios-llm configure --agent-mode remote --agent-url https://your-agent.example/v1 --agent-model MODEL --ask-agent-key
 aios-new-app hello
 cmake -S hello -B hello/build -G Ninja
 cmake --build hello/build

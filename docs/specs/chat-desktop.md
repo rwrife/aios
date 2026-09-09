@@ -10,9 +10,20 @@ their own drafts, attachments and generation state. Closing one stops only that
 session. Other development applications remain usable.
 
 Chat supports a local GGUF model through llama.cpp or a remote OpenAI-compatible
-HTTPS endpoint. Replies stream as plain text, can be stopped, and never execute
-commands. Model configuration and the current conversation live under the user's
-XDG config/data directories. Conversations use unique files under
+HTTPS endpoint. Tool-capable chat can discover Agent Skills, use built-in
+browser/application tools, and call allowlisted stdio MCP tools. Requests such
+as "I need a calculator" activate the application builder, search the persistent
+app cache first, then build and launch one sandboxed offline `index.html` only
+when reuse is not suitable. Skills and MCP servers are installed/configured in
+the user's XDG directories and remain ephemeral in an unpersisted live session.
+
+Replies stream as plain text and can be stopped. Only validated structured calls
+to tools advertised for that turn execute; prose, code blocks, JSON-looking text,
+and arbitrary command strings never execute. Agent tasks can stay on the primary
+model or cross an explicit user-configured boundary to ChatGPT or a separate
+remote endpoint, with no silent paid fallback. Model configuration and the
+current conversation live under the user's XDG config/data directories.
+Conversations use unique files under
 `~/.local/share/aios/conversations/`; a new window never loads an old session.
 API keys are stored in a mode-0600 config file and
 are not returned to the UI. Autologin assumes a personally controlled machine.
@@ -47,4 +58,8 @@ installation to an explicitly selected blank virtual disk, persisted state after
 reboot, working power controls, release checksums and source/package manifests.
 
 Live mode is ephemeral. Installed mode must preserve user data. Never imply that
-a live download or chat history survives reboot unless persistence is enabled.
+a live download, generated application, user skill, MCP configuration, or chat
+history survives reboot unless persistence is enabled.
+
+See [agentic tools](../agentic-tools.md) for the supported skill and MCP subsets,
+application sandbox, provider routing, and trust boundaries.

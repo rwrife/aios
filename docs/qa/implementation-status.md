@@ -207,3 +207,38 @@ reply grows without recreating its row and stays visible, wheel scrolling keeps
 the history position across new tokens and can resume following, and sending
 while scrolled up returns to the latest message. Reply completion and window
 resizing are also covered. Image builds now run this UI suite before compiling.
+
+## Agentic tools checkpoint (2026-09-09)
+
+Agent Skills, the shared per-chat tool host, allowlisted stdio MCP tools, Agent
+tasks provider routing, and the cached single-file application builder are now
+covered by backend integration tests and user/architecture documentation.
+
+The new deterministic end-to-end test starts a real worker subprocess, agent
+loop, AF_UNIX ToolHost and ApplicationStore, plus a loopback OpenAI-compatible
+streaming server. It copies the shipped application-builder skill into a
+temporary user skill directory. The first turn searches an empty cache, creates,
+writes, publishes and launches an accessible offline calculator. The second
+turn finds the exact cached request and launches it without changing the
+document or manifest. Chromium and paid providers are intentionally replaced by
+a recording launcher and loopback model fixture.
+
+Executed under WSL:
+
+- The new end-to-end test passed three times: 1 test in 4.027 seconds, 2.830
+  seconds, and 2.967 seconds.
+- The relevant agent, ToolHost, application, worker, subscription, skill, MCP,
+  core and new integration modules passed 230 tests in 33.935 seconds, with one
+  existing platform/fixture skip.
+- Final full Python discovery passed 233 tests in 31.175 seconds, with one
+  existing platform/fixture skip. One preceding full run hit the existing
+  timing-sensitive MCP notification-flood test; that test passed alone in 0.174
+  seconds and the complete retry passed.
+- `sh -n scripts/build-apps.sh` passed.
+- `git diff --check` passed.
+
+The pinned Alpine QML/native validation already passed in Task 9 and was not
+repeated because Task 10 changes only Python tests and documentation. A full ISO
+build, real paid OpenAI/ChatGPT model calls, and a real configured third-party
+MCP server remain release validation work. This checkpoint does not claim those
+results.
