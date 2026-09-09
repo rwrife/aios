@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aios.local/schemas/identity-session-v1",
+  "title": "AIOS experimental identity/session records v1",
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "identityEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["track", "face", "voice", "face_strength", "stable", "interacting", "active_speaker", "live"],
+      "properties": {
+        "track": {"type": "string", "minLength": 1, "maxLength": 64},
+        "face": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "voice": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "face_strength": {"enum": ["none", "medium", "strong"]},
+        "stable": {"type": "boolean"}, "interacting": {"type": "boolean"},
+        "active_speaker": {"type": "boolean"}, "live": {"type": "boolean"}
+      }
+    },
+    "presenceLease": {
+      "type": "object", "additionalProperties": false,
+      "required": ["owner", "lease", "expires"],
+      "properties": {
+        "owner": {"$ref": "#/$defs/uuid"}, "lease": {"$ref": "#/$defs/uuid"},
+        "expires": {"type": "number", "description": "Daemon monotonic clock; not portable across restarts"}
+      }
+    },
+    "workSession": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "owner", "title", "status", "updated", "summary"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"}, "owner": {"$ref": "#/$defs/uuid"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "status": {"enum": ["active", "suspended", "archived", "deleted"]},
+        "updated": {"type": "number"}, "summary": {"type": "string"}
+      }
+    },
+    "launchRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["action", "app", "arguments"],
+      "properties": {
+        "action": {"const": "launch"}, "app": {"enum": ["calculator", "terminal", "editor"]},
+        "arguments": {"type": "array", "maxItems": 1, "items": {"type": "string", "maxLength": 240}}
+      }
+    },
+    "capability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["owner", "lease", "operation", "resource", "expires", "single_use"],
+      "properties": {
+        "owner": {"$ref": "#/$defs/uuid"}, "lease": {"$ref": "#/$defs/uuid"},
+        "operation": {"enum": ["workspace.personal", "financial.read", "secrets.github.profile", "message.send", "financial.transfer", "system.install", "artifacts.claim", "identity.delete"]},
+        "resource": {"type": "string", "minLength": 1, "maxLength": 256},
+        "expires": {"type": "number"}, "single_use": {"type": "boolean"}
+      }
+    }
+  }
+}

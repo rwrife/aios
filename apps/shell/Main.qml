@@ -13,9 +13,10 @@ Window {
     Theme { id: theme; selected: backend.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
     property var settingsWindow: null
     function openSettings() {
+        if (sessionControl.enabled) return
         if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
@@ -79,6 +80,9 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
+    IdentityStatus { x: 48; y: 84; visible: sessionControl.enabled; control: sessionControl }
+    PrivacyShield { control: sessionControl }
+    SecurePinPrompt { control: sessionControl }
     ChatOrb {
         id: launcher
         anchors.horizontalCenter: parent.horizontalCenter
@@ -98,7 +102,7 @@ Window {
                 }
             } }
         }
-        QuietButton { text: ">_"; tip: "Terminal"; onClicked: backend.terminal() }
+        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControl.enabled ? sessionControl.launch("terminal") : backend.terminal() }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;

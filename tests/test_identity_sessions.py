@@ -1,0 +1,247 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from aios.authority import Capabilities, pin_record, verify_pin
+from aios.identity import Fusion, match
+from aios.isolation import SimulatorIsolation, application
+from aios.sessiond import Service, decode
+from aios.sessions import Sessions
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+    def __call__(self):
+        return self.now
+    def advance(self, seconds):
+        self.now += seconds
+
+
+class MemoryStore:
+    def __init__(self):
+        self.records = {}
+    def get(self, key, default=None):
+        return json.loads(json.dumps(self.records.get(key, default)))
+    def put(self, key, value):
+        self.records[key] = json.loads(json.dumps(value))
+
+
+def evidence(owner, voice=None, **extra):
+    return dict(track='one', face=owner, voice=voice or owner, face_strength='strong',
+                stable=True, interacting=True, active_speaker=True, live=True, **extra)
+
+
+class SessionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.clock = Clock()
+        self.store = MemoryStore()
+        self.isolation = SimulatorIsolation(self.tmp.name)
+        self.s = Sessions(self.isolation, self.store, self.clock, self.clock)
+        samples = {'face': [[1.] * 16] * 3, 'voice': [[1.] * 16] * 3}
+        self.a = self.s.enroll('Alice', '123456', True, samples)['identity']
+        self.b = self.s.enroll('Bob', '987654', True, samples)['identity']
+        self.addCleanup(lambda: self.s.suspend() if not self.s.fault else None)
+
+    def recognize(self, owner):
+        self.s.evidence([evidence(owner)])
+        self.clock.advance(1.1)
+        self.s.evidence([evidence(owner)])
+
+    def activate(self, owner=None):
+        self.recognize(owner or self.a)
+        return self.s.activate('Résumé')
+
+    def token(self, operation='secrets.github.profile', resource='github', confirmed=False):
+        challenge = self.s.request_capability(operation, resource)
+        return self.s.verify(challenge['id'], '123456', confirmed)
+
+    def test_recognition_does_not_attribute_anonymous_work(self):
+        self.recognize(self.a)
+        self.s.launch('calculator', [])
+        self.assertIsNone(self.s.owner)
+        self.assertIsNone(self.s.journal)
+        self.assertEqual(self.s.status()['authority'], 'anonymous')
+
+    def test_durable_resume_and_owner_isolation(self):
+        session = self.activate()
+        root_a = self.s.root
+        (root_a / 'artifacts' / 'Resume.txt').write_text('Alice private draft')
+        self.s.launch('editor', ['Resume.txt'])
+        self.s.message('user', 'Draft a résumé')
+        self.s.suspend()
+        self.activate(self.b)
+        self.assertNotEqual(self.s.root, root_a)
+        self.assertFalse((self.s.root / 'artifacts' / 'Resume.txt').exists())
+        with self.assertRaises(PermissionError):
+            self.s.journal.get(session)
+        self.s.suspend()
+        self.recognize(self.a)
+        self.s.activate(session=session)
+        self.assertEqual((self.s.root / 'artifacts' / 'Resume.txt').read_text(), 'Alice private draft')
+        self.assertEqual(self.isolation.launches[-1][3], 'editor')
+
+    def test_privacy_then_suspension(self):
+        work = self.activate()
+        token = self.token()
+        self.clock.advance(4)
+        self.s.tick()
+        self.assertTrue(self.s.shield)
+        self.assertNotIn(work, self.isolation.stopped)
+        self.assertFalse(self.s.capabilities.tokens)
+        with self.assertRaises(PermissionError):
+            self.s.use(token, 'secrets.github.profile', 'github')
+        self.clock.advance(30)
+        self.s.tick()
+        self.assertIn(work, self.isolation.stopped)
+        self.assertIsNone(self.s.owner)
+
+    def test_conflict_immediately_revokes_and_never_retargets(self):
+        self.activate()
+        self.token()
+        self.s.evidence([evidence(self.a, self.b)])
+        self.assertTrue(self.s.shield)
+        self.assertEqual(self.s.owner, self.a)
+        self.assertFalse(self.s.capabilities.tokens)
+        self.recognize(self.b)
+        with self.assertRaises(PermissionError):
+            self.s.activate('Bob task')
+
+    def test_capability_scope_single_use_and_expiry(self):
+        self.activate()
+        token = self.token()
+        with self.assertRaises(PermissionError):
+            self.s.use(token, 'financial.read', 'github')
+        self.s.use(token, 'secrets.github.profile', 'github')
+        with self.assertRaises(PermissionError):
+            self.s.use(token, 'secrets.github.profile', 'github')
+        token = self.token('financial.read', 'account-1')
+        self.clock.advance(121)
+        self.recognize(self.a)
+        with self.assertRaises(PermissionError):
+            self.s.use(token, 'financial.read', 'account-1')
+
+    def test_transaction_requires_exact_confirmation(self):
+        self.activate()
+        with self.assertRaises(PermissionError):
+            self.token('message.send', 'draft-1')
+        token = self.token('message.send', 'draft-1', True)
+        with self.assertRaises(PermissionError):
+            self.s.use(token, 'message.send', 'draft-2')
+        self.s.use(token, 'message.send', 'draft-1')
+
+    def test_anonymous_idle_cleanup(self):
+        self.s.anonymous()
+        root, lease = self.s.root, self.s.lease
+        self.clock.advance(121)
+        self.s.tick()
+        self.assertFalse(root.exists())
+        self.assertIn(lease, self.isolation.stopped)
+
+    def test_enrollment_name_cannot_take_over(self):
+        with self.assertRaises(PermissionError):
+            self.s.enroll('ALICE', '555555', True, {})
+
+    def test_wrong_pin_counters_survive_new_session_object(self):
+        self.activate()
+        challenge = self.s.request_capability('financial.read', 'account')
+        with self.assertRaises(PermissionError):
+            self.s.verify(challenge['id'], '000000', False)
+        self.assertEqual(self.store.get('identity-' + self.a)['pin']['failures'], 1)
+        with self.assertRaises(PermissionError):
+            self.token('financial.read', 'account')
+        self.clock.advance(2)
+        self.recognize(self.a)
+        self.assertTrue(self.token('financial.read', 'account'))
+
+    def test_socket_roles_and_production_simulator_denial(self):
+        service = Service(self.s, 1001, 1002)
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'evidence', 'tracks': []}, 1001)
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'simulate', 'state': 'user-a'}, 1001)
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'status'}, 1003)
+        with self.assertRaises(PermissionError):
+            service.dispatch({'action': 'activate', 'title': 'test', 'session': None}, 1001)
+
+    def test_failed_cleanup_blocks_new_principal(self):
+        self.activate()
+        def fail(*_):
+            raise RuntimeError('busy mount')
+        self.isolation.release = fail
+        with self.assertRaises(RuntimeError):
+            self.s.suspend()
+        self.assertTrue(self.s.fault)
+        self.assertTrue(self.s.shield)
+        self.recognize(self.b)
+        with self.assertRaises(PermissionError):
+            self.s.activate('Bob')
+
+    def test_restart_recovers_active_session_as_suspended(self):
+        from aios.journal import Journal
+        session = self.activate()
+        self.s.journal.close()
+        self.s.journal = Journal(self.s.root, self.a)
+        self.assertEqual(self.s.journal.get(session)['status'], 'suspended')
+
+
+class BoundaryTests(unittest.TestCase):
+    def test_pin_minimum_length(self):
+        for value in ('12345', 'abcdef', 'abcdefghi', '12345\n'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                pin_record(value)
+        self.assertTrue(pin_record('longer passphrase'))
+
+    def test_schema_rejects_extra_duplicate_and_nonfinite_fields(self):
+        for value in ('{"action":"status","uid":0}', '{"action":"status","action":"status"}',
+                      '{"action":"simulate","state":NaN}', '[]'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                decode(value)
+
+    def test_launch_rejects_commands_and_traversal(self):
+        for app, args in [('sh', []), ('terminal', ['-e']), ('editor', ['../private']),
+                          ('editor', ['/etc/shadow']), ('editor', ['x\\y']), ('editor', ['-x'])]:
+            with self.subTest(app=app, args=args), self.assertRaises(ValueError):
+                application(app, args)
+
+    def test_pin_lockout(self):
+        record = pin_record('123456')
+        for i in range(10):
+            self.assertFalse(verify_pin(record, '000000', i * 1000))
+        self.assertFalse(verify_pin(record, '123456', 999999))
+
+    def test_multiple_faces_and_stale_evidence(self):
+        clock = Clock()
+        fusion = Fusion(clock)
+        a = '00000000-0000-4000-8000-000000000001'
+        b = '00000000-0000-4000-8000-000000000002'
+        one, two = evidence(a), evidence(b)
+        two['track'] = 'two'
+        fusion.feed([one, two])
+        clock.advance(2)
+        self.assertIsNone(fusion.current())
+        fusion.feed([one])
+        clock.advance(1.1)
+        self.assertEqual(fusion.current(), a)
+        clock.advance(4)
+        fusion.feed([one])
+        self.assertIsNone(fusion.current())
+
+    def test_liveness_and_interaction_are_required(self):
+        clock = Clock()
+        fusion = Fusion(clock, dwell=0)
+        one = evidence('00000000-0000-4000-8000-000000000001')
+        for field in ('live', 'interacting', 'stable'):
+            record = {**one, field: False}
+            self.assertIsNone(fusion.feed([record]))
+
+    def test_ambiguous_embedding_match(self):
+        self.assertIsNone(match([1., 0.], {'a': [[1., 0.]], 'b': [[1., .01]]}, .8, .1))
+
+
+if __name__ == '__main__':
+    unittest.main()

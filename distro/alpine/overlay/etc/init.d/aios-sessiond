@@ -1,0 +1,10 @@
+#!/sbin/openrc-run
+description="AIOS experimental identity and session broker (opt-in)"
+command="/usr/local/bin/aios-sessiond"
+command_background=true
+pidfile="/run/aios-sessiond.pid"
+required_files="/etc/aios/sessiond.json"
+depend() { need localmount; after aios-init; }
+start_pre() {
+    checkpath --directory --mode 0750 --owner root:aios-broker /run/aios-broker
+}

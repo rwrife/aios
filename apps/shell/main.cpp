@@ -19,6 +19,7 @@
 #include <QUuid>
 #include <QTemporaryDir>
 #include "voice.h"
+#include "SessionControl.h"
 #ifdef Q_OS_LINUX
 #include <sys/prctl.h>
 #include <signal.h>
@@ -99,7 +100,8 @@ public:
             sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             m_config = owner->config();
             connect(owner, &Backend::changed, this, [this] { m_config = owner->config(); emit changed(); });
-        } else QTimer::singleShot(0, this, [this] { run({{"action", "load"}}); });
+        } else if (qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET"))
+            QTimer::singleShot(0, this, [this] { run({{"action", "load"}}); });
     }
     ~Backend() {
         voice.cancel();
@@ -339,8 +341,13 @@ int main(int argc, char **argv) {
     app.setOrganizationName("AIOS");
     app.setQuitOnLastWindowClosed(false);
     Backend backend;
+    SessionControl sessionControl;
+    QObject::connect(&sessionControl, &SessionControl::privacyLost, &app, [] {
+        QGuiApplication::clipboard()->clear();
+    });
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
+    engine.rootContext()->setContextProperty("sessionControl", &sessionControl);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(QUrl("qrc:/Main.qml"));
     const auto arguments = app.arguments();

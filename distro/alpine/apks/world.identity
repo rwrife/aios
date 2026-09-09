@@ -1,0 +1,8 @@
+# Optional experimental broker dependencies. Not included in the default ISO.
+py3-cryptography
+bubblewrap
+cryptsetup
+qt6-qtwayland
+foot
+featherpad
+gnome-calculator
