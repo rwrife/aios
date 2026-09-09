@@ -55,10 +55,11 @@ Window {
             Column {
                 visible: session.messages.length === 0; anchors.centerIn: parent; width: parent.width - 24; spacing: 18
                 Text { width: parent.width; text: userProfile.greeting; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: theme.ink; opacity: 0.8; font.pixelSize: 24 }
-                Button { visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.createAccount() }
+                Button { objectName: "setupAccount"; visible: !userProfile.name; text: "Set up an account"; anchors.horizontalCenter: parent.horizontalCenter; onClicked: userProfile.createAccount() }
             }
             ListView {
                 id: conversation; objectName: "conversation"
+                visible: count > 0
                 anchors.fill: parent; clip: true; spacing: 24
                 model: ListModel { id: messageRows; dynamicRoles: true }
                 property bool followLatest: true
