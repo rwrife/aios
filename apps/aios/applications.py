@@ -198,20 +198,37 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def _ensure_secure_directory_fallback(path: Path) -> None:
-    missing: list[Path] = []
-    current = path
-    while not current.exists():
-        missing.append(current)
-        current = current.parent
-    if not current.is_dir() or current.is_symlink():
+    absolute_path = Path(os.path.abspath(path))
+    parts = absolute_path.parts
+    if not absolute_path.is_absolute() or not parts:
         raise ValueError("Choose a real application root directory.")
-    for directory in reversed(missing):
+
+    def ensure_component(directory: Path, final: bool) -> None:
         try:
-            directory.mkdir(mode=0o700)
-        except FileExistsError:
-            pass
-        directory.chmod(0o700)
-    path.chmod(0o700)
+            mode = directory.lstat().st_mode
+        except FileNotFoundError:
+            try:
+                directory.mkdir(mode=0o700)
+            except FileExistsError:
+                try:
+                    mode = directory.lstat().st_mode
+                except FileNotFoundError as error:
+                    raise ValueError("Choose a real application root directory.") from error
+            except OSError as error:
+                raise ValueError("Choose a real application root directory.") from error
+            else:
+                directory.chmod(0o700)
+                return
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise ValueError("Choose a real application root directory.")
+        if final:
+            directory.chmod(0o700)
+
+    current = Path(parts[0])
+    for component in parts[1:]:
+        ensure_component(current, current == absolute_path)
+        current = current / component
+    ensure_component(current, True)
 
 
 def _supports_descriptor_safe_directories() -> bool:

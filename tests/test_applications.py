@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import aios.applications as applications
 from aios.applications import APPLICATION_TOOL, ApplicationStore
@@ -349,6 +350,26 @@ class ApplicationStoreTests(unittest.TestCase):
             ApplicationStore(root=link / "applications" / "nested")
         self.assertFalse((applications_dir / "nested").exists())
         self.assertEqual(stat.S_IMODE(applications_dir.stat().st_mode), 0o755)
+
+    def test_fallback_rejects_symlinked_intermediate_component(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlinks unavailable")
+        outside = Path(self.tmp.name) / "outside"
+        real_subdir = outside / "sub"
+        real_subdir.mkdir(parents=True)
+        os.chmod(real_subdir, 0o755)
+        link = Path(self.tmp.name) / "link"
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("environment cannot create symlinks")
+
+        with mock.patch.object(applications, "_supports_descriptor_safe_directories", return_value=False):
+            with self.assertRaises(ValueError):
+                ApplicationStore(root=link / "sub" / "newdir")
+
+        self.assertFalse((real_subdir / "newdir").exists())
+        self.assertEqual(sorted(path.name for path in real_subdir.iterdir()), [])
 
     def test_launcher_failure_preserves_published_files(self):
         def launcher(_folder):
