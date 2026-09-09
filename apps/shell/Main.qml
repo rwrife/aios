@@ -10,14 +10,65 @@ Window {
     width: Screen.width; height: Screen.height
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
-    Theme { id: theme; selected: backend.config.theme_color || "blue" }
+    property var backendApi: typeof backend === "undefined" ? null : backend
+    property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
+    property var minimizedChats: []
+    readonly property int minimizedChatCount: minimizedChats.length
+    Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
-    property bool reducedMotion: backend.config.reduced_motion === true
-    function openChat() { if (sessionControl.enabled) return; var window = chatComponent.createObject(desktop, {backend: backend, session: backend.createSession(), theme: theme}); if (window) { window.show(); window.raise(); window.requestActivate() } }
+    property bool reducedMotion: backendApi.config.reduced_motion === true
+    function removeMinimizedChat(window) {
+        var remaining = []
+        for (var i = 0; i < minimizedChats.length; ++i) {
+            if (minimizedChats[i] !== window)
+                remaining.push(minimizedChats[i])
+        }
+        minimizedChats = remaining
+    }
+    function trackMinimizedChat(window) {
+        removeMinimizedChat(window)
+        var updated = minimizedChats.slice()
+        updated.push(window)
+        minimizedChats = updated
+    }
+    function restoreMinimizedChat() {
+        var pending = minimizedChats.slice()
+        while (pending.length > 0) {
+            var window = pending.pop()
+            minimizedChats = pending.slice()
+            if (!window || window.visibility !== Window.Minimized)
+                continue
+            window.showNormal()
+            window.raise()
+            window.requestActivate()
+            return window
+        }
+        return null
+    }
+    function openChat() {
+        if (sessionControlApi.enabled)
+            return null
+        var restored = restoreMinimizedChat()
+        if (restored)
+            return restored
+        var window = chatComponent.createObject(desktop, {
+            backend: backendApi,
+            session: backendApi.createSession(),
+            theme: theme
+        })
+        if (!window)
+            return null
+        window.minimized.connect(function() { desktop.trackMinimizedChat(window) })
+        window.removed.connect(function() { desktop.removeMinimizedChat(window) })
+        window.show()
+        window.raise()
+        window.requestActivate()
+        return window
+    }
     property var settingsWindow: null
     function openSettings() {
-        if (sessionControl.enabled) return
-        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backend, theme: theme})
+        if (sessionControlApi.enabled) return
+        if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
     Component { id: settingsComponent; SettingsWindow {} }
@@ -80,9 +131,9 @@ Window {
         }
     }
     Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
-    IdentityStatus { x: 48; y: 84; visible: sessionControl.enabled; control: sessionControl }
-    PrivacyShield { control: sessionControl }
-    SecurePinPrompt { control: sessionControl }
+    IdentityStatus { x: 48; y: 84; visible: sessionControlApi.enabled; control: sessionControlApi }
+    PrivacyShield { control: sessionControlApi }
+    SecurePinPrompt { control: sessionControlApi }
     ChatOrb {
         id: launcher
         anchors.horizontalCenter: parent.horizontalCenter
@@ -102,7 +153,7 @@ Window {
                 }
             } }
         }
-        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControl.enabled ? sessionControl.launch("terminal") : backend.terminal() }
+        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal() }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
@@ -131,8 +182,8 @@ Window {
         background: Rectangle { color: theme.panel; border.color: theme.line; radius: 12 }
         contentItem: Row { spacing: 12
             QuietButton { text: "Cancel"; onClicked: powerDialog.close() }
-            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backend.power("reboot") } }
-            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backend.power("poweroff") } }
+            QuietButton { text: "Restart"; onClicked: { powerDialog.close(); backendApi.power("reboot") } }
+            QuietButton { text: "Shut down"; onClicked: { powerDialog.close(); backendApi.power("poweroff") } }
         }
     }
 
