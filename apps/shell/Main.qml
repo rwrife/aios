@@ -282,6 +282,7 @@ Window {
         focus: true
         popupType: Popup.Item
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property bool syncingVolume: false
         function positionAboveButton() {
             var point = volumeButton.mapToItem(parent, 0, 0)
             x = Math.max(8, Math.min(parent.width - width - 8, point.x + (volumeButton.width - width) / 2))
@@ -290,7 +291,9 @@ Window {
         onAboutToShow: positionAboveButton()
         onOpened: {
             backendApi.refreshVolume()
+            syncingVolume = true
             volumeSlider.value = backendApi.volume
+            syncingVolume = false
             volumeSlider.forceActiveFocus(Qt.TabFocusReason)
         }
         background: Rectangle {
@@ -321,7 +324,10 @@ Window {
                 value: backendApi.volume
                 enabled: backendApi.volumeAvailable
                 Accessible.name: "Speaker volume"
-                onMoved: volumeCommit.restart()
+                onValueChanged: {
+                    if (volumePopup.opened && !volumePopup.syncingVolume)
+                        volumeCommit.restart()
+                }
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
@@ -338,8 +344,11 @@ Window {
         Connections {
             target: backendApi
             function onVolumeChanged() {
-                if (!volumeSlider.pressed)
+                if (!volumeSlider.pressed) {
+                    volumePopup.syncingVolume = true
                     volumeSlider.value = backendApi.volume
+                    volumePopup.syncingVolume = false
+                }
             }
         }
     }
