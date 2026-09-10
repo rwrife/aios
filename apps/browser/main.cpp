@@ -655,12 +655,14 @@ private:
             }
             m_navigationOperation = m_operation;
             if (action == "back") {
-                m_expectedHistoryUrl = m_view->history()->backItem().url();
-                m_view->back();
+                const auto item = m_view->history()->backItem();
+                m_expectedHistoryUrl = item.url();
+                m_view->history()->goToItem(item);
                 pollHistoryNavigation(m_operation);
             } else if (action == "forward") {
-                m_expectedHistoryUrl = m_view->history()->forwardItem().url();
-                m_view->forward();
+                const auto item = m_view->history()->forwardItem();
+                m_expectedHistoryUrl = item.url();
+                m_view->history()->goToItem(item);
                 pollHistoryNavigation(m_operation);
             } else {
                 m_view->reload();
@@ -782,10 +784,10 @@ private:
                 return;
             m_snapshotInFlight = false;
             auto socket = m_pending;
-            m_pending.clear();
-            m_operationTimer.stop();
             const auto value = jsonValue(result);
             if (!value.isObject()) {
+                m_pending.clear();
+                m_operationTimer.stop();
                 respond(socket, QJsonObject{{"error", "Browser snapshot failed. Reopen the page."}});
                 return;
             }
@@ -802,6 +804,8 @@ private:
             }
             m_navigationStarted = false;
             m_expectedHistoryUrl = QUrl();
+            m_pending.clear();
+            m_operationTimer.stop();
             respond(socket, value);
         });
     }
