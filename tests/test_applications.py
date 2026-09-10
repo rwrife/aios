@@ -55,6 +55,30 @@ class ApplicationStoreTests(unittest.TestCase):
         path.chmod(0o700)
         return path
 
+    def _write_executable(self, name, body):
+        path = Path(self.tmp.name) / name
+        path.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body), encoding="utf-8")
+        path.chmod(0o700)
+        return path
+
+    def _wait_for_path(self, path: Path, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.exists():
+                return
+            time.sleep(0.05)
+        self.fail(f"Timed out waiting for {path}")
+
+    def _wait_for_pid_exit(self, pid: int, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        self.fail(f"Timed out waiting for pid {pid} to exit")
+
     def test_tool_schema_rejects_additional_properties(self):
         parameters = APPLICATION_TOOL["function"]["parameters"]
         self.assertFalse(parameters["additionalProperties"])
@@ -499,6 +523,90 @@ class ApplicationStoreTests(unittest.TestCase):
         })
         self.assertEqual(launched, [folder])
 
+    def test_native_interrupted_publish_recovery_self_heals_for_search_and_launch(self):
+        host = self._native_host("")
+        launched = []
+        store = self._store(
+            launcher=lambda folder: launched.append(Path(folder)),
+            native_host=host,
+            native_templates=("calculator",),
+        )
+        created = store.create({
+            "title": "Calculator",
+            "request": "Recover native calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        store.publish({"id": created["id"], "summary": "Recovered", "keywords": ["calculator", "recover"]})
+        folder = self.root / created["id"]
+        manifest = _read_json(folder / "manifest.json")
+        draft_path = folder / ".draft.json"
+
+        draft_path.write_text(json.dumps({
+            "id": created["id"],
+            "title": "Calculator",
+            "request": "Recover native calculator",
+            "created_at": manifest["created_at"],
+            "runtime": "native",
+            "template": "calculator",
+        }, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+        results = store.search({"query": "Recover native calculator"})
+        self.assertEqual(results[0]["id"], created["id"])
+        self.assertEqual(results[0]["runtime"], "native")
+        self.assertFalse(draft_path.exists())
+
+        draft_path.write_text(json.dumps({
+            "id": created["id"],
+            "title": "Calculator",
+            "request": "Recover native calculator",
+            "created_at": manifest["created_at"],
+            "runtime": "native",
+            "template": "calculator",
+        }, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+        launch = store.launch({"id": created["id"]})
+        self.assertEqual(launch, {
+            "launched": True,
+            "id": created["id"],
+            "title": "Calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        self.assertEqual(launched, [folder])
+        self.assertFalse(draft_path.exists())
+
+    def test_native_interrupted_publish_recovery_rejects_mismatched_leftover_draft(self):
+        host = self._native_host("")
+        launched = []
+        store = self._store(
+            launcher=lambda folder: launched.append(Path(folder)),
+            native_host=host,
+            native_templates=("calculator",),
+        )
+        created = store.create({
+            "title": "Calculator",
+            "request": "Reject native calculator recovery",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        store.publish({"id": created["id"], "summary": "Rejected", "keywords": ["calculator", "reject"]})
+        folder = self.root / created["id"]
+        manifest = _read_json(folder / "manifest.json")
+        draft_path = folder / ".draft.json"
+        draft_path.write_text(json.dumps({
+            "id": created["id"],
+            "title": "Calculator",
+            "request": "Wrong request",
+            "created_at": manifest["created_at"],
+            "runtime": "native",
+            "template": "calculator",
+        }, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+
+        self.assertEqual(store.search({"query": "Reject native calculator recovery"}), [])
+        with self.assertRaises(ValueError):
+            store.launch({"id": created["id"]})
+        self.assertTrue(draft_path.exists())
+        self.assertEqual(launched, [])
+
     def test_legacy_web_manifest_loads_and_native_wins_exact_tie(self):
         host = self._native_host("")
         store = self._store(launcher=lambda folder: None, native_host=host, native_templates=NATIVE_TEMPLATES)
@@ -527,6 +635,51 @@ class ApplicationStoreTests(unittest.TestCase):
         results = store.search({"query": "Build calculator"})
         self.assertEqual([result["runtime"] for result in results[:2]], ["native", "web"])
         self.assertIsNone(results[1]["template"])
+
+    def test_search_prefers_native_before_web_then_recency_within_runtime(self):
+        host = self._native_host("")
+        store = self._store(launcher=lambda folder: None, native_host=host, native_templates=NATIVE_TEMPLATES)
+        created = []
+        for runtime, template in [
+            ("web", None),
+            ("web", None),
+            ("native", "calculator"),
+            ("native", "calculator"),
+        ]:
+            payload = {
+                "title": "Calculator",
+                "request": "Build a shared calculator",
+                "runtime": runtime,
+            }
+            if template is not None:
+                payload["template"] = template
+            app = store.create(payload)
+            if runtime == "web":
+                store.write({"id": app["id"], "html": f"<!doctype html><p>{app['id']}</p>"})
+            store.publish({"id": app["id"], "summary": "Calculator", "keywords": ["calculator", "shared"]})
+            created.append((runtime, app["id"]))
+
+        timestamps = {
+            created[0][1]: "2026-01-04T00:00:00Z",
+            created[1][1]: "2026-01-03T00:00:00Z",
+            created[2][1]: "2026-01-02T00:00:00Z",
+            created[3][1]: "2026-01-05T00:00:00Z",
+        }
+        for _runtime, app_id in created:
+            manifest_path = self.root / app_id / "manifest.json"
+            manifest = _read_json(manifest_path)
+            manifest["updated_at"] = timestamps[app_id]
+            manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+
+        results = store.search({"query": "Build a shared calculator"})
+        self.assertEqual(
+            [result["id"] for result in results[:4]],
+            [created[3][1], created[2][1], created[0][1], created[1][1]],
+        )
+        self.assertEqual(
+            [result["runtime"] for result in results[:4]],
+            ["native", "native", "web", "web"],
+        )
 
     def test_invalid_or_unavailable_native_create_is_rejected(self):
         with mock.patch.object(applications.shutil, "which", return_value=None):
@@ -558,6 +711,149 @@ class ApplicationStoreTests(unittest.TestCase):
                 self.assertFalse(result["launched"])
                 self.assertEqual(result["reason"], "Application window could not open.")
                 self.assertNotIn(str(root), json.dumps(result))
+
+    @unittest.skipUnless(os.name == "posix", "verified web default launcher requires POSIX")
+    def test_real_web_default_launcher_signals_ready_and_uses_fixed_command(self):
+        capture = Path(self.tmp.name) / "chromium-ready.json"
+        chromium = self._write_executable("chromium", """
+            import json
+            import os
+            import sys
+            from urllib.request import urlopen
+
+            app_url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app=")).rstrip("/")
+            wrapper = urlopen(app_url + "/", timeout=5).read().decode("utf-8")
+            app = urlopen(app_url + "/app", timeout=5).read().decode("utf-8")
+            with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
+                json.dump({"argv": sys.argv[1:], "wrapper": wrapper, "app": app, "pid": os.getpid()}, stream)
+        """)
+        popen_calls = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args, **kwargs):
+            popen_calls.append((args, kwargs))
+            return real_popen(*args, **kwargs)
+
+        store = self._store(launch_timeout=2)
+        created = store.create({"title": "Web Launch", "request": "Launch a web app"})
+        html = "<!doctype html><title>Launch</title><p>ready</p>"
+        store.write({"id": created["id"], "html": html})
+        store.publish({"id": created["id"], "summary": "Launch", "keywords": ["launch", "web"]})
+        folder = self.root / created["id"]
+        env = {
+            "PATH": str(chromium.parent) + os.pathsep + os.environ.get("PATH", ""),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "apps") + os.pathsep + os.environ.get("PYTHONPATH", ""),
+            "AIOS_TEST_CAPTURE": str(capture),
+        }
+
+        with mock.patch.dict(os.environ, env, clear=False), \
+            mock.patch.object(applications.subprocess, "Popen", side_effect=recording_popen):
+            result = store.launch({"id": created["id"]})
+
+        self.assertTrue(result["launched"])
+        self._wait_for_path(capture)
+        captured = _read_json(capture)
+        self.assertIn('<iframe sandbox="allow-scripts" src="/app"', captured["wrapper"])
+        self.assertEqual(captured["app"], html)
+        command = popen_calls[0][0][0]
+        self.assertEqual(command[:5], [sys.executable, "-m", "aios.app_runner", str(folder), "--ready-fd"])
+        self.assertRegex(command[5], r"^\d+$")
+
+    @unittest.skipUnless(os.name == "posix", "verified web default launcher requires POSIX")
+    def test_real_web_default_launcher_times_out_and_reaps_runner_tree(self):
+        capture = Path(self.tmp.name) / "chromium-timeout.json"
+        chromium = self._write_executable("chromium", """
+            import json
+            import os
+            import sys
+            import time
+            from urllib.request import urlopen
+
+            app_url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app=")).rstrip("/")
+            with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
+                json.dump({"argv": sys.argv[1:], "pid": os.getpid()}, stream)
+            urlopen(app_url + "/", timeout=5).read()
+            time.sleep(30)
+        """)
+        popen_calls = []
+        runner_pids = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            popen_calls.append((args, kwargs))
+            runner_pids.append(process.pid)
+            return process
+
+        store = self._store(launch_timeout=1)
+        created = store.create({"title": "Web Timeout", "request": "Launch a hanging web app"})
+        store.write({"id": created["id"], "html": "<!doctype html><p>hang</p>"})
+        store.publish({"id": created["id"], "summary": "Hang", "keywords": ["launch", "hang"]})
+        env = {
+            "PATH": str(chromium.parent) + os.pathsep + os.environ.get("PATH", ""),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "apps") + os.pathsep + os.environ.get("PYTHONPATH", ""),
+            "AIOS_TEST_CAPTURE": str(capture),
+        }
+
+        started = time.monotonic()
+        with mock.patch.dict(os.environ, env, clear=False), \
+            mock.patch.object(applications.subprocess, "Popen", side_effect=recording_popen):
+            result = store.launch({"id": created["id"]})
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(result["launched"], False)
+        self.assertEqual(result["reason"], applications.LAUNCH_FAILURE_REASON)
+        self.assertLess(elapsed, 4)
+        self._wait_for_path(capture)
+        captured = _read_json(capture)
+        command = popen_calls[0][0][0]
+        self.assertEqual(command[:5], [sys.executable, "-m", "aios.app_runner", str(self.root / created["id"]), "--ready-fd"])
+        self.assertRegex(command[5], r"^\d+$")
+        self._wait_for_pid_exit(runner_pids[0], timeout=5)
+        self._wait_for_pid_exit(captured["pid"], timeout=5)
+
+    def test_default_launcher_readiness_exceptions_terminate_child_and_return_false(self):
+        class RaisingSelector:
+            def __init__(self, read_should_raise=False):
+                self._read_should_raise = read_should_raise
+
+            def register(self, *_args, **_kwargs):
+                return None
+
+            def select(self, *_args, **_kwargs):
+                if self._read_should_raise:
+                    return [object()]
+                raise RuntimeError("selector exploded")
+
+            def close(self):
+                return None
+
+        for mode in ("selector", "read"):
+            with self.subTest(mode=mode):
+                root = Path(self.tmp.name) / mode
+                store = ApplicationStore(root=root, launch_timeout=0.1)
+                created = store.create({"title": f"Web {mode}", "request": f"Launch {mode}"})
+                store.write({"id": created["id"], "html": "<!doctype html><p>boom</p>"})
+                store.publish({"id": created["id"], "summary": "Boom", "keywords": ["boom"]})
+
+                proc = mock.Mock()
+                proc.pid = 4321
+                proc.poll.return_value = None
+                proc.wait.return_value = 0
+                selector = RaisingSelector(read_should_raise=mode == "read")
+                read_mock = mock.Mock(side_effect=RuntimeError("read exploded") if mode == "read" else AssertionError("unexpected read"))
+
+                with mock.patch.object(applications.os, "name", "posix", create=True), \
+                    mock.patch.object(applications.subprocess, "Popen", return_value=proc), \
+                    mock.patch.object(applications.selectors, "DefaultSelector", return_value=selector), \
+                    mock.patch.object(applications.os, "killpg", create=True) as killpg, \
+                    mock.patch.object(applications.os, "read", read_mock):
+                    result = store.launch({"id": created["id"]})
+
+                self.assertEqual(result["launched"], False)
+                self.assertEqual(result["reason"], applications.LAUNCH_FAILURE_REASON)
+                killpg.assert_called_once_with(proc.pid, signal.SIGTERM)
+                proc.wait.assert_called()
 
     @unittest.skipUnless(os.name == "posix", "verified fd launch requires POSIX")
     def test_verified_native_launcher_ready_exit_and_timeout(self):

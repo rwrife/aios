@@ -572,8 +572,8 @@ class ApplicationStore:
                 continue
         results.sort(key=lambda item: (
             -item["_score"],
-            -_timestamp_key(item["_updated_at"]),
             0 if item["runtime"] == "native" else 1,
+            -_timestamp_key(item["_updated_at"]),
             item["id"],
         ))
         return [
@@ -656,27 +656,31 @@ class ApplicationStore:
             os.close(write_fd)
 
         ready = False
-        selector = selectors.DefaultSelector()
         try:
-            selector.register(read_fd, selectors.EVENT_READ)
-            deadline = time.monotonic() + self.launch_timeout
-            received = b""
-            while time.monotonic() < deadline:
-                events = selector.select(max(0, deadline - time.monotonic()))
-                if not events:
-                    break
-                chunk = os.read(read_fd, 64)
-                if not chunk:
-                    break
-                received += chunk
-                if received == b"ready\n":
-                    ready = True
-                    break
-                if not b"ready\n".startswith(received):
-                    break
-        finally:
-            selector.close()
-            os.close(read_fd)
+            selector = selectors.DefaultSelector()
+            try:
+                selector.register(read_fd, selectors.EVENT_READ)
+                deadline = time.monotonic() + self.launch_timeout
+                received = b""
+                while time.monotonic() < deadline:
+                    events = selector.select(max(0, deadline - time.monotonic()))
+                    if not events:
+                        break
+                    chunk = os.read(read_fd, 64)
+                    if not chunk:
+                        break
+                    received += chunk
+                    if received == b"ready\n":
+                        ready = True
+                        break
+                    if not b"ready\n".startswith(received):
+                        break
+            finally:
+                selector.close()
+                os.close(read_fd)
+        except Exception:
+            self._terminate_child(process)
+            return False
         if not ready:
             self._terminate_child(process)
             return False
@@ -791,7 +795,15 @@ class ApplicationStore:
         else:
             raise ValueError("Invalid manifest metadata.")
         self._validate_common_metadata(data, folder, published=True)
+        draft_path = folder / ".draft.json"
         if data["runtime"] == "native":
+            if draft_path.exists():
+                if not _is_regular_file(draft_path):
+                    raise ValueError("Invalid manifest metadata.")
+                draft = self._load_draft(folder)
+                if any(draft[key] != data[key] for key in ("id", "title", "request", "created_at", "runtime", "template")):
+                    raise ValueError("Invalid manifest metadata.")
+                draft_path.unlink()
             self._validate_folder_contents(folder, {"manifest.json"})
             if (folder / "index.html").exists():
                 raise ValueError("Invalid manifest metadata.")
@@ -812,12 +824,11 @@ class ApplicationStore:
                     raise ValueError("Invalid manifest metadata.")
             except UnicodeDecodeError as error:
                 raise ValueError("Invalid manifest metadata.") from error
-        draft_path = folder / ".draft.json"
-        if draft_path.exists():
-            draft = self._load_draft(folder)
-            if any(draft[key] != data[key] for key in ("id", "title", "request", "created_at", "runtime", "template")):
-                raise ValueError("Invalid manifest metadata.")
-            draft_path.unlink()
+            if draft_path.exists():
+                draft = self._load_draft(folder)
+                if any(draft[key] != data[key] for key in ("id", "title", "request", "created_at", "runtime", "template")):
+                    raise ValueError("Invalid manifest metadata.")
+                draft_path.unlink()
         return data
 
     @staticmethod
