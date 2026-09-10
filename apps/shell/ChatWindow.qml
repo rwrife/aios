@@ -85,7 +85,7 @@ Window {
                 objectName: "chatWindowControls"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
+                WindowControlButton { objectName: "chatSettingsButton"; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
                 WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
                 WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
             }
@@ -204,19 +204,38 @@ Window {
     }
     Popup {
         id: options; parent: chat.contentItem; anchors.centerIn: parent
+        objectName: "chatSettingsPopup"
         width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24)
-        modal: true; padding: 20; closePolicy: Popup.CloseOnEscape
-        background: Rectangle { color: theme.panel; border.color: theme.line; radius: theme.windowRadius }
+        modal: true; focus: true; padding: 20; closePolicy: Popup.CloseOnEscape
+        background: Rectangle {
+            color: theme.panel; radius: theme.windowRadius
+            WindowBorder { objectName: "chatSettingsBorder"; theme: chat.theme; radius: parent.radius }
+        }
         onOpened: { modelSettings.reload(); if (optionsTabs.currentIndex === 1) chatAccounts.refresh(); }
         contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                objectName: "chatSettingsHeader"
+                Layout.fillWidth: true
+                Layout.minimumHeight: 44
+                Layout.maximumHeight: 44
+                WindowTitle { objectName: "chatSettingsTitle"; theme: chat.theme; text: "Chat settings"; Layout.fillWidth: true }
+                WindowControlButton {
+                    objectName: "closeChatSettings"
+                    theme: chat.theme
+                    symbol: "\u00d7"
+                    tip: "Close chat settings"
+                    onClicked: options.close()
+                }
+            }
             TabBar {
-                id: optionsTabs; Layout.fillWidth: true
+                id: optionsTabs; objectName: "chatSettingsTabs"; Layout.fillWidth: true
                 TabButton { text: "AI and voice" }
                 TabButton { objectName: "accountsTab"; text: "Accounts" }
             }
             StackLayout {
                 currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true
-                ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+                ModelSettings { id: modelSettings; objectName: "chatModelSettings"; showClose: false; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
                 AccountSettings { id: chatAccounts; control: chat.profileControl }
             }
         }
