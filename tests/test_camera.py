@@ -47,3 +47,12 @@ class CameraTests(unittest.TestCase):
         self.assertIn('CameraDevice::capturePath()', photo)
         self.assertIn('QProcess::nullDevice()', photo)
         self.assertIn('ffmpeg', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())
+
+    def test_windows_launcher_discovers_attached_camera(self):
+        launcher = (ROOT / 'scripts/run.ps1').read_text()
+        self.assertIn("[string]$CameraBusId", launcher)
+        self.assertIn('usbipd.exe', launcher)
+        self.assertIn('/dev/v4l/by-id/*-video-index0', launcher)
+        self.assertIn('setfacl -m "u:${linuxUser}:rw"', launcher)
+        self.assertIn('"AIOS_VM_CAMERA_BUS=$cameraBus"', launcher)
+        self.assertIn('"AIOS_VM_CAMERA_ADDR=$cameraAddr"', launcher)
