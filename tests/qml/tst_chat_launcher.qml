@@ -234,6 +234,9 @@ TestCase {
         compare(up.background.border.width, 0)
         compare(down.background.border.width, 0)
         compare(mute.background.border.width, 0)
+        var muteGlyph = findChild(desktop, "muteButtonGlyph")
+        compare(muteGlyph.width, 22)
+        compare(muteGlyph.height, 22)
         mouseMove(up, up.width / 2, up.height / 2)
         tryCompare(up.background, "color", palette.input)
 

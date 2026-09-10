@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 import QtQuick.Window
 
 Window {
@@ -233,49 +234,63 @@ Window {
         property string glyphObjectName
         implicitWidth: 22
         implicitHeight: 22
-        Canvas {
-            id: speakerCanvas
+        Shape {
             objectName: speakerIcon.glyphObjectName
             anchors.centerIn: parent
             width: 22
             height: 22
-            onPaint: {
-                var c = getContext("2d")
-                c.reset()
-                c.strokeStyle = theme.ink
-                c.lineWidth = 1.7
-                c.lineCap = "round"
-                c.lineJoin = "round"
-                c.beginPath()
-                c.moveTo(1.5, 9)
-                c.lineTo(6.5, 9)
-                c.lineTo(12, 4.5)
-                c.lineTo(12, 17.5)
-                c.lineTo(6.5, 13)
-                c.lineTo(1.5, 13)
-                c.closePath()
-                c.stroke()
-                if (speakerIcon.muted || speakerIcon.volume <= 0) {
-                    c.beginPath()
-                    c.moveTo(15, 7.5)
-                    c.lineTo(21, 14.5)
-                    c.moveTo(21, 7.5)
-                    c.lineTo(15, 14.5)
-                    c.stroke()
-                    return
-                }
-                c.beginPath()
-                c.arc(12, 11, 4.5, -Math.PI / 3, Math.PI / 3)
-                c.stroke()
-                if (speakerIcon.volume > 50) {
-                    c.beginPath()
-                    c.arc(12, 11, 8, -Math.PI / 3, Math.PI / 3)
-                    c.stroke()
-                }
+            ShapePath {
+                strokeColor: theme.ink
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                joinStyle: ShapePath.RoundJoin
+                startX: 1.5
+                startY: 9
+                PathLine { x: 6.5; y: 9 }
+                PathLine { x: 12; y: 4.5 }
+                PathLine { x: 12; y: 17.5 }
+                PathLine { x: 6.5; y: 13 }
+                PathLine { x: 1.5; y: 13 }
+                PathLine { x: 1.5; y: 9 }
+            }
+            ShapePath {
+                strokeColor: speakerIcon.muted || speakerIcon.volume <= 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 15
+                startY: 7.5
+                PathLine { x: 21; y: 14.5 }
+            }
+            ShapePath {
+                strokeColor: speakerIcon.muted || speakerIcon.volume <= 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 21
+                startY: 7.5
+                PathLine { x: 15; y: 14.5 }
+            }
+            ShapePath {
+                strokeColor: !speakerIcon.muted && speakerIcon.volume > 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 14.25
+                startY: 7.1
+                PathArc { x: 14.25; y: 14.9; radiusX: 4.5; radiusY: 4.5; direction: PathArc.Clockwise }
+            }
+            ShapePath {
+                strokeColor: !speakerIcon.muted && speakerIcon.volume > 50 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 16
+                startY: 4.1
+                PathArc { x: 16; y: 17.9; radiusX: 8; radiusY: 8; direction: PathArc.Clockwise }
             }
         }
-        onMutedChanged: speakerCanvas.requestPaint()
-        onVolumeChanged: speakerCanvas.requestPaint()
     }
     component Field: TextField {
         color: theme.ink; placeholderTextColor: theme.muted; selectByMouse: true
@@ -415,7 +430,11 @@ Window {
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: backendApi.setMuted(!backendApi.muted)
-                contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+                contentItem: SpeakerIcon {
+                    muted: backendApi.muted
+                    volume: backendApi.volume
+                    glyphObjectName: "muteButtonGlyph"
+                }
             }
         }
         Connections {
