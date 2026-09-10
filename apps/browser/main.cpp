@@ -430,13 +430,14 @@ private:
                 m_address->selectAll();
                 return;
             }
+            m_address->setToolTip({});
+            m_view->setFocus();
             m_opened = true;
             m_view->setUrl(url);
         });
 
         connect(m_view, &QWebEngineView::urlChanged, this, [this](const QUrl &url) {
-            if (!m_address->hasFocus())
-                m_address->setText(url == QUrl("about:blank") ? QString() : url.toString());
+            m_address->setText(url == QUrl("about:blank") ? QString() : url.toString());
         });
         connect(m_view, &QWebEngineView::titleChanged, this, [this](const QString &title) {
             setWindowTitle(title.isEmpty() ? "AIOS Browser" : title + " — AIOS Browser");

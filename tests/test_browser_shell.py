@@ -43,6 +43,12 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('WindowBorder { theme: chat.theme }', chat)
         self.assertIn('WindowBorder { theme: settings.theme }', settings)
 
+    def test_browser_address_tracks_committed_redirects(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        self.assertIn('m_view->setFocus();', source)
+        self.assertIn('m_address->setText(url == QUrl("about:blank")', source)
+        self.assertNotIn('if (!m_address->hasFocus())', source)
+
 
 if __name__ == '__main__':
     unittest.main()
