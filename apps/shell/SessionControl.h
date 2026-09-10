@@ -39,8 +39,13 @@ class SessionControl : public QObject {
 public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
         path = qEnvironmentVariable("AIOS_SESSION_SOCKET");
-        connect(&photoCapture, &ProfilePhoto::captured, this, &SessionControl::photoCaptured);
+        connect(&photoCapture, &ProfilePhoto::captured, this,
+                [this](const QString &preview, const QString &rgb) {
+            recognitionRoot()->finishCameraOperation(this);
+            emit photoCaptured(preview, rgb);
+        });
         connect(&photoCapture, &ProfilePhoto::failed, this, [this](const QString &message) {
+            recognitionRoot()->finishCameraOperation(this);
             m_error = message + " You can create a profile without a photo.";
             emit changed();
         });
@@ -97,31 +102,44 @@ public:
     }
     Q_INVOKABLE void takeProfilePhoto() {
         if (m_secureInput && personalAvailable()) {
-            recognitionRoot()->cancelRecognition();
-            emit cameraReleaseRequested();
-            QTimer::singleShot(1000, this, [this] {
-                if (m_secureInput && personalAvailable()) photoCapture.take();
+            const auto capturePath = CameraDevice::capturePath();
+            auto root = recognitionRoot();
+            if (!root->beginCameraOperation(this)) return;
+            QTimer::singleShot(1500, this, [this, root, capturePath] {
+                if (root->cameraOperationOwner != this) return;
+                if (m_secureInput && personalAvailable()) photoCapture.take(capturePath);
+                else root->finishCameraOperation(this);
             });
         }
     }
     Q_INVOKABLE void setSecureInput(bool active) {
         m_secureInput = active;
         if (active) recognitionRoot()->cancelRecognition();
-        else { photoCapture.cancel(); recognitionRoot()->scheduleRecognition(2000); }
+        else {
+            photoCapture.cancel();
+            recognitionRoot()->finishCameraOperation(this);
+            recognitionRoot()->scheduleRecognition(2000);
+        }
         emit changed();
     }
     Q_INVOKABLE void requestRecognition() { recognitionRoot()->startRecognition(true); }
-    Q_INVOKABLE void setCameraPreviewActive(bool active) {
+    Q_INVOKABLE bool setCameraPreviewActive(bool active) {
         auto root = recognitionRoot();
+        if (active && root->cameraOperationOwner) return false;
         root->cameraConsumerActive = active;
         if (active) root->cancelRecognition();
         else root->scheduleRecognition(2000);
+        return true;
     }
     Q_INVOKABLE void enrollRecognition(const QString &id, const QString &pin, bool consent) {
         auto root = recognitionRoot();
+        if (!root->beginCameraOperation(this)) return;
         root->recognitionRequester = this;
-        root->runRecognition({{"action", "enroll"}, {"owner", id},
-                              {"pin", pin}, {"consent", consent}}, 35000);
+        QTimer::singleShot(1500, this, [this, root, id, pin, consent] {
+            if (root->cameraOperationOwner != this) return;
+            root->runRecognition({{"action", "enroll"}, {"owner", id},
+                                  {"pin", pin}, {"consent", consent}}, 35000);
+        });
     }
     Q_INVOKABLE void setRecognitionEnabled(bool enabled) {
         auto root = recognitionRoot();
@@ -240,6 +258,7 @@ private:
     QMediaDevices mediaDevices;
     QPointer<QProcess> recognitionProcess;
     QPointer<SessionControl> recognitionRequester;
+    QPointer<SessionControl> cameraOperationOwner;
     qint64 lastRecognitionStart = -2000;
     int recognitionFailures = 0;
     bool recognitionSuppressed = false;
@@ -269,6 +288,26 @@ private:
         m_recognitionSuggestion.clear();
         notifyRecognitionChanged();
     }
+    bool beginCameraOperation(SessionControl *owner) {
+        if (cameraOperationOwner) {
+            owner->m_error = "The camera is busy with another AIOS operation.";
+            emit owner->changed();
+            return false;
+        }
+        cameraOperationOwner = owner;
+        owner->m_error.clear();
+        emit owner->changed();
+        cancelRecognition();
+        auto controls = findChildren<SessionControl *>();
+        controls.prepend(this);
+        for (auto control : controls) emit control->cameraReleaseRequested();
+        return true;
+    }
+    void finishCameraOperation(SessionControl *owner) {
+        if (cameraOperationOwner != owner) return;
+        cameraOperationOwner = nullptr;
+        scheduleRecognition(2000);
+    }
     void cancelRecognition() {
         recognitionTimer.stop();
         if (recognitionProcess) {
@@ -281,6 +320,7 @@ private:
     }
     void scheduleRecognition(int milliseconds) {
         if (!greetingOnly() || recognitionSuppressed || cameraConsumerActive ||
+            cameraOperationOwner || m_secureInput ||
             QGuiApplication::applicationState() != Qt::ApplicationActive) return;
         const auto controls = findChildren<SessionControl *>();
         if (std::any_of(controls.cbegin(), controls.cend(),
@@ -288,7 +328,8 @@ private:
         recognitionTimer.start(milliseconds);
     }
     void startRecognition(bool immediate) {
-        if (recognitionSuppressed || cameraConsumerActive || recognitionProcess ||
+        if (recognitionSuppressed || cameraConsumerActive || cameraOperationOwner ||
+            recognitionProcess ||
             QGuiApplication::applicationState() != Qt::ApplicationActive) return;
         if (immediate && recognitionClock.elapsed() - lastRecognitionStart < 2000) return;
         lastRecognitionStart = recognitionClock.elapsed();
@@ -348,6 +389,7 @@ private:
                     scheduleRecognition(delays[qMin(recognitionFailures++, 3)]);
                 }
             } else if (action == "enroll") {
+                auto requester = recognitionRequester.data();
                 if (ok) {
                     m_recognitionState = "ready";
                     const auto id = reply.value("result").toObject().value("enrolled").toString();
@@ -362,6 +404,7 @@ private:
                     m_recognitionState = "ready";
                     scheduleRecognition(2000);
                 }
+                finishCameraOperation(requester);
                 recognitionRequester = nullptr;
             } else if (action == "purge") {
                 if (ok) {
@@ -391,6 +434,7 @@ private:
                 target->m_error = "Face recognition is unavailable; use your account PIN.";
                 if (action == "enroll") {
                     m_recognitionState = "ready";
+                    finishCameraOperation(target);
                     scheduleRecognition(2000);
                 } else if (action == "purge") {
                     m_recognitionState = "unavailable";

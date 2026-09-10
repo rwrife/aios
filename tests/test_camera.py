@@ -46,6 +46,7 @@ class CameraTests(unittest.TestCase):
         self.assertIn('640 * 360 * 3', photo)
         self.assertIn('CameraDevice::capturePath()', photo)
         self.assertIn('QProcess::nullDevice()', photo)
+        self.assertIn('retryTimer.start(250)', photo)
         self.assertIn('ffmpeg', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())
 
     def test_windows_launcher_discovers_attached_camera(self):

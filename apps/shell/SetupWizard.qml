@@ -153,10 +153,11 @@ Window {
                             if (camera.active) wizard.stopCameraPreview()
                             else {
                                 wizard.configureCamera(camera.cameraDevice)
-                                cameraSession.camera = camera
                                 if (wizard.profileControl &&
-                                        typeof wizard.profileControl.setCameraPreviewActive === "function")
-                                    wizard.profileControl.setCameraPreviewActive(true)
+                                        typeof wizard.profileControl.setCameraPreviewActive === "function" &&
+                                        wizard.profileControl.setCameraPreviewActive(true) === false)
+                                    return
+                                cameraSession.camera = camera
                                 camera.start()
                             }
                         }

@@ -34,7 +34,16 @@ int main(int argc, char **argv) {
     control.setSecureInput(true);
     control.takeProfilePhoto();
     check(cameraReleases == 1, "Profile photo did not request exclusive camera ownership");
+    check(!control.setCameraPreviewActive(true), "Preview started during profile photo handoff");
     control.setSecureInput(false);
+    auto child = qobject_cast<SessionControl *>(control.chatProfile());
+    check(child, "Could not create child profile control");
+    child->setSecureInput(true);
+    child->takeProfilePhoto();
+    check(cameraReleases == 2, "Child profile photo did not release root camera consumers");
+    check(!control.setCameraPreviewActive(true), "Preview started during child profile photo handoff");
+    child->setSecureInput(false);
+    child->dispose();
     control.purgeRecognitionData();
     QElapsedTimer purgeElapsed;
     purgeElapsed.start();

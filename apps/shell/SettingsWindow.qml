@@ -163,10 +163,11 @@ Window {
                                 if (camera.active) settings.stopCameraPreview()
                                 else {
                                     settings.configureCamera(camera.cameraDevice)
-                                    cameraSession.camera = camera
                                     if (settings.profileControl &&
-                                            typeof settings.profileControl.setCameraPreviewActive === "function")
-                                        settings.profileControl.setCameraPreviewActive(true)
+                                            typeof settings.profileControl.setCameraPreviewActive === "function" &&
+                                            settings.profileControl.setCameraPreviewActive(true) === false)
+                                        return
+                                    cameraSession.camera = camera
                                     camera.start()
                                 }
                             }
