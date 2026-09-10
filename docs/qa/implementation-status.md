@@ -247,9 +247,9 @@ Validation results:
 - Under WSL, the skill, browser-agent, application-builder agent,
   application-store, and ToolHost test files passed 154 tests in 13.205
   seconds, with one existing platform/fixture skip.
-- Under WSL, final full Python discovery passed 337 tests in 46.331 seconds,
+- Under WSL, final full Python discovery passed 338 tests in 46.028 seconds,
   with two existing platform/fixture skips.
-- In Alpine 3.23, all 65 QML tests passed, the complete native CMake build
+- In Alpine 3.23, all 66 QML tests passed, the complete native CMake build
   produced `aios-shell` and `aios-app-host`, and the compiled host passed its
   real ready-pipe protocol and input-validation smoke test.
 - The resulting 2.09 GB x86_64 ISO passed checksum, manifest, hybrid USB,
