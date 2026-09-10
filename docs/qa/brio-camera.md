@@ -96,6 +96,9 @@ The manifest must also contain a `calibration` object for hardware
 `brio-101` with measured `match_threshold`, `runner_up_margin`,
 `enrollment_consistency`, `minimum_brightness`, `maximum_brightness`,
 `minimum_sharpness`, and optionally `minimum_face_size`.
+The optional identity image includes `py3-opencv` and `py3-cryptography`.
+Default installed images must add those packages explicitly; they are not added
+to the diskless ISO because OpenCV exceeds its package-install filesystem budget.
 
 Do not populate those values from examples or enable background recognition
 until the full-VM capture and held-out calibration gates in the implementation

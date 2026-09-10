@@ -28,8 +28,8 @@ ColumnLayout {
                     Button {
                         objectName: "enrollRecognition"; text: "Face recognition…"
                         enabled: accounts.control && accounts.control.greetingOnly &&
-                                 accounts.control.recognitionState !== "disabled" &&
-                                 accounts.control.recognitionState !== "enrolling"
+                                 (accounts.control.recognitionState === "ready" ||
+                                  accounts.control.recognitionState === "manual-only")
                         onClicked: {
                             faceEnrollment.accountId = modelData.id
                             faceEnrollment.accountName = modelData.name

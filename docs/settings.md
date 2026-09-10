@@ -16,7 +16,9 @@ disabled by default, requires a stable local `/dev/v4l/by-id/*-video-indexN`
 device plus an administrator-provided, checksum-verified and Brio-calibrated
 YuNet/SFace manifest, and never replaces the account PIN. Face samples are
 captured only during explicit enrollment or short background bursts; raw frames
-are discarded after local inference.
+are discarded after local inference. OpenCV and encrypted-template support are
+included in the optional identity image; installed default systems must add
+those local runtime dependencies before enabling recognition.
 The Qwen3 0.6B starter reuses the bundled copy or downloads 462 MiB when missing;
 the [local model catalog](local-models.md) also offers three stronger Qwen3
 sizes with RAM and free-disk checks. Optional local speech downloads 75 MiB. Nothing downloads merely by opening or

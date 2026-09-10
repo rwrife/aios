@@ -1,5 +1,6 @@
 # Optional experimental broker dependencies. Not included in the default ISO.
 py3-cryptography
+py3-opencv
 bubblewrap
 cryptsetup
 e2fsprogs
