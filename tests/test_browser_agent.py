@@ -25,19 +25,32 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIsNone(browser.process)
         self.assertEqual(browser.act({'action': 'close'}), {'closed': True})
 
-    def test_local_browser_discovery_requires_private_registration(self):
+    def test_local_browser_discovery_requires_live_registration(self):
         with tempfile.TemporaryDirectory() as runtime:
             directory = Path(runtime) / 'aios' / 'browsers'
             directory.mkdir(parents=True)
-            public = directory / 'public.json'
-            public.write_text(json.dumps({'version': 1, 'session': 'public',
-                'socket': '/tmp/public.sock', 'actions': ['snapshot']}))
+            socket_path = Path(runtime) / 'browser.sock'
+            socket_path.touch()
             private = directory / 'private.json'
             private.write_text(json.dumps({'version': 1, 'session': 'private',
-                'socket': '/tmp/private.sock', 'actions': ['snapshot']}))
-            os.chmod(public, 0o644)
+                'socket': str(socket_path), 'pid': os.getpid(),
+                'actions': ['snapshot']}))
             os.chmod(private, 0o600)
             self.assertEqual([entry['session'] for entry in discover(runtime)], ['private'])
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX file modes are required')
+    def test_local_browser_discovery_rejects_public_registration(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            directory = Path(runtime) / 'aios' / 'browsers'
+            directory.mkdir(parents=True)
+            socket_path = Path(runtime) / 'browser.sock'
+            socket_path.touch()
+            public = directory / 'public.json'
+            public.write_text(json.dumps({'version': 1, 'session': 'public',
+                'socket': str(socket_path), 'pid': os.getpid(),
+                'actions': ['snapshot']}))
+            os.chmod(public, 0o644)
+            self.assertEqual(discover(runtime), [])
 
     @patch('aios.agent.core.load_config', return_value={'mode': 'remote', 'model': 'test'})
     def test_fragmented_tool_call_then_grounded_response(self, _):

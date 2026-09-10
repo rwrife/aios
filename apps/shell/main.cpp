@@ -21,7 +21,7 @@
 #include <QUuid>
 #include <QTemporaryDir>
 #include <QSettings>
-#include <QDesktopServices>
+#include <QLocalSocket>
 #include <QSysInfo>
 #include <QThread>
 #include "BuildInfo.h"
@@ -188,7 +188,7 @@ public:
     }
     ~Backend() {
         voice.cancel();
-        browser.terminate(); if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
+        closeBrowser();
         for (auto p : findChildren<QProcess *>(QString(), Qt::FindDirectChildrenOnly)) {
             p->disconnect(this); p->kill(); p->waitForFinished(1000);
         }
@@ -251,10 +251,7 @@ public:
             active->deleteLater(); active = nullptr;
         }
         m_loginUrl.clear(); m_loginCode.clear();
-        if (browser.state() != QProcess::NotRunning) {
-            browser.terminate();
-            if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
-        }
+        closeBrowser();
         m_busy = false; m_status = "Stopped"; persist(); emit changed();
     }
     Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
@@ -352,7 +349,13 @@ public:
     Q_INVOKABLE void openSubscriptionLogin() {
         const QUrl url(m_loginUrl);
         if (url.scheme() != "https" || (url.host() != "auth.openai.com" && url.host() != "chatgpt.com") || !url.userInfo().isEmpty()) return;
-        if (!QDesktopServices::openUrl(url)) { m_status = "Open the sign-in address in your browser."; emit changed(); }
+        if (!QProcess::startDetached("aios-browser", {
+                "--url", url.toString(),
+                "--theme", m_config.value("theme_color", "blue").toString()
+            })) {
+            m_status = "Open the sign-in address in your browser.";
+            emit changed();
+        }
     }
     Q_INVOKABLE void refreshLocalModels() {
         if (!m_busy && !m_configuring) run({{"action", "local-models"}});
@@ -405,6 +408,22 @@ private:
     bool m_volumeAvailable = false;
     bool m_volumeRefreshing = false;
     bool m_volumeRefreshPending = false;
+    void closeBrowser() {
+        if (browser.state() == QProcess::NotRunning) return;
+        const QString socketPath = browserDirectory.path() + "/browser.sock";
+        QLocalSocket control;
+        control.connectToServer(socketPath);
+        if (control.waitForConnected(250)) {
+            control.write("{\"action\":\"close\"}\n");
+            control.waitForBytesWritten(250);
+            if (browser.waitForFinished(1500)) return;
+        }
+        browser.terminate();
+        if (!browser.waitForFinished(3000)) {
+            browser.kill();
+            browser.waitForFinished(1000);
+        }
+    }
     void setVolumeAvailable(bool available) {
         if (m_volumeAvailable == available) return;
         m_volumeAvailable = available;

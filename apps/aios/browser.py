@@ -66,14 +66,22 @@ def discover(runtime_dir=None):
             stat = path.stat()
             if hasattr(os, 'geteuid') and stat.st_uid != os.geteuid():
                 continue
-            if stat.st_mode & 0o077:
+            if os.name == 'posix' and stat.st_mode & 0o077:
                 continue
             value = json.loads(path.read_text()[:16384])
             if (value.get('version') == 1 and isinstance(value.get('session'), str)
                     and isinstance(value.get('socket'), str)
-                    and isinstance(value.get('actions'), list)):
+                    and isinstance(value.get('actions'), list)
+                    and isinstance(value.get('pid'), int)
+                    and Path(value['socket']).exists()):
+                if os.name == 'posix':
+                    os.kill(value['pid'], 0)
                 browsers.append(value)
         except (OSError, ValueError, TypeError):
+            try:
+                path.unlink()
+            except OSError:
+                pass
             continue
     return browsers
 
@@ -130,9 +138,19 @@ class Browser:
 
     def close(self):
         if self.process:
+            if self.process.poll() is None and self.socket:
+                try:
+                    call(self.socket, {'action': 'close'})
+                except (OSError, RuntimeError, ValueError):
+                    pass
             try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                self.process.wait(timeout=3)
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                if self.process.poll() is None:
+                    os.killpg(self.process.pid, signal.SIGTERM)
+                    self.process.wait(timeout=3)
             except (ProcessLookupError, subprocess.TimeoutExpired):
                 pass
             if self.process.poll() is None:

@@ -276,7 +276,19 @@ public:
     {
         clearRegistration();
         m_server.close();
-        QLocalServer::removeServer(m_socketPath);
+        if (!m_socketPath.isEmpty())
+            QLocalServer::removeServer(m_socketPath);
+    }
+
+    void openUrl(const QUrl &url)
+    {
+        if (!allowedUrl(url))
+            return;
+        m_opened = true;
+        show();
+        raise();
+        activateWindow();
+        m_view->setUrl(url);
     }
 
 private:
@@ -298,6 +310,10 @@ private:
     int m_generation = 0;
     QPointer<QLocalSocket> m_pending;
     QTimer m_operationTimer;
+    quint64 m_operation = 0;
+    quint64 m_snapshotOperation = 0;
+    bool m_snapshotInFlight = false;
+    bool m_actionInFlight = false;
 
     void applyTheme()
     {
@@ -433,7 +449,7 @@ private:
             m_stop->setEnabled(false);
             m_progress->hide();
             updateNavigation();
-            if (m_pending)
+            if (m_pending && !m_actionInFlight)
                 snapshotPending();
         });
         connect(m_page, &RestrictedPage::blocked, this, [this](const QString &message) {
@@ -466,6 +482,8 @@ private:
 
     void startServer()
     {
+        if (m_socketPath.isEmpty())
+            return;
         QFileInfo socketInfo(m_socketPath);
         QDir().mkpath(socketInfo.absolutePath());
         QFile::setPermissions(socketInfo.absolutePath(),
@@ -508,6 +526,8 @@ private:
 
     void writeRegistration()
     {
+        if (m_socketPath.isEmpty())
+            return;
         const QString directory = runtimeDirectory();
         QDir().mkpath(directory);
         QFile::setPermissions(directory,
@@ -633,7 +653,10 @@ private:
 
     void beginPending(QLocalSocket *socket)
     {
+        ++m_operation;
         m_pending = socket;
+        m_snapshotInFlight = false;
+        m_actionInFlight = false;
         m_operationTimer.start();
     }
 
@@ -643,6 +666,9 @@ private:
             return;
         auto socket = m_pending;
         m_pending.clear();
+        ++m_operation;
+        m_snapshotInFlight = false;
+        m_actionInFlight = false;
         m_operationTimer.stop();
         respond(socket, QJsonObject{{"error", message}});
     }
@@ -665,8 +691,11 @@ private:
 
     void snapshotPending()
     {
-        if (!m_pending)
+        if (!m_pending || m_snapshotInFlight)
             return;
+        m_snapshotInFlight = true;
+        m_snapshotOperation = m_operation;
+        const quint64 operation = m_operation;
         const int generation = ++m_generation;
         const QString script = QString(R"JS(
 (() => {
@@ -701,9 +730,10 @@ private:
   };
 })()
 )JS").arg(generation);
-        m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this](const QVariant &result) {
-            if (!m_pending)
+        m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this, operation](const QVariant &result) {
+            if (!m_pending || operation != m_operation || operation != m_snapshotOperation)
                 return;
+            m_snapshotInFlight = false;
             auto socket = m_pending;
             m_pending.clear();
             m_operationTimer.stop();
@@ -823,9 +853,11 @@ private:
 )JS").arg(jsString(key));
             }
         }
+        m_actionInFlight = true;
         m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this](const QVariant &result) {
             if (!m_pending)
                 return;
+            m_actionInFlight = false;
             const auto object = jsonValue(result).toObject();
             if (object.contains("error")) {
                 failPending(object.value("error").toString());
@@ -854,14 +886,20 @@ int main(int argc, char **argv)
     parser.addOption({{"s", "socket"}, "Owner-only control socket path.", "path"});
     parser.addOption({{"i", "session"}, "Chat session identifier.", "id"});
     parser.addOption({{"t", "theme"}, "AIOS theme key.", "theme", "blue"});
+    parser.addOption({{"u", "url"}, "Open a standalone trusted HTTP(S) URL.", "url"});
     parser.process(app);
 
     const QString socketPath = parser.value("socket");
-    const QString sessionId = parser.value("session");
-    if (socketPath.isEmpty() || sessionId.isEmpty())
+    QString sessionId = parser.value("session");
+    const QUrl initialUrl(parser.value("url"));
+    if ((socketPath.isEmpty() || sessionId.isEmpty()) && !allowedUrl(initialUrl))
         parser.showHelp(2);
+    if (sessionId.isEmpty())
+        sessionId = "standalone-" + QString::number(QCoreApplication::applicationPid());
 
     BrowserWindow window(socketPath, sessionId, parser.value("theme"));
+    if (allowedUrl(initialUrl))
+        window.openUrl(initialUrl);
     return app.exec();
 }
 
