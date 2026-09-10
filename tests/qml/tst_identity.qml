@@ -193,7 +193,7 @@ TestCase {
         bubble.openPicker()
         var suggestion = findChild(bubble, "recognitionSuggestion")
         verify(suggestion.visible)
-        mouseClick(suggestion)
+        suggestion.triggered()
         var form = findChild(bubble, "bubbleEnrollment")
         tryCompare(form, "opened", true)
         compare(findChild(bubble, "profileName").text, "Test profile")

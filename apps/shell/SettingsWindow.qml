@@ -18,7 +18,8 @@ Window {
     color: theme.panel
     function stopCameraPreview() {
         camera.stop()
-        if (profileControl) profileControl.setCameraPreviewActive(false)
+        if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
+            profileControl.setCameraPreviewActive(false)
     }
     onVisibleChanged: { if (!visible) stopCameraPreview(); else { models.reload(); if (pages.currentIndex === 6) accountsPage.refresh(); } }
     onClosing: stopCameraPreview()
@@ -103,7 +104,9 @@ Window {
                         onClicked: {
                             if (camera.active) settings.stopCameraPreview()
                             else {
-                                if (settings.profileControl) settings.profileControl.setCameraPreviewActive(true)
+                                if (settings.profileControl &&
+                                        typeof settings.profileControl.setCameraPreviewActive === "function")
+                                    settings.profileControl.setCameraPreviewActive(true)
                                 camera.start()
                             }
                         }

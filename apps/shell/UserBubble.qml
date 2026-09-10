@@ -19,7 +19,7 @@ Item {
     function createAccount() { enrollment.creating = true; enrollment.open(); }
     function openPicker() {
         if (control && control.personalAvailable) control.listProfiles()
-        if (control) control.requestRecognition()
+        if (control && typeof control.requestRecognition === "function") control.requestRecognition()
         picker.open()
     }
     Button {
@@ -66,7 +66,7 @@ Item {
         onOpened: { currentIndex = -1; if (root.control) root.control.setSecureInput(true); }
         MenuItem {
             objectName: "recognitionSuggestion"
-            visible: root.suggestion.name
+            visible: !!root.suggestion.name
             height: visible ? implicitHeight : 0
             text: "Suggested: " + (root.suggestion.name || "") + " — confirm with PIN"
             implicitHeight: 48
@@ -80,7 +80,7 @@ Item {
             }
         }
         MenuSeparator {
-            visible: root.suggestion.name
+            visible: !!root.suggestion.name
             height: visible ? implicitHeight : 0
             contentItem: Rectangle { implicitWidth: 240; implicitHeight: 1; color: "#58717e" }
         }
