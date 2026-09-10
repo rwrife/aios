@@ -16,6 +16,28 @@ WSL with a working Linux Docker daemon, or copy an existing x86_64 ISO to Window
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`.
 
+## Download and flash a bootable ISO
+
+The [Build bootable ISO workflow](https://github.com/rwrife/aios/actions/workflows/build-iso.yml)
+builds the pinned Alpine image, verifies its checksum and hybrid USB metadata,
+then boots it offline with both BIOS and UEFI firmware before publishing it.
+Manual workflow runs provide a 30-day Actions artifact. Pushing a `v*` tag also
+creates or updates a GitHub Release with the ISO, `SHA256SUMS`, package manifest
+and pinned build inputs.
+
+The x86_64 ISO is a hybrid image that can be written directly to a thumb drive.
+Verify its checksum first, then use a raw-image writer such as Rufus or
+balenaEtcher on Windows, or `dd` on Linux:
+
+```sh
+sha256sum -c SHA256SUMS
+sudo dd if=alpine-aios-*-x86_64.iso of=/dev/sdX bs=4M status=progress conv=fsync
+```
+
+Replace `/dev/sdX` with the whole USB device, not a partition. This erases that
+device. Boot the result on a 64-bit x86 machine in BIOS or UEFI mode. Secure Boot
+must currently be disabled; physical hardware compatibility is not yet certified.
+
 Launch with QEMU installed on the host:
 
 ```sh

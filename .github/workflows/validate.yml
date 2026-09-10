@@ -36,20 +36,3 @@ jobs:
         run: sudo apparmor_parser -r scripts/qa/aios-bwrap.apparmor
       - name: Test rendered private surfaces, PIN input and display socket isolation
         run: bash scripts/test-identity-display.sh
-  image:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - run: bash scripts/build.sh
-      - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
-      - name: Boot offline with BIOS and UEFI
-        run: |
-          iso=$(find distro/alpine/out -name '*-x86_64.iso' -print -quit)
-          sudo python3 scripts/test-boot.py "$iso" --timeout 600 --log distro/alpine/out/boot-bios.log
-          sudo python3 scripts/test-boot.py "$iso" --uefi /usr/share/OVMF/OVMF_CODE_4M.fd --timeout 600 --log distro/alpine/out/boot-uefi.log
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aios-x86_64
-          path: distro/alpine/out/*
