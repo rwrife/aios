@@ -1,5 +1,8 @@
 # Chat windows, attachments and voice
 
+Proposed next step: [wake-word activation and speech-to-text implementation
+plan](plans/wake-word-speech-to-text.md). Wake-word listening is not yet implemented.
+
 The launcher restores the most recently minimized QML chat window before
 creating a new `Backend` session and window. The desktop owns shared model
 configuration and one loopback model server; each session owns its conversation,
