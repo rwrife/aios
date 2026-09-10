@@ -1,3 +1,5 @@
+// Hallmark · component: browser chrome · genre: modern-minimal · theme: AIOS Ocean
+// Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
 #include <QApplication>
 #include <QBoxLayout>
 #include <QCloseEvent>
@@ -739,19 +741,20 @@ private:
 (() => {
   const generation = %1;
   const inView = r => r.width && r.height && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
-  const visible = e => {
+  const visuallyVisible = e => {
     if (![...e.getClientRects()].some(inView)) return false;
     for (let node = e; node; node = node.parentElement) {
       const style = getComputedStyle(node);
       if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
     }
-    return getComputedStyle(e).pointerEvents !== 'none';
+    return true;
   };
+  const visible = e => visuallyVisible(e) && getComputedStyle(e).pointerEvents !== 'none';
   const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
   let node, text = '';
   while ((node = walker.nextNode()) && text.length < 6000) {
     if (!node.textContent.trim() || ['SCRIPT','STYLE','NOSCRIPT'].includes(node.parentElement?.tagName)) continue;
-    if (getComputedStyle(node.parentElement).visibility === 'hidden') continue;
+    if (!visuallyVisible(node.parentElement)) continue;
     const range = document.createRange(); range.selectNodeContents(node);
     if ([...range.getClientRects()].some(inView)) text += node.textContent.trim() + '\n';
   }
@@ -898,9 +901,17 @@ private:
   if (key === 'Enter') {
     const tag = element.tagName.toLowerCase();
     const type = (element.type || '').toLowerCase();
-    if (tag === 'a' || tag === 'button' || ['button','submit','checkbox','radio'].includes(type)) {
+    if (tag === 'textarea') {
+      const start = element.selectionStart ?? element.value.length;
+      const end = element.selectionEnd ?? start;
+      element.setRangeText('\n', start, end, 'end');
+      element.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertLineBreak', data:null}));
+    } else if (element.isContentEditable) {
+      document.execCommand('insertLineBreak');
+      element.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertLineBreak', data:null}));
+    } else if (tag === 'a' || tag === 'button' || ['button','submit','reset'].includes(type)) {
       element.click();
-    } else if (element.form) {
+    } else if (tag === 'input' && element.form) {
       element.form.requestSubmit();
     } else {
       return {error:'Enter is not available for the selected control.'};
