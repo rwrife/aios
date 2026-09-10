@@ -8,6 +8,8 @@ The chat desktop is under active development. See
 [`docs/specs/chat-desktop.md`](docs/specs/chat-desktop.md) for the current target
 and [`docs/architecture.md`](docs/architecture.md) for implementation decisions.
 See `docs/qa/implementation-status.md` for executed checks and remaining release gates.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup on Windows,
+Linux, and macOS.
 
 ## Try the development image
 
