@@ -7,6 +7,7 @@ on:
       - ".github/workflows/build-iso.yml"
       - "distro/alpine/**"
       - "scripts/build-apps.sh"
+      - "scripts/build.ps1"
       - "scripts/build-iso.sh"
       - "scripts/build-iso-container.sh"
       - "scripts/build.sh"

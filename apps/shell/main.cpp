@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QProcess>
@@ -21,6 +22,9 @@
 #include <QTemporaryDir>
 #include <QSettings>
 #include <QDesktopServices>
+#include <QSysInfo>
+#include <QThread>
+#include "BuildInfo.h"
 #include "voice.h"
 #include "SessionControl.h"
 #include "DisplayBridge.h"
@@ -45,6 +49,62 @@ static void tieToDesktop(QProcess &process) {
 #endif
 }
 
+static QString fileValue(const QString &path, const QString &key) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
+    const QByteArray prefix = key.toUtf8() + '=';
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine().trimmed();
+        if (!line.startsWith(prefix)) continue;
+        QString value = QString::fromUtf8(line.mid(prefix.size()));
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+            value = value.mid(1, value.size() - 2);
+        return value;
+    }
+    return {};
+}
+
+static QVariantMap systemInformation() {
+    QString cpu;
+    QFile cpuInfo("/proc/cpuinfo");
+    if (cpuInfo.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const auto match = QRegularExpression(
+            R"(^model name\s*:\s*(.+)$)", QRegularExpression::MultilineOption)
+            .match(QString::fromUtf8(cpuInfo.readAll()));
+        if (match.hasMatch()) cpu = match.captured(1).trimmed();
+    }
+    if (cpu.isEmpty()) cpu = QSysInfo::currentCpuArchitecture();
+    const int logicalCpus = QThread::idealThreadCount();
+    if (logicalCpus > 0)
+        cpu += QString(" · %1 logical CPU%2").arg(logicalCpus).arg(logicalCpus == 1 ? "" : "s");
+
+    QString memory = "Unknown";
+    QFile memoryInfo("/proc/meminfo");
+    if (memoryInfo.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const auto match = QRegularExpression(R"(^MemTotal:\s+(\d+)\s+kB$)", QRegularExpression::MultilineOption)
+            .match(QString::fromUtf8(memoryInfo.readAll()));
+        if (match.hasMatch()) {
+            const double gibibytes = match.captured(1).toDouble() / (1024.0 * 1024.0);
+            memory = gibibytes >= 1.0
+                ? QString::number(gibibytes, 'f', gibibytes >= 10.0 ? 0 : 1) + " GiB"
+                : QString::number(match.captured(1).toLongLong() / 1024) + " MiB";
+        }
+    }
+
+    QString operatingSystem = fileValue("/etc/os-release", "PRETTY_NAME");
+    if (operatingSystem.isEmpty()) operatingSystem = QSysInfo::prettyProductName();
+    return {
+        {"version", AIOS_VERSION},
+        {"build", AIOS_BUILD_NUMBER},
+        {"commit", AIOS_COMMIT},
+        {"os", operatingSystem},
+        {"kernel", QSysInfo::kernelType() + " " + QSysInfo::kernelVersion()},
+        {"architecture", QSysInfo::currentCpuArchitecture()},
+        {"cpu", cpu},
+        {"memory", memory}
+    };
+}
+
 class Backend : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList messages READ messages NOTIFY changed)
@@ -63,6 +123,7 @@ class Backend : public QObject {
     Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
     Q_PROPERTY(bool muted READ muted NOTIFY volumeChanged)
     Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY volumeChanged)
+    Q_PROPERTY(QVariantMap systemInfo READ systemInfo CONSTANT)
 public:
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
@@ -80,6 +141,7 @@ public:
     int volume() const { return m_volume; }
     bool muted() const { return m_muted; }
     bool volumeAvailable() const { return m_volumeAvailable; }
+    QVariantMap systemInfo() const { return m_systemInfo; }
     explicit Backend(Backend *shared = nullptr) : QObject(shared), owner(shared), voice(this) {
         connect(&voice, &Voice::changed, this, &Backend::changed);
         connect(&voice, &Voice::error, this, [this](const QString &text) { m_status = text; emit changed(); });
@@ -328,6 +390,7 @@ private:
     Voice voice;
     QVariantList m_messages;
     QVariantMap m_config, pendingConfig, m_subscription, m_localModels;
+    const QVariantMap m_systemInfo = systemInformation();
     QString m_loginUrl, m_loginCode;
     QString m_status;
     bool m_busy = false;
@@ -517,6 +580,7 @@ int main(int argc, char **argv) {
     palette.setColor(QPalette::HighlightedText, QColor("#101b27"));
     app.setPalette(palette);
     app.setApplicationName("AIOS");
+    app.setApplicationVersion(AIOS_VERSION);
     app.setOrganizationName("AIOS");
     app.setQuitOnLastWindowClosed(false);
     Backend backend;

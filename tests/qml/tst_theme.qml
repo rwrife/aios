@@ -17,6 +17,11 @@ TestCase {
         property var subscription: ({})
         property string loginUrl: ""
         property string loginCode: ""
+        property var systemInfo: ({
+            version: "0.1.0", build: "20260909.1705", commit: "99dd1ecf8c77",
+            os: "AIOS Test", kernel: "Linux 6.12", architecture: "x86_64",
+            cpu: "Test CPU · 2 logical CPUs", memory: "4.0 GiB"
+        })
         signal configured()
         function configure(values) {
             var updated = Object.assign({}, config, values)
@@ -60,6 +65,18 @@ TestCase {
         mouseClick(motionToggle)
         tryCompare(backend.config, "reduced_motion", false)
         compare(motionToggle.text, "Reduce motion")
+        window.destroy()
+    }
+    function test_about_shows_build_and_hardware_information() {
+        var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
+        verify(window !== null)
+        window.show()
+        findChild(window, "settingsPages").currentIndex = 6
+        wait(100)
+        compare(findChild(window, "aboutBuild").text, "20260909.1705")
+        compare(findChild(window, "aboutCommit").text, "99dd1ecf8c77")
+        compare(findChild(window, "aboutCpu").text, "Test CPU · 2 logical CPUs")
+        compare(findChild(window, "aboutMemory").text, "4.0 GiB")
         window.destroy()
     }
     function test_unknown_theme_falls_back() {

@@ -88,6 +88,11 @@ TestCase {
         property int volume: 65
         property bool muted: false
         property bool volumeAvailable: true
+        property var systemInfo: ({
+            version: "0.1.0", build: "test", commit: "test",
+            os: "AIOS Test", kernel: "Linux", architecture: "x86_64",
+            cpu: "Test CPU", memory: "4.0 GiB"
+        })
         property var createdSessions: []
         property int createSessionCalls: 0
         property int refreshVolumeCalls: 0

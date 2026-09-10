@@ -8,11 +8,25 @@ The chat desktop is under active development. See
 [`docs/specs/chat-desktop.md`](docs/specs/chat-desktop.md) for the current target
 and [`docs/architecture.md`](docs/architecture.md) for implementation decisions.
 See `docs/qa/implementation-status.md` for executed checks and remaining release gates.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup on Windows,
+Linux, and macOS.
 
 ## Try the development image
 
-Build on Linux with Docker: `bash scripts/build.sh`. On Windows, build inside
-WSL with a working Linux Docker daemon, or copy an existing x86_64 ISO to Windows.
+Build on Linux with Docker:
+
+```sh
+bash scripts/build.sh
+```
+
+On Windows, use PowerShell with WSL2 and a working Linux Docker daemon:
+
+```powershell
+.\scripts\build.ps1
+# Choose a different WSL distribution:
+.\scripts\build.ps1 -Distro Debian
+```
+
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`.
 

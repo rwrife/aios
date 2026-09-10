@@ -65,6 +65,8 @@ individual applications.
   ~/.screenlayout/default.sh to restore it at login. An unsuccessful saved
   layout does not prevent the desktop from starting.
 - **Appearance:** chooses a theme color and enables or reduces background motion.
+- **About:** shows the AIOS version, build number, source commit, operating system,
+  kernel, architecture, CPU and total memory.
 
 Configuration survives reboot on an installed system. Live sessions remain
 ephemeral. Audio/camera/Wi-Fi capabilities depend on the connected hardware and
