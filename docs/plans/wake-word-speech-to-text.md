@@ -1,4 +1,4 @@
-# Wake-word activation and speech-to-text implementation plan
+# Wake-word activation and spoken conversation implementation plan
 
 Status: proposed; this PR changes documentation only. Baseline: `6986a2d`.
 
@@ -10,12 +10,21 @@ the user finishes speaking, and places the transcript in the appropriate chat's
 composer. The user can edit it and press Send. The existing microphone button
 continues to work when wake-word listening is disabled or unavailable.
 
+When that voice-initiated message is sent, the agent normally answers aloud as
+well as in the chat. Short conversational answers can be spoken directly;
+requests to write code, create documents, or launch an application receive a
+brief spoken result or confirmation while the full output stays on screen.
+Both input and output speech work locally, with optional downloadable quality
+upgrades and explicitly selected remote providers.
+
 “Translation layer” here means converting speech into text for the existing
 chat pipeline. The first release targets English transcription. Translation
 between languages, speaker identification, voice authentication, automatic
-message submission, spoken command execution, and full-duplex conversation are
+message submission, direct speech-to-tool execution, and full-duplex conversation are
 separate features. The wake phrase is a proposed product default, subject to
 recognition testing; arbitrary user-defined phrases are outside the first release.
+Voice-origin requests may use the ordinary agent/tool workflow after Send;
+spoken replies do not introduce a separate execution or approval path.
 
 ## Existing foundation
 
@@ -24,6 +33,7 @@ recognition testing; arbitrary user-defined phrases are outside the first releas
 | Capture and playback | `apps/shell/voice.h`: per-session Qt capture, 16 kHz mono signed 16-bit PCM, temporary WAV, 60-second limit | Move microphone ownership to a shared coordinator; preserve session playback and clip cleanup |
 | Chat lifecycle | `apps/shell/main.cpp`: `Backend::setVoiceActive`, worker dispatch, transcription signals and cleanup | Route manual and wake-triggered capture through one coordinator with cancellable request identities |
 | Transcription | `apps/aios/voice.py`: local `whisper-cli` or configured remote transcription endpoint | Reuse providers behind a bounded, versioned result contract |
+| Spoken output | `apps/aios/voice.py`: local eSpeak NG or remote synthesis; `Backend::readReply` and Qt playback | Reuse synthesis/playback for automatic, concise replies to voice-origin turns; add optional local neural voices |
 | Worker boundary | `apps/aios/worker.py`: `transcribe` action | Correlate results with the originating capture and session |
 | Composer | `apps/shell/ChatWindow.qml`: append transcript without sending | Preserve draft edits and reject stale or duplicate results |
 | Desktop | `apps/shell/main.qml`: launcher restores minimized chat or creates one; `ChatOrb.qml` has inactive voice hooks | Add an explicit voice target policy and bind real listening states |
@@ -39,6 +49,10 @@ detector and continuous microphone listener do not currently exist.
 Pipeline: microphone → shared audio coordinator → local keyword detector →
 utterance capture with voice activity detection (VAD) → existing transcription
 worker → session-bound transcript result → editable composer.
+
+After Send: voice-origin turn → agent answer/tool outcomes → spoken-response
+policy → bounded speech text → local or selected remote TTS → coordinated Qt
+playback. The full answer/artifact remains available in the chat.
 
 1. Introduce `VoiceCoordinator` in the shell as the sole microphone owner within
    a desktop audio scope. Refactor `Voice` so manual recording also acquires this
@@ -66,7 +80,7 @@ worker → session-bound transcript result → editable composer.
    guard, infer an owner from speech, or treat sign-in status as a capability.
 6. Bind every capture to an opaque request ID, session ID, and cancellation
    generation. Session close/stop, privacy loss, disable, or microphone change
-   cancels capture and transcription, removes temporary audio, and invalidates
+   cancels capture, transcription, synthesis and playback, removes temporary audio, and invalidates
    late results. Never retarget a canceled capture or reopen its chat.
 
 ## State machine and bounded behavior
@@ -80,6 +94,11 @@ worker → session-bound transcript result → editable composer.
 | Review | Transcript inserted once; after cooldown return to Armed if still eligible |
 | Suspended | Close microphone for privacy shield, native PIN prompt, suspend, or AIOS speech playback; resume only after eligibility is rechecked |
 | Error | Close microphone, clear buffers, report cause; explicit retry or bounded device recovery |
+
+Track output separately from capture: Idle → Preparing speech → Speaking → Idle,
+with cancellation/error transitions from both active states. The shared arbiter
+suspends listening before playback begins and rearms only after playback stops
+and cooldown expires. Agent generation and tool work do not count as recording.
 
 Initial tunable constants: speech must start within 5 seconds of the trigger;
 require at least 250 ms of speech; finish after 900 ms of trailing silence; cap
@@ -127,6 +146,125 @@ provider result arrives late. Do not automatically retry remote uploads or switc
 from local recognition to a remote service. Existing typed text and edits made
 during transcription must survive transcript insertion.
 
+## Spoken-response policy and turn lifecycle
+
+Store `input_origin` (`typed`, `voice`, or `mixed`) on the pending draft and sent
+turn; append a transcript without discarding this metadata when the user edits
+it. A mixed draft containing dictated text is voice-initiated. Clearing the
+draft resets its origin, and later typed turns do not inherit voice mode from
+an earlier turn. Keep a visible per-turn override for silent or spoken reply.
+Default to automatic spoken replies for voice/mixed turns, and manual Read aloud
+for typed turns. This applies equally to wake-word and microphone-button input.
+
+| Request/result | Spoken output | Visible output |
+| --- | --- | --- |
+| Short question or explanation | Answer directly in natural speech | Full answer and any links |
+| Long explanation, research, table, or list | Brief answer/summary and an offer to hear more | Complete detail and sources |
+| Write or edit code | “I've updated the code. The checks passed.” only when both outcomes are verified | Code/diff and actual validation details |
+| Launch an application | “The browser is open.” after confirmed launch; “I've requested the browser to open” if only dispatch is known | Application plus relevant status |
+| Create a document or other artifact | “The document is ready to review.” after the file exists | Artifact and full answer |
+| Approval or clarification needed | Ask the actual short question, including material scope | The same question and existing approval controls |
+| Failure or partial success | State what failed or remains incomplete; no false completion claim | Error and recovery details |
+
+Implement a `speech_response` policy module beside the Python agent/worker code.
+Wire `apps/aios/agent.py` outcome events through `apps/aios/worker.py`, then
+`apps/shell/main.cpp` for turn correlation and playback. Update
+`apps/shell/ChatWindow.qml` for draft origin and spoken/silent overrides, and
+`apps/aios/cli.py` alongside config/settings changes so provider choices and
+model setup remain available without the GUI.
+Use verified tool completion events for action confirmations, with deterministic
+templates for common outcomes. For conversational content, reuse a short final
+answer or request a separate concise `speech_text` from the configured chat
+model. A bounded optional summary pass may use that same model; it must not
+require a second large model or a remote call in local mode. On malformed or
+slow summary output, fall back to a truthful generic message such as “The answer
+is ready in the chat,” without reading code or claiming unverified success.
+Cap the optional summary pass at 2 seconds and its output at the speech limits
+below; prefer templates or speech text from the original generation for latency.
+
+Keep structured speech metadata separate from the displayed answer. A proposed
+envelope includes `version`, `session_id`, `turn_id`, `generation`, `event_id`,
+`kind` (`answer`, `completion`, `question`, `failure`), and plain `speech_text`.
+Validate and deduplicate it before synthesis. Limit automatic speech to 80 words,
+600 characters, and 30 seconds of playback; prefer one sentence for actions.
+Summarize semantically rather than cutting the first characters of a long reply.
+Exclude code blocks, diffs, raw tool logs, markup, long paths/URLs, and secrets.
+Full explicit Read aloud remains separate and uses its own bounded limits.
+
+Speak one terminal result per turn by default. A clarification/approval question
+can be spoken when that event actually pauses work; do not narrate token streams
+or every tool call. A “Done” confirmation requires a verified terminal outcome.
+Distinguish an acknowledgement, a request for permission, and successful
+completion. Spoken questions never grant permission: native authentication and
+protected approvals retain their existing trusted UI and per-chat checks.
+Until a separate voice-submission feature exists, replies to spoken questions
+still use dictation/review/Send; this release is turn-based, not fully hands-free.
+
+Add automatic speech as a follow-on job after the text answer is committed, not
+through a second user message or a recursive agent call. Preserve the existing
+manual `synthesize(text, destination)` and CLI behavior while routing both paths
+through a shared cancellable adapter. A synthesis failure must not fail the
+completed agent task. Show the answer plus a brief audio error and Retry/Read
+aloud. Never rerun tools to regenerate a spoken confirmation.
+
+Use one playback owner across chats. Play automatically only while the originating
+chat is foreground and eligible; if focus moves away, keep a Read aloud action
+instead of unexpectedly speaking a background result. Do not queue stale replies
+for later playback. Stop speech on session stop/close, a new sent turn in that
+chat, privacy loss, lock/suspend, output-device change, or explicit Stop speaking.
+Manual recording preempts playback. Provide keyboard and pointer Stop controls;
+voice interruption during playback remains outside this half-duplex release.
+Respect output mute; do not unmute devices or replay suppressed speech afterward.
+
+## Local-first model tiers and provider configuration
+
+New installations default both STT and TTS to local. Existing installations keep
+their explicitly saved provider settings during migration; do not reinterpret
+the current `voice_mode` default as user consent to a remote provider. A local
+chat model plus local STT/TTS must support the entire round trip offline once
+the required models are installed. Selecting a remote chat model remains an
+independent choice and should make clear that the transcript goes to that model.
+
+| Tier | Input speech | Output speech | Delivery |
+| --- | --- | --- | --- |
+| Basic local | Existing Whisper tiny.en | Existing eSpeak NG | Bundled engines; explicit setup download for STT weights; TTS works without neural weights |
+| Enhanced local | Validated larger/quantized Whisper model | Validated neural voice, evaluating Piper first | Optional curated downloads; show disk/RAM/CPU requirements and expected latency before installing |
+| Advanced optional | Other validated local STT or explicitly chosen remote STT | Higher-quality local candidate such as Kokoro, or explicitly chosen remote TTS | Capability/hardware checks; independent provider choice for each direction |
+
+Piper is a local neural TTS candidate, not an assumed Alpine dependency. Its
+current engine and individual voice models have separate licensing requirements.
+Evaluate Kokoro as an optional quality tier only after verifying the runtime,
+model/voice licenses, musl build, CPU-only performance and resource costs. The
+baseline must not require a GPU, proprietary key, or a large neural voice.
+
+Split the currently shared `voice_mode` into validated `stt_provider` and
+`tts_provider` choices (`local`/`remote`), plus allowlisted local engine/model/voice
+IDs. Use separate STT/TTS URL, key and model settings so a user can keep recognition
+local while choosing advanced remote speech output, or the reverse. Migrate saved
+voice settings explicitly into the two namespaces, preserving existing choices
+and clearing credentials on endpoint changes. Never copy chat credentials.
+Retain TLS verification, redirect restrictions, bounded requests and safe key
+storage. Remote STT receives only triggered audio; remote TTS receives only the
+selected speech text, not the full chat, code, attachments, or raw tool results.
+
+Create a curated model catalog with version, engine compatibility, language,
+sample rate, artifact size, checksum, source, license/attribution, and measured
+reference hardware requirements. Use atomic, cancellable downloads with storage
+checks, verified installation and rollback. Model files are data, not executable
+plugins; do not load arbitrary model-supplied code. Include voice preview,
+installed-size display, selection, removal, and restoration of the basic local
+voice. Pin engine builds and catalog revisions in packaging. Model upgrades are
+user-selected, never a silent download during an utterance.
+
+When an enhanced local voice is missing, incompatible, or too slow, offer/use
+the bundled local fallback with a visible status. Do not silently fall back to
+the network. Local STT failure can offer the installed basic model or setup;
+remote failure leaves the text available and offers an explicit retry or local
+choice. Cache models, not utterances; clean synthesized audio after playback,
+cancellation, error and startup recovery. Enforce WAV format, decoded duration
+and size limits for local and remote output before playback, with watchdogs for
+synthesis as well as summary generation.
+
 ## Settings, privacy, and UI
 
 - Proposed settings: `wake_word_enabled` (boolean, default false),
@@ -135,6 +273,11 @@ during transcription must survive transcript insertion.
   validation; a saved enable preference is distinct from runtime readiness.
   Recheck eligibility at each startup. Failed enable attempts must not claim the
   microphone is listening. Use the existing default-input selection initially.
+- Add `spoken_reply_mode` (`voice_turns`, `off`, default `voice_turns`), local
+  voice/model selections and independent provider settings described above.
+  Show synthesis readiness separately from microphone readiness, with preview,
+  Stop speaking, and an explicit manual Read aloud action. No `always` mode or
+  background announcement behavior is implied by enabling voice replies.
 - Show whether listening is off, armed, capturing, transcribing, suspended, or
   unavailable. Explain on enable that the microphone stays active for local
   wake detection, and that only triggered utterances use the configured remote
@@ -152,7 +295,9 @@ during transcription must survive transcript insertion.
   an application-owned directory. Persist text only through the normal Send
   path. Log bounded error codes and aggregate timing without transcript content.
 - Extend the structured `os_settings` interface with validated wake enable/read
-  operations and runtime status, backed by the coordinator. Update
+  operations, spoken-reply mode, allowlisted installed voice selection, stop
+  playback and runtime status, backed by the coordinator. Downloads remain an
+  explicit setup action rather than arbitrary URLs in an agent tool. Update
   `apps/skills/os-control/SKILL.md`, `apps/aios/os_settings.py`, and
   `docs/agentic-tools.md` together. Define valid values, persistence, readback,
   per-chat authorization, and unavailable/error results. No raw audio stream or
@@ -162,13 +307,14 @@ during transcription must survive transcript insertion.
 
 | Milestone | Deliverables | Completion gate |
 | --- | --- | --- |
-| 1. Feasibility and baseline | Real Alpine build spike; keyword/VAD selection; licensed model manifest; baseline STT and hardware measurements | Chosen phrase, musl build, redistribution terms, memory and accuracy meet recorded targets; otherwise document blocker and keep feature disabled |
+| 1. Feasibility and baseline | Real Alpine build spike; keyword/VAD and TTS candidates; licensed model catalog; baseline STT/TTS hardware measurements | Chosen phrase, voices, musl build, redistribution terms, memory and accuracy meet recorded targets; otherwise document blocker and keep feature disabled |
 | 2. Shared capture | Coordinator, normalization, bounded ring buffer, helper protocol, cancellation generations; migrate manual capture | Deterministic tests prove single ownership, bounded memory, cleanup, and no manual-recording regression |
 | 3. Wake to draft | State machine, VAD, target routing, versioned transcription result, error handling | Wake through draft succeeds offline; two-chat isolation and late-result rejection pass |
-| 4. Settings and lifecycle | Opt-in UI, orb feedback, playback/privacy suspension, structured OS controls | Status readback matches the actual microphone; settings migration, keyboard and palette checks pass |
-| 5. Release validation | Pinned runtime/model packaging, local ISO, hardware tests, QA evidence and docs | Functional, privacy and performance gates below pass; publish measured limitations |
+| 4. Voice-aware replies | Draft/turn origin metadata, spoken-response policy, outcome confirmations, local synthesis, playback arbitration | Voice turns answer aloud; code/artifact/action turns produce brief truthful confirmations; typed turns stay silent; failed speech never reruns work |
+| 5. Settings and model upgrades | Opt-in UI, orb feedback, playback/privacy suspension, structured OS controls, independent STT/TTS providers, catalog downloads and migration | Basic offline round trip, optional upgraded voice, cancellation, readback, keyboard and palette checks pass |
+| 6. Release validation | Pinned runtime/model packaging, local ISO, hardware tests, QA evidence and docs | Functional, privacy, speech-output and performance gates below pass; publish measured limitations |
 
-Keep milestones 2–4 as a batch for expensive image/VM validation while running
+Keep milestones 2–5 as a batch for expensive image/VM validation while running
 fast targeted tests during development. Initially enable wake support only in
 the validated anonymous desktop scope. Identity/private-desktop support requires
 the ownership lease and routing work described above plus its own isolation gate.
@@ -183,6 +329,14 @@ typing during transcription; config migration; missing/corrupt models; and
 provider failures. Extend `tests/test_voice_attachments.py` and add dedicated
 coordinator/protocol tests. No display server or real microphone is required for
 these tests. Retain existing voice credential and transport regression coverage.
+
+Add headless spoken-response tests for typed/voice/mixed origin and draft reset;
+short answers versus code/artifact summaries; success/partial/failure/approval
+events; summary timeouts and malformed metadata; late/duplicate synthesis;
+foreground-only playback; stop/new-turn races; muted output; model download
+verification and rollback; and provider migration. Confirm no network fallback,
+no full code/secret payload sent to remote TTS, and no tool re-execution on Retry.
+Test missing speakers and playback failure independently of microphone failure.
 
 Build locally in WSL, boot the real Alpine image with `scripts/run.ps1`, and give
 QEMU a unique title such as `AIOS wake-word validation`. Allow several minutes
@@ -199,6 +353,14 @@ cancel, and privacy transitions. Run existing browser release checks on the fina
 image (sandbox, loading, text input, navigation, scrolling, cleanup, and two
 isolated chats) to catch packaging regressions.
 
+Extend screenshots to preparing-speech/speaking, model selection/download, and
+audio failure states. On the real image, exercise voice question → reviewed Send
+→ spoken answer, code request → concise confirmation, successful/failed app
+launch → truthful status, and approval question → existing approval UI. Test
+local chat/STT/TTS with network access disabled after setup, downloaded neural
+voices, explicitly configured mixed local/remote directions, and speaker
+unplug/mute. Capture loopback output to prove playback does not wake the listener.
+
 Provisional product gates, to be measured on a named reference CPU/microphone:
 
 - Wake recall at least 95% in quiet and 90% at a documented 10 dB SNR, using at
@@ -213,6 +375,17 @@ Provisional product gates, to be measured on a named reference CPU/microphone:
   200 MiB RSS; measure STT peak memory separately. No growth in an eight-hour soak.
 - English word error rate at most 15% on the held-out quiet dictation set; report
   noisy results separately and verify no first-word loss or wake-phrase leakage.
+- p95 completed-answer-to-first-audio under 2 seconds for basic local speech and
+  under 4 seconds for the selected enhanced local tier, including summary time;
+  measure on the reference CPU under concurrent chat load. Measure cold and warm
+  starts separately and publish additional peak memory/disk cost for each tier.
+- At least 95% listener transcription accuracy on a held-out 50-phrase spoken
+  output set reviewed by at least five listeners; zero incorrect success claims
+  in the deterministic action/failure suite. All automatic output respects the
+  80-word/600-character/30-second bounds and excludes full code/diffs.
+- Stop speaking silences output within 250 ms; no overlapping chat playback,
+  self-trigger from synthesized replies, late playback after privacy loss, or
+  automatic speech for typed-only turns. Test both basic and enhanced voices.
 - Zero idle audio uploads/writes, cross-chat transcript deliveries, auto-sends,
   or remaining capture/helper processes after shutdown. Verify with network/file
   instrumentation and process inspection, including cancellation races.
@@ -221,7 +394,9 @@ These are proposed acceptance targets, not current performance claims. If a
 target fails, keep wake listening experimental/off by default and record the
 failure; improve the engine/model or explicitly revise the product scope before
 release. Rollback disables/removes the listener while retaining manual dictation
-and existing local/remote transcription configuration.
+and existing local/remote transcription configuration. Disable automatic spoken
+replies independently while retaining manual Read aloud; model rollback restores
+the basic local voice without changing provider choices or deleting chat history.
 
 ## References and decisions still to close
 
@@ -230,9 +405,12 @@ Primary engine references reviewed September 10, 2026:
 - [sherpa-onnx keyword spotting](https://k2-fsa.github.io/sherpa/onnx/kws/index.html): customized keyword detection candidate.
 - [openWakeWord](https://github.com/dscripka/openWakeWord): local PCM detection candidate; inspect code and individual model licenses separately before redistribution.
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp): existing transcription engine and upstream VAD documentation.
+- [Piper engine](https://github.com/OHF-Voice/piper1-gpl) and [voice model documentation](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md): optional local neural synthesis and per-voice licensing review.
+- [Kokoro model card](https://huggingface.co/hexgrad/Kokoro-82M): candidate higher-quality local speech model; validate the selected deployment runtime separately.
 
-Milestone 1 must settle the production keyword/VAD engines and exact model
+Milestone 1 must settle the production keyword/VAD/TTS engines and exact model
 licenses, the final phrase and pronunciation, target hardware, model delivery
-size, and whether tiny.en can meet the transcript quality/latency gates. Add
+size, selected downloadable voices, and whether tiny.en and the selected TTS tiers
+can meet the quality/latency gates. Add
 multilingual transcription only with matching models and language controls;
 cross-language translation requires a separate explicit product choice.
