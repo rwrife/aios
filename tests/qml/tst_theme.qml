@@ -38,6 +38,10 @@ TestCase {
         compare(findChild(window, "settingsCloseButton").implicitWidth, 36)
         compare(findChild(window, "settingsCloseButton").implicitHeight, 36)
         compare(findChild(window, "settingsCloseButton").background.radius, 8)
+        var setup = findChild(window, "launchSetup")
+        compare(setup.implicitHeight, 44)
+        compare(setup.contentItem.horizontalAlignment, Text.AlignHCenter)
+        compare(setup.contentItem.elide, Text.ElideRight)
         findChild(window, "settingsPages").currentIndex = 5
         wait(100)
         compare(palette.choices.length, 8)

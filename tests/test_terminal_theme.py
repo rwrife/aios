@@ -26,6 +26,7 @@ class TerminalThemeTests(unittest.TestCase):
             self.assertIn(value, launcher)
         self.assertIn('-fs 14', launcher)
         self.assertIn('-b 18', launcher)
+        self.assertIn('-bw 1', launcher)
         self.assertIn('-class AIOS-Terminal', launcher)
 
     def test_compositor_targets_only_terminal_surface(self):
@@ -43,6 +44,21 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
         self.assertIn("border.width: 1", theme)
         self.assertIn("<keepBorder>yes</keepBorder>", openbox)
+        self.assertIn("<titleLayout>LIC</titleLayout>", openbox)
+        self.assertIn('<application class="AIOS-Terminal">', openbox)
+        self.assertIn("<decor>yes</decor>", openbox)
+
+    def test_desktop_uses_gstreamer_and_lazily_creates_media_player(self):
+        world = (ROOT / "distro/alpine/apks/world.ai").read_text().splitlines()
+        session = (ROOT / "distro/alpine/overlay/usr/local/bin/aios-session").read_text()
+        voice = (ROOT / "apps/shell/voice.h").read_text()
+        self.assertIn("qt6-qtmultimedia-gstreamer", world)
+        self.assertNotIn("qt6-qtmultimedia-ffmpeg", world)
+        self.assertIn('QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-gstreamer}"', session)
+        self.assertIn("QMediaPlayer *player = nullptr;", voice)
+        self.assertIn("void ensurePlayer()", voice)
+        self.assertIn("QT_MEDIA_BACKEND=gstreamer", (ROOT / "scripts/build-apps.sh").read_text())
+        self.assertIn("QT_MEDIA_BACKEND=gstreamer", (ROOT / "scripts/preview-chat.sh").read_text())
 
     def test_desktop_launch_paths_use_the_themed_launcher(self):
         main = (ROOT / "apps/shell/main.cpp").read_text()

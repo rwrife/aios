@@ -56,6 +56,8 @@ Window {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
         RowLayout {
+            id: chatHeader
+            objectName: "chatHeader"
             Layout.fillWidth: true
             Layout.preferredHeight: 44
             Item {
@@ -64,11 +66,19 @@ Window {
                 WindowTitle { objectName: "chatWindowTitle"; anchors.fill: parent; theme: chat.theme; text: "Chat" }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
+            UserBubble {
+                id: userProfile
+                objectName: "chatProfile"
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                control: chat.profileControl
+                ink: theme.ink
+                surface: theme.input
+            }
             WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
             WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
             WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
         }
-        UserBubble { id: userProfile; parent: chat.contentItem; anchors.top: parent.top; anchors.topMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; control: chat.profileControl; ink: theme.ink; surface: theme.input }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
             Column {

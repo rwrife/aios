@@ -6,6 +6,6 @@ Rectangle {
     z: 1000000
     color: "transparent"
     border.width: 1
-    border.color: theme.waveAlpha(0.5)
+    border.color: typeof theme.waveAlpha === "function" ? theme.waveAlpha(0.5) : theme.line
     enabled: false
 }

@@ -29,9 +29,24 @@ Window {
     readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
     component Action: Button {
         id: control
+        hoverEnabled: true
+        implicitHeight: 44
         padding: 12
-        contentItem: Text { text: control.text; color: theme.ink; font.pixelSize: 14 }
-        background: Rectangle { color: control.hovered || control.down ? theme.horizon : theme.input; radius: 6; border.color: control.activeFocus ? theme.accent : theme.line }
+        contentItem: Text {
+            text: control.text
+            color: control.enabled ? theme.ink : theme.muted
+            font.pixelSize: 14
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            color: control.hovered || control.down ? theme.horizon : theme.input
+            radius: 8
+            border.width: control.activeFocus ? 2 : 1
+            border.color: control.activeFocus ? theme.accent : theme.line
+        }
     }
     component Note: Text {
         color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap
@@ -78,7 +93,13 @@ Window {
                 }
             }
             Item { Layout.fillHeight: true }
-            Action { objectName: "launchSetup"; text: "Run setup wizard"; Layout.fillWidth: true; onClicked: { settings.close(); settings.setupRequested() } }
+            Action {
+                objectName: "launchSetup"
+                text: "Run setup wizard"
+                Accessible.name: "Run setup wizard"
+                Layout.fillWidth: true
+                onClicked: { settings.close(); settings.setupRequested() }
+            }
             Note { text: backend.config.live ? "Live session\nChanges are lost after reboot." : "This computer"; font.pixelSize: 11 }
         }
         Rectangle { Layout.fillHeight: true; implicitWidth: 1; color: theme.line; opacity: 0.5 }

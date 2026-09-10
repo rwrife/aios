@@ -6,7 +6,8 @@ BUILD=${BUILD_DIR:-$ROOT/distro/alpine/.work/apps}
 DEST=${DESTDIR:-$ROOT/distro/alpine/.work/stage}
 mkdir -p "$BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
 python3 "$ROOT/scripts/stage-codex.py" "$BUILD" "$DEST"
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_MEDIA_BACKEND=gstreamer \
+  /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
 git config --global --add safe.directory "$BUILD/llama"
 case "${AIOS_IDENTITY_BUILD:-0}" in
   0) embedded_display=OFF ;;

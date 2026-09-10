@@ -178,4 +178,5 @@ Window {
     Camera { id: camera; cameraDevice: devices.defaultVideoInput }
     CaptureSession { camera: camera; videoOutput: preview }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
+    WindowBorder { theme: wizard.theme }
 }
