@@ -95,7 +95,10 @@ public:
     Q_INVOKABLE void takeProfilePhoto() {
         if (m_secureInput && personalAvailable()) {
             recognitionRoot()->cancelRecognition();
-            photoCapture.take();
+            emit cameraReleaseRequested();
+            QTimer::singleShot(500, this, [this] {
+                if (m_secureInput && personalAvailable()) photoCapture.take();
+            });
         }
     }
     Q_INVOKABLE void setSecureInput(bool active) {
@@ -117,18 +120,24 @@ public:
         root->runRecognition({{"action", "enroll"}, {"owner", id},
                               {"pin", pin}, {"consent", consent}}, 35000);
     }
-    Q_INVOKABLE void disableRecognition() {
+    Q_INVOKABLE void setRecognitionEnabled(bool enabled) {
         auto root = recognitionRoot();
-        root->recognitionSuppressed = true;
+        root->recognitionSuppressed = !enabled;
         root->cancelRecognition();
         root->clearRecognitionSuggestion();
-        root->runRecognition({{"action", "disable"}}, 5000);
-    }
-    Q_INVOKABLE void recognitionConfigurationChanged() {
-        auto root = recognitionRoot();
-        root->recognitionSuppressed = false;
+        root->m_recognitionState = enabled ? "starting" : "disabled";
         root->recognitionFailures = 0;
-        root->scheduleRecognition(0);
+        if (enabled) root->scheduleRecognition(0);
+        root->notifyRecognitionChanged();
+    }
+    Q_INVOKABLE void purgeRecognitionData() {
+        auto root = recognitionRoot();
+        root->cancelRecognition();
+        root->clearRecognitionSuggestion();
+        root->runRecognition({{"action", "purge"}}, 5000);
+    }
+    Q_INVOKABLE void recognitionConfigurationChanged(bool enabled) {
+        setRecognitionEnabled(enabled);
     }
     QVariantMap challenge() const { return m_challenge; }
     Q_INVOKABLE void simulate(const QString &state) { if (m_simulator) demoState = state; }
@@ -206,7 +215,10 @@ signals:
     void accountDeleted(const QString &id);
     void unlocked();
     void displayRequested(const QString &app);
+    void cameraReleaseRequested();
     void recognitionEnrollmentCompleted(const QString &id);
+    void recognitionDataPurged();
+    void recognitionDataPurgeFailed(const QString &message);
 private:
     QString path, demoState, m_error, pendingApp, m_lease, m_authority = "anonymous";
     bool m_embedded = false, m_secureInput = false, m_attested = false, m_personalAvailable = false;
@@ -348,8 +360,18 @@ private:
                     scheduleRecognition(2000);
                 }
                 recognitionRequester = nullptr;
-            } else if (action == "disable") {
-                m_recognitionState = "disabled";
+            } else if (action == "purge") {
+                if (ok) {
+                    m_recognitionState = "manual-only";
+                    emit recognitionDataPurged();
+                    scheduleRecognition(0);
+                } else {
+                    m_recognitionState = "unavailable";
+                    const auto error = reply.value("error").toString(
+                        "Facial recognition data could not be purged.");
+                    m_error = error;
+                    emit recognitionDataPurgeFailed(error);
+                }
             }
             notifyRecognitionChanged();
             process->deleteLater();
@@ -367,6 +389,10 @@ private:
                 if (action == "enroll") {
                     m_recognitionState = "ready";
                     scheduleRecognition(2000);
+                } else if (action == "purge") {
+                    m_recognitionState = "unavailable";
+                    emit recognitionDataPurgeFailed(
+                        "Facial recognition data could not be purged.");
                 }
                 recognitionRequester = nullptr;
             }

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from aios.chat_profiles import dispatch as profile_dispatch
-from aios.recognition import CaptureSchedule, enroll, recognize, revoke
+from aios.recognition import CaptureSchedule, dispatch, enroll, recognize, revoke
 
 
 class Clock:
@@ -135,6 +135,11 @@ class RecognitionStorageTests(unittest.TestCase):
         orphan.write_bytes(b'opaque')
         revoke(root=self.root)
         self.assertFalse(orphan.exists())
+
+    def test_purge_action_deletes_templates_without_changing_configuration(self):
+        with patch('aios.recognition.revoke') as revoke_templates:
+            self.assertEqual(dispatch({'action': 'purge'}), {'state': 'purged'})
+        revoke_templates.assert_called_once_with()
 
 
 if __name__ == '__main__':

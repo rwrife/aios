@@ -25,7 +25,24 @@ int main(int argc, char **argv) {
     qunsetenv("AIOS_SESSION_SOCKET");
     SessionControl control;
     int unlocked = 0;
+    int cameraReleases = 0;
+    int recognitionPurges = 0;
     QObject::connect(&control, &SessionControl::unlocked, [&] { ++unlocked; });
+    QObject::connect(&control, &SessionControl::cameraReleaseRequested, [&] { ++cameraReleases; });
+    QObject::connect(&control, &SessionControl::recognitionDataPurged,
+                     [&] { ++recognitionPurges; });
+    control.setSecureInput(true);
+    control.takeProfilePhoto();
+    check(cameraReleases == 1, "Profile photo did not request exclusive camera ownership");
+    control.setSecureInput(false);
+    control.purgeRecognitionData();
+    QElapsedTimer purgeElapsed;
+    purgeElapsed.start();
+    while (!recognitionPurges && purgeElapsed.elapsed() < 10000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(10);
+    }
+    check(recognitionPurges == 1, "Facial recognition data purge did not finish");
     control.enroll("First account", "1234", true);
     finish(control);
     check(control.error().isEmpty(), "Creating the first account failed");

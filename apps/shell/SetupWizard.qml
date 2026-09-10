@@ -26,7 +26,7 @@ Window {
         const formats = device.videoFormats || []
         for (let i = formats.length - 1; i >= 0; --i) {
             const format = formats[i]
-            if (format.resolution.width === 640 && format.resolution.height === 480)
+            if (format.resolution.width === 640 && format.resolution.height === 360)
                 return format
         }
         return formats.length ? formats[0] : undefined
@@ -49,6 +49,11 @@ Window {
     Connections {
         target: backend
         function onChanged() { if (!backend.busy) wizard.ownsOperation = false }
+    }
+    Connections {
+        target: wizard.profileControl
+        ignoreUnknownSignals: true
+        function onCameraReleaseRequested() { camera.stop() }
     }
     Shortcut { sequence: "Escape"; onActivated: wizard.close() }
     component Note: Text {
@@ -126,7 +131,10 @@ Window {
                         onActivated: { camera.stop(); wizard.configureCamera(devices.videoInputs[currentIndex]) }
                     }
                     Rectangle {
-                        Layout.fillWidth: true; implicitHeight: 160; color: theme.night; radius: 8
+                        objectName: "cameraPreview"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: width * 9 / 16
+                        color: theme.night; radius: 8
                         VideoOutput { id: preview; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
                         Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
                     }

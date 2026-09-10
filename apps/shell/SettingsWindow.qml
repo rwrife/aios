@@ -9,6 +9,7 @@ Window {
     required property var backend
     required property var theme
     property var profileControl: null
+    property string recognitionNotice: ""
     signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -25,7 +26,7 @@ Window {
         const formats = device.videoFormats || []
         for (let i = formats.length - 1; i >= 0; --i) {
             const format = formats[i]
-            if (format.resolution.width === 640 && format.resolution.height === 480)
+            if (format.resolution.width === 640 && format.resolution.height === 360)
                 return format
         }
         return formats.length ? formats[0] : undefined
@@ -34,6 +35,21 @@ Window {
         camera.cameraDevice = device
         const format = previewFormat(device)
         if (format) camera.cameraFormat = format
+    }
+    function recognitionStatusText() {
+        if (backend.config.camera_recognition !== true)
+            return "Off. AIOS will not use the camera for account suggestions. Enrolled face data is kept until you purge it."
+        if (!profileControl)
+            return "On, but facial recognition is unavailable. Account sign-in continues to use the PIN."
+        if (profileControl.recognitionState === "manual-only")
+            return "On, but no face data is enrolled. Add face recognition from Accounts."
+        if (profileControl.recognitionState === "unavailable")
+            return "On, but the camera or recognition model is unavailable. Account sign-in continues to use the PIN."
+        if (profileControl.recognitionState === "enrolling")
+            return "On. Facial recognition enrollment is in progress."
+        if (profileControl.recognitionState === "ready")
+            return "On. AIOS may occasionally use the camera to suggest an enrolled account. A PIN is still required."
+        return "On. Facial recognition is starting. A PIN is still required."
     }
     onVisibleChanged: { if (!visible) stopCameraPreview(); else { models.reload(); if (pages.currentIndex === 7) accountsPage.refresh(); } }
     onClosing: stopCameraPreview()
@@ -114,65 +130,106 @@ Window {
                     Note { text: "Select the fallback input and output devices in sound controls to use them for new voice recordings and spoken replies."; font.pixelSize: 12 }
                     Item { Layout.fillHeight: true }
                 }
-                ColumnLayout {
-                    spacing: 12
-                    Note { text: devices.videoInputs.length ? "Choose a webcam and preview its picture. The camera turns off when you leave this section or close Settings." : "No webcam detected. Connect a camera to preview it here." }
-                    ComboBox {
-                        id: cameraChoice; Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
-                        enabled: devices.videoInputs.length > 0
-                        onActivated: { settings.stopCameraPreview(); settings.configureCamera(devices.videoInputs[currentIndex]) }
-                    }
-                    Rectangle {
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 100; color: theme.night; radius: 8
-                        VideoOutput { id: viewfinder; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
-                        Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
-                    }
-                    Note { text: camera.errorString; visible: camera.error !== Camera.NoError; font.pixelSize: 12 }
-                    Action {
-                        text: camera.active ? "Stop preview" : "Start preview"
-                        enabled: devices.videoInputs.length > 0
-                        onClicked: {
-                            if (camera.active) settings.stopCameraPreview()
-                            else {
-                                settings.configureCamera(camera.cameraDevice)
-                                if (settings.profileControl &&
-                                        typeof settings.profileControl.setCameraPreviewActive === "function")
-                                    settings.profileControl.setCameraPreviewActive(true)
-                                camera.start()
+                ScrollView {
+                    id: cameraPage
+                    objectName: "cameraSettingsScroll"
+                    clip: true
+                    contentWidth: availableWidth
+                    ColumnLayout {
+                        width: cameraPage.availableWidth
+                        spacing: 12
+                        Note { text: devices.videoInputs.length ? "Choose a webcam and preview its picture. The camera turns off when you leave this section or close Settings." : "No webcam detected. Connect a camera to preview it here." }
+                        ComboBox {
+                            id: cameraChoice; Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
+                            enabled: devices.videoInputs.length > 0
+                            onActivated: { settings.stopCameraPreview(); settings.configureCamera(devices.videoInputs[currentIndex]) }
+                        }
+                        Rectangle {
+                            objectName: "cameraPreview"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: width * 9 / 16
+                            Layout.minimumHeight: 100
+                            color: theme.night; radius: 8
+                            VideoOutput { id: viewfinder; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
+                            Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
+                        }
+                        Note { text: camera.errorString; visible: camera.error !== Camera.NoError; font.pixelSize: 12 }
+                        Action {
+                            text: camera.active ? "Stop preview" : "Start preview"
+                            enabled: devices.videoInputs.length > 0
+                            onClicked: {
+                                if (camera.active) settings.stopCameraPreview()
+                                else {
+                                    settings.configureCamera(camera.cameraDevice)
+                                    if (settings.profileControl &&
+                                            typeof settings.profileControl.setCameraPreviewActive === "function")
+                                        settings.profileControl.setCameraPreviewActive(true)
+                                    camera.start()
+                                }
                             }
                         }
-                    }
-                    Note { text: "Preview stays on this computer. Camera attachments and video calls are not enabled."; font.pixelSize: 12 }
-                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line; opacity: 0.5 }
-                    CheckBox {
-                        id: recognitionEnabled; objectName: "recognitionEnabled"
-                        text: "Suggest enrolled accounts with occasional camera capture"
-                        checked: backend.config.camera_recognition === true
-                    }
-                    TextField {
-                        id: recognitionDevice; objectName: "recognitionDevice"
-                        Layout.fillWidth: true
-                        placeholderText: "/dev/v4l/by-id/...-video-index0"
-                        text: backend.config.camera_device || ""
-                        maximumLength: 512
-                    }
-                    Action {
-                        objectName: "saveRecognition"; text: recognitionEnabled.checked ? "Enable account suggestions" : "Disable and delete face templates"
-                        enabled: !backend.configuring
-                        onClicked: {
-                            if (!recognitionEnabled.checked && settings.profileControl)
-                                settings.profileControl.disableRecognition()
-                            backend.configure({
-                                camera_recognition: recognitionEnabled.checked,
-                                camera_device: recognitionEnabled.checked ? recognitionDevice.text.trim() : ""
-                            })
+                        Note { text: "Preview stays on this computer. Camera attachments and video calls are not enabled."; font.pixelSize: 12 }
+                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line; opacity: 0.5 }
+                        Text { text: "Facial recognition"; color: theme.ink; font.pixelSize: 17 }
+                        Note {
+                            objectName: "recognitionStatus"
+                            text: settings.recognitionStatusText()
+                            font.pixelSize: 12
                         }
-                    }
-                    Note {
-                        text: settings.profileControl
-                            ? "Recognition status: " + settings.profileControl.recognitionState + ". Suggestions expire and always require the account PIN."
-                            : "Recognition is unavailable. Account sign-in continues to use the PIN."
-                        font.pixelSize: 12
+                        Note { text: "Recognition camera"; color: theme.ink; font.pixelSize: 12 }
+                        TextField {
+                            id: recognitionDevice; objectName: "recognitionDevice"
+                            Layout.fillWidth: true
+                            placeholderText: "/dev/v4l/by-id/...-video-index0"
+                            text: backend.config.camera_device || ""
+                            enabled: !backend.configuring
+                            maximumLength: 512
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Action {
+                                objectName: "recognitionToggle"
+                                text: backend.config.camera_recognition === true
+                                    ? "Disable facial recognition" : "Enable facial recognition"
+                                enabled: !backend.configuring &&
+                                    (backend.config.camera_recognition === true || recognitionDevice.text.trim().length > 0)
+                                onClicked: {
+                                    const enabling = backend.config.camera_recognition !== true
+                                    if (!enabling && settings.profileControl &&
+                                            typeof settings.profileControl.setRecognitionEnabled === "function")
+                                        settings.profileControl.setRecognitionEnabled(false)
+                                    backend.configure({
+                                        camera_recognition: enabling,
+                                        camera_device: enabling ? recognitionDevice.text.trim()
+                                            : (backend.config.camera_device || "")
+                                    })
+                                }
+                            }
+                            Action {
+                                objectName: "saveRecognitionCamera"
+                                text: "Save camera"
+                                visible: backend.config.camera_recognition === true &&
+                                    recognitionDevice.text.trim() !== (backend.config.camera_device || "")
+                                enabled: !backend.configuring && recognitionDevice.text.trim().length > 0
+                                onClicked: backend.configure({camera_device: recognitionDevice.text.trim()})
+                            }
+                        }
+                        Action {
+                            objectName: "purgeRecognition"
+                            text: "Purge facial recognition data\u2026"
+                            enabled: settings.profileControl && !backend.configuring
+                            onClicked: purgeRecognitionDialog.open()
+                        }
+                        Note {
+                            text: "Purging permanently deletes every enrolled face template. It does not delete accounts, profile photos, or PINs."
+                            font.pixelSize: 12
+                        }
+                        Note {
+                            objectName: "recognitionNotice"
+                            text: settings.recognitionNotice
+                            visible: text.length > 0
+                            font.pixelSize: 12
+                        }
                     }
                 }
                 ColumnLayout {
@@ -270,10 +327,52 @@ Window {
         cameraDevice: devices.defaultVideoInput
     }
     CaptureSession { camera: camera; videoOutput: viewfinder }
+    Dialog {
+        id: purgeRecognitionDialog
+        objectName: "purgeRecognitionDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(420, parent ? parent.width - 32 : 420)
+        title: "Purge facial recognition data?"
+        modal: true
+        standardButtons: Dialog.Cancel
+        closePolicy: Popup.CloseOnEscape
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                text: "This permanently deletes all enrolled face templates from this computer. Accounts, profile photos, and PINs are not deleted."
+                wrapMode: Text.Wrap
+            }
+            Button {
+                objectName: "confirmPurgeRecognition"
+                text: "Purge facial recognition data"
+                enabled: settings.profileControl !== null
+                onClicked: {
+                    settings.recognitionNotice = "Purging facial recognition data\u2026"
+                    settings.profileControl.purgeRecognitionData()
+                    purgeRecognitionDialog.close()
+                }
+            }
+        }
+    }
     Connections {
         target: backend
         function onConfigured() {
-            if (settings.profileControl) settings.profileControl.recognitionConfigurationChanged()
+            if (settings.profileControl)
+                settings.profileControl.recognitionConfigurationChanged(
+                    backend.config.camera_recognition === true)
+        }
+    }
+    Connections {
+        target: settings.profileControl
+        ignoreUnknownSignals: true
+        function onCameraReleaseRequested() { settings.stopCameraPreview() }
+        function onRecognitionDataPurged() {
+            settings.recognitionNotice = "Facial recognition data was purged."
+        }
+        function onRecognitionDataPurgeFailed(message) {
+            settings.recognitionNotice = message
         }
     }
 }

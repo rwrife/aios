@@ -55,7 +55,9 @@ individual applications.
   suggestions can be enabled with a stable local camera path after an account
   completes separate PIN-verified face enrollment. Suggestions expire after five
   seconds, pause for profile-photo capture and secure input, and always open the
-  normal PIN prompt. Disabling recognition deletes local face templates. No raw
+  normal PIN prompt. Disabling recognition stops camera capture while preserving
+  enrolled face templates. **Purge facial recognition data** permanently deletes
+  those templates without deleting accounts, profile photos, or PINs. No raw
   recognition pictures are saved or sent to a model. Video chat and camera
   attachments remain future work.
 - **Network & Wi-Fi:** opens NetworkManager's nmtui. Activate a connection joins

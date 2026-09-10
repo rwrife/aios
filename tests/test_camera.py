@@ -36,7 +36,8 @@ class CameraTests(unittest.TestCase):
             source = (ROOT / relative).read_text()
             with self.subTest(relative=relative):
                 self.assertIn('640', source)
-                self.assertIn('480', source)
+                self.assertIn('360', source)
+                self.assertIn('width * 9 / 16', source)
                 self.assertNotIn('VideoFrameFormat', source)
         photo = (ROOT / 'apps/shell/ProfilePhoto.h').read_text()
         self.assertIn('"video4linux2"', photo)

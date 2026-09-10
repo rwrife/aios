@@ -106,9 +106,10 @@ Store versioned embeddings encrypted in the intended account namespace using
 `secure_store.py` after reviewing key access. Bind templates to account UUID,
 model version, schema and consent version. Migration between local greeting and
 protected identities requires an explicit verified operation. Account deletion
-and recognition opt-out revoke templates, cached matches and active capture jobs;
-ensure the next restart cannot reload deleted templates. Define encrypted-backup
-retention and key rotation before claiming complete erasure.
+and explicit facial-data purge revoke templates, cached matches and active capture
+jobs; disabling recognition only pauses capture so it can be re-enabled without
+enrollment. Ensure the next restart cannot reload purged templates. Define
+encrypted-backup retention and key rotation before claiming complete erasure.
 
 Raw frames and crops stay in memory and are released immediately after inference;
 no screenshots, training collection, crash dumps with images, chat attachments,
@@ -171,9 +172,10 @@ are approved.
 
 Ship disabled by default, with camera recognition settings showing enabled,
 capturing, unavailable and manual-only states. Explain why the camera activates
-and provide a one-action disable control. A failure clears only unverified
-suggestions and follows existing session privacy rules; it never silently selects
-another account. Preserve all existing PIN lockout and capability rules.
+and provide a one-action enable/disable control plus a separate facial-data purge.
+A failure clears only unverified suggestions and follows existing session privacy
+rules; it never silently selects another account. Preserve all existing PIN
+lockout and capability rules.
 
 Deliver the packages in reviewable PRs with their gate results and remaining
 limitations. First usable milestone is a verified guest capture plus optional,

@@ -30,14 +30,16 @@ TestCase {
         function listProfiles() {}
         function requestRecognition() {}
         function setCameraPreviewActive(active) {}
-        function disableRecognition() {}
-        function recognitionConfigurationChanged() {}
+        function setRecognitionEnabled(enabled) {}
+        function purgeRecognitionData() {}
+        function recognitionConfigurationChanged(enabled) {}
         function setSecureInput(active) { secureInput = active }
         signal privacyLost()
         signal documentLoaded(string content)
         signal documentSaved()
         signal enrollmentCompleted(string recovery)
         signal photoCaptured(string preview, string rgb)
+        signal cameraReleaseRequested()
         signal unlocked()
         signal accountDeleted(string id)
         property int deletions: 0

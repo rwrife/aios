@@ -283,9 +283,9 @@ def dispatch(request):
         if request.get('consent') is not True:
             raise ValueError('Confirm local face recognition enrollment')
         return enroll(request.get('owner'), request.get('pin'))
-    if action == 'disable':
+    if action in ('disable', 'purge'):
         revoke()
-        return {'state': 'disabled'}
+        return {'state': 'purged'}
     raise ValueError('Unsupported recognition action')
 
 
