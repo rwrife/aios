@@ -189,7 +189,7 @@ public:
           m_sessionId(std::move(sessionId)),
           m_palette(paletteFor(themeName))
     {
-        setWindowTitle("AIOS Browser");
+        setWindowTitle("Browser");
         setWindowFlag(Qt::CustomizeWindowHint);
         setWindowFlag(Qt::WindowMinimizeButtonHint, false);
         if (auto target = QGuiApplication::screenAt(QCursor::pos()))
@@ -479,7 +479,7 @@ private:
             m_address->setText(url == QUrl("about:blank") ? QString() : url.toString());
         });
         connect(m_view, &QWebEngineView::titleChanged, this, [this](const QString &title) {
-            setWindowTitle(title.isEmpty() ? "AIOS Browser" : title + " — AIOS Browser");
+            setWindowTitle(title.trimmed().isEmpty() ? "Browser" : title);
         });
         connect(m_view, &QWebEngineView::loadStarted, this, [this] {
             m_loading = true;

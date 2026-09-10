@@ -61,6 +61,8 @@ repository.
 - Keep the user chrome intentionally small: address, Back, Refresh, and Stop.
   Do not add tabs, bookmarks, extensions, downloads, or account UI unless a
   product requirement explicitly calls for them.
+- Show only the page title in the browser title bar, falling back to `Browser`
+  when no page title is available. Do not append application branding.
 - Every browser profile is off the record and scoped to one chat. Closing or
   stopping the chat must remove its socket registration and terminate the
   browser process.

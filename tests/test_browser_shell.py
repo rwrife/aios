@@ -56,6 +56,13 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('m_address->setText(url == QUrl("about:blank")', source)
         self.assertNotIn('if (!m_address->hasFocus())', source)
 
+    def test_window_title_uses_page_title_without_browser_suffix(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        self.assertIn('setWindowTitle("Browser")', source)
+        self.assertIn('setWindowTitle(title.trimmed().isEmpty() ? "Browser" : title)', source)
+        self.assertNotIn('setWindowTitle("AIOS Browser")', source)
+        self.assertIn('app.setApplicationName("AIOS Browser")', source)
+
     def test_manual_browser_controls_interrupt_agent_operations(self):
         source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
         self.assertEqual(source.count('interruptPendingForUserAction();'), 4)
