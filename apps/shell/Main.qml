@@ -215,6 +215,7 @@ Window {
         property string tip: text
         property bool outlined: false
         Accessible.name: tip
+        hoverEnabled: true
         implicitWidth: Math.max(44, implicitContentWidth + 24); implicitHeight: 44
         contentItem: Text { text: control.text; color: control.enabled ? theme.ink : theme.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 16 }
         background: Rectangle {
@@ -332,7 +333,6 @@ Window {
                 objectName: "volumeUpButton"
                 text: "+"
                 tip: "Increase volume"
-                outlined: true
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: volumePopup.setVolumeImmediately(volumeSlider.value + 5)
@@ -397,7 +397,6 @@ Window {
                 objectName: "volumeDownButton"
                 text: "-"
                 tip: "Decrease volume"
-                outlined: true
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: volumePopup.setVolumeImmediately(volumeSlider.value - 5)
@@ -413,7 +412,6 @@ Window {
                 id: muteButton
                 objectName: "muteButton"
                 tip: backendApi.muted ? "Unmute speaker" : "Mute speaker"
-                outlined: true
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: backendApi.setMuted(!backendApi.muted)

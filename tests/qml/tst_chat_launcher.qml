@@ -231,6 +231,11 @@ TestCase {
         verify(up.y < slider.y)
         verify(slider.y < down.y)
         verify(down.y < mute.y)
+        compare(up.background.border.width, 0)
+        compare(down.background.border.width, 0)
+        compare(mute.background.border.width, 0)
+        mouseMove(up, up.width / 2, up.height / 2)
+        tryCompare(up.background, "color", palette.input)
 
         mouseClick(up)
         compare(slider.value, 70)
