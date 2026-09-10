@@ -60,6 +60,8 @@ class BrowserShellTests(unittest.TestCase):
         source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
         self.assertIn('setWindowTitle("Browser")', source)
         self.assertIn('setWindowTitle(title.trimmed().isEmpty() ? "Browser" : title)', source)
+        self.assertIn('runJavaScript(QStringLiteral("document.title"), QWebEngineScript::ApplicationWorld', source)
+        self.assertIn('revision != window->m_titleRevision', source)
         self.assertNotIn('setWindowTitle("AIOS Browser")', source)
         self.assertIn('app.setApplicationName("AIOS Browser")', source)
 

@@ -339,6 +339,7 @@ private:
     bool m_initialGeometryApplied = false;
     bool m_loading = false;
     int m_generation = 0;
+    quint64 m_titleRevision = 0;
     QPointer<QLocalSocket> m_pending;
     QTimer m_operationTimer;
     quint64 m_operation = 0;
@@ -438,6 +439,20 @@ private:
         qApp->setPalette(palette);
     }
 
+    void updateWindowTitle()
+    {
+        const auto revision = ++m_titleRevision;
+        const QPointer<BrowserWindow> window(this);
+        // Qt substitutes the URL for missing titles; use the document's actual title.
+        m_page->runJavaScript(QStringLiteral("document.title"), QWebEngineScript::ApplicationWorld,
+                             [window, revision](const QVariant &value) {
+            if (!window || !value.isValid() || revision != window->m_titleRevision)
+                return;
+            const QString title = value.toString();
+            window->setWindowTitle(title.trimmed().isEmpty() ? "Browser" : title);
+        });
+    }
+
     void connectUi()
     {
         m_operationTimer.setSingleShot(true);
@@ -478,10 +493,10 @@ private:
         connect(m_view, &QWebEngineView::urlChanged, this, [this](const QUrl &url) {
             m_address->setText(url == QUrl("about:blank") ? QString() : url.toString());
         });
-        connect(m_view, &QWebEngineView::titleChanged, this, [this](const QString &title) {
-            setWindowTitle(title.trimmed().isEmpty() ? "Browser" : title);
-        });
+        connect(m_view, &QWebEngineView::titleChanged, this, &BrowserWindow::updateWindowTitle);
         connect(m_view, &QWebEngineView::loadStarted, this, [this] {
+            ++m_titleRevision;
+            setWindowTitle("Browser");
             m_loading = true;
             m_stop->setEnabled(true);
             m_progress->setValue(0);
@@ -492,6 +507,7 @@ private:
         });
         connect(m_view, &QWebEngineView::loadProgress, m_progress, &QProgressBar::setValue);
         connect(m_view, &QWebEngineView::loadFinished, this, [this](bool ok) {
+            updateWindowTitle();
             m_loading = false;
             m_stop->setEnabled(false);
             m_progress->hide();
