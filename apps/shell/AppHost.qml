@@ -44,7 +44,16 @@ Window {
             showError()
             return false
         }
-        var normalized = Number(value.toPrecision(12))
+        var normalized
+        if (Math.floor(value) === value) {
+            if (Math.abs(value) > 9007199254740991) {
+                showError()
+                return false
+            }
+            normalized = value
+        } else {
+            normalized = Number(value.toPrecision(15))
+        }
         if (!isFinite(normalized)) {
             showError()
             return false

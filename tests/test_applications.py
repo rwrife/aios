@@ -11,7 +11,6 @@ import sys
 import tempfile
 import textwrap
 import time
-import types
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -807,10 +806,12 @@ class ApplicationStoreTests(unittest.TestCase):
         chromium = self._write_executable("chromium", """
             import json
             import os
+            import signal
             import sys
             import time
             from urllib.request import urlopen
 
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
             app_url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app=")).rstrip("/")
             with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
                 json.dump({"argv": sys.argv[1:], "pid": os.getpid()}, stream)
@@ -894,7 +895,10 @@ class ApplicationStoreTests(unittest.TestCase):
 
                 self.assertEqual(result["launched"], False)
                 self.assertEqual(result["reason"], applications.LAUNCH_FAILURE_REASON)
-                killpg.assert_called_once_with(proc.pid, signal.SIGTERM)
+                self.assertEqual(killpg.mock_calls, [
+                    mock.call(proc.pid, signal.SIGTERM),
+                    mock.call(proc.pid, signal.SIGKILL),
+                ])
                 proc.wait.assert_called()
 
     @unittest.skipUnless(os.name == "posix", "verified fd launch requires POSIX")
@@ -1244,6 +1248,7 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertIn("--no-first-run", args)
         self.assertIn("--no-default-browser-check", args)
         self.assertNotIn("--no-sandbox", args)
+        self.assertFalse(popen.call_args.kwargs["start_new_session"])
 
     def test_run_shuts_down_server_when_chromium_launch_raises(self):
         from aios import app_runner
@@ -1350,7 +1355,7 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertNotIn("Traceback", stderr.getvalue())
         self.assertNotIn(str(folder), stderr.getvalue())
 
-    def test_run_terminates_chromium_process_group_after_cleanup_timeout(self):
+    def test_run_terminates_chromium_after_cleanup_timeout(self):
         from aios import app_runner
 
         store = self._store()
@@ -1374,20 +1379,14 @@ class ApplicationStoreTests(unittest.TestCase):
             return 0
 
         proc.wait.side_effect = wait_side_effect
-        fake_os = types.SimpleNamespace(killpg=mock.Mock())
 
         with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
-            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
-            mock.patch.object(app_runner, "os", fake_os, create=True):
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc):
             app_runner.run(folder)
 
-        self.assertEqual(fake_os.killpg.mock_calls, [
-            mock.call(proc.pid, signal.SIGTERM),
-            mock.call(proc.pid, signal.SIGKILL),
-        ])
         self.assertEqual(len(cleanup_timeouts), 2)
-        proc.terminate.assert_not_called()
-        proc.kill.assert_not_called()
+        proc.terminate.assert_called_once_with()
+        proc.kill.assert_called_once_with()
 
     def test_run_skips_signals_when_chromium_already_exited(self):
         from aios import app_runner
@@ -1403,14 +1402,11 @@ class ApplicationStoreTests(unittest.TestCase):
         proc.pid = 1357
         proc.poll.return_value = 0
         proc.wait.return_value = 0
-        fake_os = types.SimpleNamespace(killpg=mock.Mock())
 
         with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
-            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
-            mock.patch.object(app_runner, "os", fake_os, create=True):
+            mock.patch.object(app_runner.subprocess, "Popen", return_value=proc):
             app_runner.run(folder)
 
-        fake_os.killpg.assert_not_called()
         proc.terminate.assert_not_called()
         proc.kill.assert_not_called()
 

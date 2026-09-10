@@ -702,31 +702,30 @@ class ApplicationStore:
             group_signaled = True
         except (AttributeError, OSError, ProcessLookupError):
             pass
-        if process.poll() is not None:
-            try:
-                process.wait()
-            except Exception:
-                pass
-            return
         if not group_signaled:
+            if process.poll() is None:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+        if group_signaled:
             try:
-                process.terminate()
+                os.killpg(process.pid, signal.SIGKILL)
+            except (AttributeError, OSError, ProcessLookupError):
+                pass
+        elif process.poll() is None:
+            try:
+                process.kill()
             except Exception:
                 pass
         try:
             process.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (AttributeError, OSError, ProcessLookupError):
-                try:
-                    process.kill()
-                except Exception:
-                    pass
-            try:
-                process.wait(timeout=1)
-            except Exception:
-                pass
         except Exception:
             pass
 

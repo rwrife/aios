@@ -92,7 +92,9 @@ TestCase {
         var cases = [
             {lhs: "12345678", operator: "×", rhs: "9", expected: "111111102"},
             {lhs: "123456789", operator: "÷", rhs: "3", expected: "41152263"},
-            {lhs: "10000002", operator: "×", rhs: "9", expected: "90000018"}
+            {lhs: "10000002", operator: "×", rhs: "9", expected: "90000018"},
+            {lhs: "1234567890123", operator: "+", rhs: "0", expected: "1234567890123"},
+            {lhs: "999999999999999", operator: "+", rhs: "0", expected: "999999999999999"}
         ]
         for (var i = 0; i < cases.length; ++i) {
             var testCase = cases[i]

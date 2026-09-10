@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import re
@@ -89,37 +88,9 @@ def _wait_for_process_exit(process: subprocess.Popen[bytes] | subprocess.Popen[s
     return True
 
 
-def _terminate_process_group(process: subprocess.Popen[bytes] | subprocess.Popen[str] | object) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    except OSError as error:
-        if error.errno == errno.ESRCH:
-            return
-        raise
-    if _wait_for_process_exit(process):
-        return
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-    except OSError as error:
-        if error.errno == errno.ESRCH:
-            return
-        raise
-    _wait_for_process_exit(process)
-
-
 def _terminate_process(process: subprocess.Popen[bytes] | subprocess.Popen[str] | object) -> None:
     if process.poll() is not None:
         return
-    if callable(getattr(os, "killpg", None)):
-        try:
-            _terminate_process_group(process)
-            return
-        except OSError:
-            pass
     try:
         process.terminate()
         if _wait_for_process_exit(process):
@@ -351,7 +322,7 @@ def run(folder: Path | str, ready_fd: int | None = None) -> None:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            start_new_session=False,
             close_fds=True,
         )
         process.wait()
