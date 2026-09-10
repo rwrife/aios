@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import shutil
+import time
 from pathlib import Path
 import urllib.error
 import urllib.parse
@@ -14,6 +15,8 @@ BUNDLED_MODEL = Path("/usr/local/share/aios/models/qwen3-0.6b.gguf")
 THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
 MOTION_MIN_CPU_CORES = 2
 MOTION_MIN_MEMORY_BYTES = 4 * 1024 ** 3
+LOCAL_CONNECT_RETRY_SECONDS = 30
+LOCAL_CONNECT_RETRY_DELAY = 0.25
 
 
 def config_dir():
@@ -131,23 +134,34 @@ def request(route, body=None, timeout=90):
     config = load_config()
     if config['mode'] == 'chatgpt':
         raise ValueError('ChatGPT subscriptions use the subscription connection, not an API endpoint.')
-    base = "http://127.0.0.1:8080/v1" if config["mode"] == "local" else validate_url(config["url"])
+    local = config["mode"] == "local"
+    base = "http://127.0.0.1:8080/v1" if local else validate_url(config["url"])
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    if config["mode"] == "remote" and config["api_key"]:
+    if not local and config["api_key"]:
         headers["Authorization"] = "Bearer " + config["api_key"]
     req = urllib.request.Request(base + route, headers=headers,
                                  data=json.dumps(body).encode() if body is not None else None)
-    try:
-        return urllib.request.build_opener(NoRedirect).open(req, timeout=timeout)
-    except urllib.error.HTTPError as exc:
-        exc.close()
-        reasons = {401: "Authentication failed. Check your API key.", 403: "This model is not permitted.",
-                   404: "Endpoint or model not found. Check the URL and model ID.",
-                   429: "The provider is busy or rate limited. Try again shortly.",
-                   503: "The model is loading or unavailable. Try again shortly."}
-        raise RuntimeError(reasons.get(exc.code, f"The model endpoint returned HTTP {exc.code}.")) from None
-    except (urllib.error.URLError, TimeoutError, OSError):
-        raise RuntimeError("Cannot reach the model. Check your connection and model service.") from None
+    opener = urllib.request.build_opener(NoRedirect)
+    deadline = time.monotonic() + min(timeout, LOCAL_CONNECT_RETRY_SECONDS)
+    while True:
+        try:
+            return opener.open(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            retry = local and exc.code == 503 and time.monotonic() < deadline
+            exc.close()
+            if retry:
+                time.sleep(LOCAL_CONNECT_RETRY_DELAY)
+                continue
+            reasons = {401: "Authentication failed. Check your API key.", 403: "This model is not permitted.",
+                       404: "Endpoint or model not found. Check the URL and model ID.",
+                       429: "The provider is busy or rate limited. Try again shortly.",
+                       503: "The model is loading or unavailable. Try again shortly."}
+            raise RuntimeError(reasons.get(exc.code, f"The model endpoint returned HTTP {exc.code}.")) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            if local and time.monotonic() < deadline:
+                time.sleep(LOCAL_CONNECT_RETRY_DELAY)
+                continue
+            raise RuntimeError("Cannot reach the model. Check your connection and model service.") from None
 
 
 def sse_events(stream):

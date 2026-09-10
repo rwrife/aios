@@ -23,9 +23,9 @@ if [ "$DRY_RUN" != "1" ] && ! command -v qemu-system-x86_64 >/dev/null 2>&1; the
 fi
 
 DISK_PATH="${AIOS_VM_DISK:-$ROOT_DIR/.tmp-aios-live.qcow2}"
-DISK_SIZE="${AIOS_VM_DISK_SIZE:-32G}"
-MEM_MB="${AIOS_VM_MEM_MB:-4096}"
-CPU_COUNT="${AIOS_VM_CPUS:-2}"
+DISK_SIZE="${AIOS_VM_DISK_SIZE:-64G}"
+MEM_MB="${AIOS_VM_MEM_MB:-16384}"
+CPU_COUNT="${AIOS_VM_CPUS:-4}"
 CAMERA_BUS="${AIOS_VM_CAMERA_BUS:-}"
 CAMERA_ADDR="${AIOS_VM_CAMERA_ADDR:-}"
 if [ -n "$CAMERA_BUS$CAMERA_ADDR" ]; then
