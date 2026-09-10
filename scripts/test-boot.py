@@ -19,7 +19,7 @@ parser.add_argument("--log", type=Path, help="Write the complete guest serial lo
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
     serial_path = str(Path(directory) / "serial.sock")
-    command = ["qemu-system-x86_64", "-m", "4096", "-smp", "2", "-cdrom", str(args.iso.resolve()),
+    command = ["qemu-system-x86_64", "-m", "6144", "-smp", "2", "-cdrom", str(args.iso.resolve()),
                "-boot", "d", "-display", "none", "-nic", "none", "-no-reboot",
                "-serial", f"unix:{serial_path},server=on,wait=off"]
     if os.access("/dev/kvm", os.R_OK | os.W_OK):
