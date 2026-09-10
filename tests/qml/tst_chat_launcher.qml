@@ -203,6 +203,30 @@ TestCase {
         compare(findChild(desktop, "powerDialog").background.radius, palette.windowRadius)
     }
 
+    function test_power_actions_are_balanced_and_prominent() {
+        createDesktop()
+        var dialog = findChild(desktop, "powerDialog")
+        dialog.open()
+        tryCompare(dialog, "opened", true)
+
+        var restart = findChild(desktop, "restartAction")
+        var shutdown = findChild(desktop, "shutdownAction")
+        verify(restart !== null)
+        verify(shutdown !== null)
+        fuzzyCompare(restart.width, shutdown.width, 0.1)
+        compare(restart.height, shutdown.height)
+
+        var restartIcon = findChild(desktop, "restartActionIcon")
+        var shutdownIcon = findChild(desktop, "powerActionIcon")
+        compare(restartIcon.width, 34)
+        compare(restartIcon.height, 34)
+        compare(restartIcon.strokeWidth, 2.5)
+        compare(shutdownIcon.width, 34)
+        compare(shutdownIcon.height, 34)
+        compare(shutdownIcon.strokeWidth, 2.5)
+        dialog.close()
+    }
+
     function test_volume_button_opens_vertical_slider_and_mutes() {
         createDesktop()
         var button = findChild(desktop, "volumeButton")

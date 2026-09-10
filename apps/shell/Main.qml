@@ -503,11 +503,13 @@ Window {
                 Layout.fillWidth: true
                 spacing: 12
                 PowerAction {
+                    objectName: "restartAction"
                     text: "Restart"
                     symbol: "restart"
                     onClicked: { powerDialog.close(); backendApi.power("reboot") }
                 }
                 PowerAction {
+                    objectName: "shutdownAction"
                     text: "Shut down"
                     symbol: "power"
                     onClicked: { powerDialog.close(); backendApi.power("poweroff") }
@@ -526,6 +528,7 @@ Window {
         id: action
         property string symbol
         Layout.fillWidth: true
+        Layout.preferredWidth: 1
         implicitHeight: 108
         hoverEnabled: true
         Accessible.name: text
@@ -533,19 +536,24 @@ Window {
             spacing: 12
             Canvas {
                 id: powerActionIcon
+                objectName: action.symbol + "ActionIcon"
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: 28
-                Layout.preferredHeight: 28
+                Layout.preferredWidth: 34
+                Layout.preferredHeight: 34
+                readonly property real strokeWidth: 2.5
                 onPaint: {
                     var c = getContext("2d"); c.reset()
-                    c.strokeStyle = theme.accent; c.lineWidth = 1.8; c.lineCap = "round"; c.lineJoin = "round"
+                    c.strokeStyle = theme.accent; c.lineWidth = strokeWidth; c.lineCap = "round"; c.lineJoin = "round"
                     c.beginPath()
                     if (action.symbol === "power") {
-                        c.arc(14, 15, 9, -Math.PI / 3, Math.PI * 4 / 3)
-                        c.stroke(); c.beginPath(); c.moveTo(14, 3); c.lineTo(14, 13)
+                        c.arc(17, 18, 11, -Math.PI / 3, Math.PI * 4 / 3)
+                        c.stroke(); c.beginPath(); c.moveTo(17, 3); c.lineTo(17, 15)
                     } else {
-                        c.arc(14, 14, 9, -Math.PI / 2, Math.PI)
-                        c.stroke(); c.beginPath(); c.moveTo(3, 9); c.lineTo(5, 15); c.lineTo(11, 13)
+                        c.save(); c.translate(width, 0); c.scale(-1, 1)
+                        c.arc(17, 17, 11, -Math.PI / 2, Math.PI)
+                        c.stroke(); c.beginPath(); c.moveTo(4, 10); c.lineTo(6, 18); c.lineTo(13, 15)
+                        c.stroke(); c.restore()
+                        return
                     }
                     c.stroke()
                 }
