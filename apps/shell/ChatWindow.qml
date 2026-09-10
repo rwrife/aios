@@ -55,33 +55,40 @@ Window {
     }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
-        RowLayout {
+        Item {
             id: chatHeader
             objectName: "chatHeader"
-            readonly property real minimumChromeHeight: Layout.minimumHeight
-            readonly property real maximumChromeHeight: Layout.maximumHeight
             Layout.fillWidth: true
             Layout.preferredHeight: 44
             Layout.minimumHeight: 44
             Layout.maximumHeight: 44
             Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.left: parent.left
+                anchors.right: userProfile.left
+                anchors.rightMargin: 12
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 WindowTitle { objectName: "chatWindowTitle"; anchors.fill: parent; theme: chat.theme; text: "Chat" }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
             UserBubble {
                 id: userProfile
                 objectName: "chatProfile"
-                Layout.preferredWidth: 40
-                Layout.preferredHeight: 40
+                anchors.centerIn: parent
+                width: 40
+                height: 40
                 control: chat.profileControl
                 ink: theme.ink
                 surface: theme.input
             }
-            WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
-            WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
-            WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
+            RowLayout {
+                objectName: "chatWindowControls"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
+                WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
+                WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
+            }
         }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true

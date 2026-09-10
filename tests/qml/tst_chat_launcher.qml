@@ -333,11 +333,8 @@ TestCase {
         verify(header !== null)
         verify(profile !== null)
         compare(profile.parent, header)
-        verify(header.y < 80)
-        compare(header.minimumChromeHeight, 44)
-        compare(header.maximumChromeHeight, 44)
-        verify(header.height >= 40)
-        verify(header.height <= 44)
+        tryCompare(header, "height", 44)
+        fuzzyCompare(header.mapToItem(first.contentItem, 0, 0).y, 24, 0.5)
         compare(findChild(first, "chatCloseButton").implicitWidth, 36)
         compare(findChild(first, "chatCloseButton").implicitHeight, 36)
         compare(findChild(first, "chatCloseButton").background.radius, 8)
@@ -347,6 +344,31 @@ TestCase {
         verify(first !== second)
         verify(first.visibility !== Window.Minimized)
         verify(second.visibility !== Window.Minimized)
+    }
+
+    function test_profile_stays_top_center_when_resized_data() {
+        return [
+            {tag: "compact", width: 480, height: 480},
+            {tag: "default", width: 740, height: 650},
+            {tag: "wide", width: 1040, height: 720}
+        ]
+    }
+
+    function test_profile_stays_top_center_when_resized(data) {
+        var chat = createDesktop().openChat()
+        var profile = findChild(chat, "chatProfile")
+        var header = findChild(chat, "chatHeader")
+        var controls = findChild(chat, "chatWindowControls")
+        chat.width = data.width
+        chat.height = data.height
+        tryCompare(header, "width", chat.width - 48)
+        tryCompare(header, "height", 44)
+        var center = profile.mapToItem(chat.contentItem, profile.width / 2, profile.height / 2)
+        fuzzyCompare(center.x, chat.width / 2, 0.5)
+        fuzzyCompare(center.y, 46, 0.5)
+        verify(profile.x + profile.width < controls.x)
+        var title = findChild(chat, "chatWindowTitle")
+        verify(title.mapToItem(header, title.width, 0).x < profile.x)
     }
 
     function test_minimized_chats_restore_newest_first_without_new_sessions() {

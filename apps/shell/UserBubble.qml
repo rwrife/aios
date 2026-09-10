@@ -44,6 +44,25 @@ Item {
     }
     QtObject { id: unavailable; property bool busy: false; property string error: ""; function setSecureInput(active) {} }
     EnrollmentFlow { id: enrollment; objectName: "bubbleEnrollment"; parent: Overlay.overlay; anchors.centerIn: parent; control: root.control || unavailable }
+    component ProfileMenuItem: MenuItem {
+        id: item
+        implicitHeight: 40
+        hoverEnabled: true
+        background: Rectangle {
+            color: item.enabled && (item.highlighted || item.hovered || item.down || item.activeFocus) ? picker.palette.highlight : "transparent"
+            radius: 4
+            border.width: item.activeFocus ? 1 : 0
+            border.color: root.ink
+        }
+        contentItem: Text {
+            text: item.text
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            color: root.ink
+            opacity: item.enabled ? 1 : 0.5
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
     Menu {
         id: picker; objectName: "profilePicker"
         parent: root; x: (root.width - width) / 2; y: root.height + 8
@@ -61,12 +80,9 @@ Item {
         onOpened: { currentIndex = -1; if (root.control) root.control.setSecureInput(true); }
         Instantiator {
             model: root.control && root.control.profiles ? root.control.profiles : []
-            delegate: MenuItem {
+            delegate: ProfileMenuItem {
                 required property var modelData
                 objectName: "chooseProfile"; text: modelData.name
-                implicitHeight: 40
-                background: Rectangle { color: parent.highlighted ? "#405968" : "transparent"; radius: 4 }
-                contentItem: Text { text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; color: root.ink; verticalAlignment: Text.AlignVCenter }
                 onTriggered: {
                     picker.close()
                     enrollment.creating = false
@@ -84,9 +100,8 @@ Item {
             text: root.control && root.control.busy ? "Loading accounts…" : "No saved accounts"
         }
         MenuSeparator { contentItem: Rectangle { implicitWidth: 240; implicitHeight: 1; color: "#58717e" } }
-        MenuItem {
+        ProfileMenuItem {
             objectName: "createUser"; text: "New account"
-            implicitHeight: 40
             enabled: root.control && root.control.personalAvailable
             onTriggered: { picker.close(); root.createAccount(); }
         }
