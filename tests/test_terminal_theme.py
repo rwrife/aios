@@ -72,6 +72,19 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("<height>60%</height>", terminal_rule.group(1))
         self.assertNotIn("<size>", browser_rule.group(1))
 
+    def test_native_close_icon_has_twelve_pixel_visible_mark(self):
+        icon = (ROOT / "distro/alpine/overlay/usr/share/themes/AIOS/openbox-3/close.xbm").read_text()
+        self.assertIn("#define close_width 14", icon)
+        self.assertIn("#define close_height 14", icon)
+        data = bytes(int(value, 16) for value in re.findall(r"0x([0-9a-f]{2})", icon))
+        self.assertEqual(len(data), 28)
+        pixels = {(x, y) for y in range(14) for x in range(14)
+                  if data[y * 2 + x // 8] & (1 << (x % 8))}
+        self.assertEqual((min(x for x, y in pixels), max(x for x, y in pixels)), (1, 12))
+        self.assertEqual((min(y for x, y in pixels), max(y for x, y in pixels)), (1, 12))
+        self.assertEqual(pixels, {(13 - x, y) for x, y in pixels})
+        self.assertEqual(pixels, {(x, 13 - y) for x, y in pixels})
+
     def test_desktop_uses_gstreamer_and_lazily_creates_media_player(self):
         world = (ROOT / "distro/alpine/apks/world.ai").read_text().splitlines()
         session = (ROOT / "distro/alpine/overlay/usr/local/bin/aios-session").read_text()
