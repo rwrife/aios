@@ -56,6 +56,11 @@ TestCase {
         wizard = wizardComponent.createObject(test, {backend: backend, theme: palette, profileControl: profileControl})
         verify(wizard !== null)
         wizard.show(); wait(50)
+        compare(findChild(wizard, "setupWindowSurface").radius, palette.windowRadius)
+        compare(findChild(wizard, "setupWindowTitle").font.pixelSize, 22)
+        compare(findChild(wizard, "closeSetup").implicitWidth, 36)
+        compare(findChild(wizard, "closeSetup").implicitHeight, 36)
+        compare(findChild(wizard, "closeSetup").background.radius, 8)
     }
     function cleanup() { wizard.close(); wizard.destroy() }
     function test_skip_every_step_without_side_effects() {
