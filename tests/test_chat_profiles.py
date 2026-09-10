@@ -20,7 +20,8 @@ class ChatProfileTests(unittest.TestCase):
             with patch('aios.chat_profiles.time.time', return_value=103):
                 with self.assertRaises(ValueError): dispatch({**request, 'confirmed': False}, root)
                 self.assertEqual(dispatch(request, root), {'deleted': alice})
-            self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'], [{'id': bob, 'name': 'Bob'}])
+            self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'],
+                             [{'id': bob, 'name': 'Bob', 'photo': ''}])
             with self.assertRaises(ValueError): dispatch(request, root)
 
     def test_create_verify_and_reject_wrong_pin_without_returning_verifier(self):

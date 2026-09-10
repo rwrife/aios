@@ -9,12 +9,17 @@ Item {
     property color ink: "#e4edf1"
     property color surface: "#263944"
     readonly property var profile: control && control.profile ? control.profile : ({})
+    readonly property var suggestion: !profile.name && control && control.recognitionSuggestion ? control.recognitionSuggestion : ({})
+    readonly property var displayProfile: profile.name ? profile : suggestion
     readonly property string name: profile.name || ""
-    readonly property string greeting: name ? "Hello, " + name + ". How may I help you?" : "Welcome. Set up an account with a PIN to make this space yours."
+    readonly property string greeting: name ? "Hello, " + name + ". How may I help you?"
+        : suggestion.name ? "Welcome back, " + suggestion.name + ". Confirm with your PIN to sign in."
+        : "Welcome. Set up an account with a PIN to make this space yours."
     implicitWidth: 52; implicitHeight: 52
     function createAccount() { enrollment.creating = true; enrollment.open(); }
     function openPicker() {
         if (control && control.personalAvailable) control.listProfiles()
+        if (control) control.requestRecognition()
         picker.open()
     }
     Button {
@@ -25,7 +30,7 @@ Item {
         ToolTip.text: root.name || "Your profile"
         background: Rectangle { radius: width / 2; color: root.surface; border.color: bubble.activeFocus ? root.ink : "#58717e" }
         contentItem: Canvas {
-            id: portrait; property string photo: root.profile.photo || ""
+            id: portrait; property string photo: root.displayProfile.photo || ""
             property string previousPhoto: ""
             onPhotoChanged: { if (previousPhoto) unloadImage(previousPhoto); previousPhoto = photo; if (photo) loadImage(photo); requestPaint(); }
             onImageLoaded: requestPaint()
@@ -59,6 +64,26 @@ Item {
         background: Rectangle { color: root.surface; border.color: "#58717e"; radius: 8 }
         onAboutToHide: if (root.control) root.control.setSecureInput(false)
         onOpened: { currentIndex = -1; if (root.control) root.control.setSecureInput(true); }
+        MenuItem {
+            objectName: "recognitionSuggestion"
+            visible: root.suggestion.name
+            height: visible ? implicitHeight : 0
+            text: "Suggested: " + (root.suggestion.name || "") + " — confirm with PIN"
+            implicitHeight: 48
+            background: Rectangle { color: parent.highlighted ? "#405968" : "transparent"; radius: 4 }
+            contentItem: Text { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.ink; verticalAlignment: Text.AlignVCenter }
+            onTriggered: {
+                picker.close()
+                enrollment.creating = false
+                enrollment.selectedProfile = root.suggestion.name
+                enrollment.open()
+            }
+        }
+        MenuSeparator {
+            visible: root.suggestion.name
+            height: visible ? implicitHeight : 0
+            contentItem: Rectangle { implicitWidth: 240; implicitHeight: 1; color: "#58717e" }
+        }
         Instantiator {
             model: root.control && root.control.profiles ? root.control.profiles : []
             delegate: MenuItem {

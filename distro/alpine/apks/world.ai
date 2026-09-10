@@ -1,4 +1,6 @@
 python3
+py3-cryptography
+py3-opencv
 libstdc++
 libgomp
 libcurl

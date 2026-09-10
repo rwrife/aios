@@ -26,14 +26,17 @@ def dispatch(request, directory=None):
         records = json.loads(path.read_text()) if path.exists() else {}
         action = request.get('action')
         if action == 'profiles':
-            return {'profiles': [{'id': key, 'name': value['name']} for key, value in records.items()]}
-        if action not in ('enroll_manual', 'enroll_profile', 'activate_verified', 'delete_profile'):
+            return {'profiles': [{'id': key, 'name': value['name'], 'photo': value.get('photo', '')}
+                                 for key, value in records.items()]}
+        if action not in ('enroll_manual', 'enroll_profile', 'activate_verified',
+                          'verify_profile', 'delete_profile'):
             raise ValueError('Unsupported profile action')
         name = request.get('name') if action.startswith('enroll') else request.get('owner')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError('Enter a name of up to 80 characters')
         name = name.strip()
-        owner = next((key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
+        owner = name if name in records else next(
+            (key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
         if action == 'delete_profile':
             owner = name if name in records else None
             if request.get('confirmed') is not True:
@@ -58,7 +61,11 @@ def dispatch(request, directory=None):
             if action == 'delete_profile':
                 del records[owner]
                 atomic_bytes(path, json.dumps(records).encode())
+                from .recognition import revoke
+                revoke(owner, root)
                 return {'deleted': owner}
+            if action == 'verify_profile':
+                return {'profile': {'id': owner, 'name': records[owner]['name']}}
         atomic_bytes(path, json.dumps(records).encode())
         value = records[owner]
         return {'profile': {'id': owner, 'name': value['name'], 'photo': value['photo'], 'detected': False}}

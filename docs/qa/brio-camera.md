@@ -85,3 +85,20 @@ using the current bus ID; unbind requires Administrator. This is not the normal
 end-of-test cleanup for this dedicated device.
 
 Implementation plan: [occasional face recognition](../plans/brio-occasional-recognition.md).
+
+## Recognition runtime prerequisites
+
+The implementation remains disabled until `/etc/aios/face-models.json` is
+installed with `yunet` and `sface` records accepted by
+`aios.biometrics.verified_model`. Each record must provide an absolute model
+path, SHA-256 checksum, source, license, revision, input and output contract.
+The manifest must also contain a `calibration` object for hardware
+`brio-101` with measured `match_threshold`, `runner_up_margin`,
+`enrollment_consistency`, `minimum_brightness`, `maximum_brightness`,
+`minimum_sharpness`, and optionally `minimum_face_size`.
+
+Do not populate those values from examples or enable background recognition
+until the full-VM capture and held-out calibration gates in the implementation
+plan are complete. Development can point `AIOS_FACE_MODEL_MANIFEST` at a local
+manifest. The shell exchanges only account metadata with the worker; it never
+receives frames or embeddings, and every suggestion still requires the PIN.

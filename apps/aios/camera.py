@@ -8,10 +8,15 @@ import sys
 import time
 
 
-def video_device(value):
-    if not isinstance(value, str) or not re.fullmatch(r'/dev/video[0-9]+', value):
-        raise ValueError('Choose a local /dev/videoN device; network streams are not accepted')
-    if not Path(value).is_char_device():
+def video_device(value, stable=False):
+    patterns = [r'/dev/video[0-9]+']
+    if stable:
+        patterns = [r'/dev/v4l/by-id/[A-Za-z0-9._:+-]+-video-index[0-9]+']
+    if not isinstance(value, str) or not any(re.fullmatch(pattern, value) for pattern in patterns):
+        expected = 'a stable /dev/v4l/by-id/*-video-indexN device' if stable else 'a local /dev/videoN device'
+        raise ValueError(f'Choose {expected}; network streams are not accepted')
+    path = Path(value)
+    if not path.is_char_device():
         raise ValueError('Video device is not attached')
     return value
 

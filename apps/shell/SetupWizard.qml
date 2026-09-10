@@ -86,7 +86,7 @@ Window {
                         onClicked: { enrollment.creating = true; enrollment.open() }
                     }
                     Note { visible: !profileControl || !profileControl.personalAvailable; text: "Local profile creation is unavailable on this system."; font.pixelSize: 12 }
-                    Note { text: "A camera can add a profile photo when available. Biometric sign-in is not enabled because this build has no calibrated recognition and liveness enrollment flow."; font.pixelSize: 12 }
+                    Note { text: "A camera can add a profile photo when available. Optional face suggestions are configured separately in Settings after creating a profile; they never replace the account PIN."; font.pixelSize: 12 }
                     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
                     Note { text: "Connect a ChatGPT account"; color: theme.ink; font.pixelSize: 20 }
                     Note { text: "Sign in in your browser, or follow the provider's account creation flow there. Model access depends on your plan. This service account is separate from the local profile above." }

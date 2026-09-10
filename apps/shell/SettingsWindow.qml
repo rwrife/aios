@@ -16,8 +16,12 @@ Window {
     minimumWidth: 540; minimumHeight: 400
     x: (Screen.width-width)/2; y: (Screen.height-height)/2
     color: theme.panel
-    onVisibleChanged: { if (!visible) camera.stop(); else { models.reload(); if (pages.currentIndex === 6) accountsPage.refresh(); } }
-    onClosing: camera.stop()
+    function stopCameraPreview() {
+        camera.stop()
+        if (profileControl) profileControl.setCameraPreviewActive(false)
+    }
+    onVisibleChanged: { if (!visible) stopCameraPreview(); else { models.reload(); if (pages.currentIndex === 6) accountsPage.refresh(); } }
+    onClosing: stopCameraPreview()
     // Add a section here and its page to the StackLayout below.
     readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "Accounts"]
     component Action: Button {
@@ -44,7 +48,7 @@ Window {
                     Accessible.name: modelData; Accessible.role: Accessible.PageTab; Accessible.checked: pages.currentIndex === index
                     contentItem: Text { text: modelData; color: pages.currentIndex === index ? theme.ink : theme.muted; font.pixelSize: 14 }
                     background: Rectangle { radius: 6; color: pages.currentIndex === index || sectionButton.hovered ? theme.input : "transparent"; border.width: sectionButton.activeFocus ? 1 : 0; border.color: theme.accent }
-                    onClicked: { camera.stop(); pages.currentIndex = index }
+                    onClicked: { settings.stopCameraPreview(); pages.currentIndex = index }
                 }
             }
             Item { Layout.fillHeight: true }
@@ -85,7 +89,7 @@ Window {
                     ComboBox {
                         id: cameraChoice; Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
                         enabled: devices.videoInputs.length > 0
-                        onActivated: { camera.stop(); camera.cameraDevice = devices.videoInputs[currentIndex] }
+                        onActivated: { settings.stopCameraPreview(); camera.cameraDevice = devices.videoInputs[currentIndex] }
                     }
                     Rectangle {
                         Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 100; color: theme.night; radius: 8
@@ -93,8 +97,49 @@ Window {
                         Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
                     }
                     Note { text: camera.errorString; visible: camera.error !== Camera.NoError; font.pixelSize: 12 }
-                    Action { text: camera.active ? "Stop preview" : "Start preview"; enabled: devices.videoInputs.length > 0; onClicked: camera.active ? camera.stop() : camera.start() }
+                    Action {
+                        text: camera.active ? "Stop preview" : "Start preview"
+                        enabled: devices.videoInputs.length > 0
+                        onClicked: {
+                            if (camera.active) settings.stopCameraPreview()
+                            else {
+                                if (settings.profileControl) settings.profileControl.setCameraPreviewActive(true)
+                                camera.start()
+                            }
+                        }
+                    }
                     Note { text: "Preview stays on this computer. Camera attachments and video calls are not enabled."; font.pixelSize: 12 }
+                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line; opacity: 0.5 }
+                    CheckBox {
+                        id: recognitionEnabled; objectName: "recognitionEnabled"
+                        text: "Suggest enrolled accounts with occasional camera capture"
+                        checked: backend.config.camera_recognition === true
+                    }
+                    TextField {
+                        id: recognitionDevice; objectName: "recognitionDevice"
+                        Layout.fillWidth: true
+                        placeholderText: "/dev/v4l/by-id/...-video-index0"
+                        text: backend.config.camera_device || ""
+                        maximumLength: 512
+                    }
+                    Action {
+                        objectName: "saveRecognition"; text: recognitionEnabled.checked ? "Enable account suggestions" : "Disable and delete face templates"
+                        enabled: !backend.configuring
+                        onClicked: {
+                            if (!recognitionEnabled.checked && settings.profileControl)
+                                settings.profileControl.disableRecognition()
+                            backend.configure({
+                                camera_recognition: recognitionEnabled.checked,
+                                camera_device: recognitionEnabled.checked ? recognitionDevice.text.trim() : ""
+                            })
+                        }
+                    }
+                    Note {
+                        text: settings.profileControl
+                            ? "Recognition status: " + settings.profileControl.recognitionState + ". Suggestions expire and always require the account PIN."
+                            : "Recognition is unavailable. Account sign-in continues to use the PIN."
+                        font.pixelSize: 12
+                    }
                 }
                 ColumnLayout {
                     spacing: 16
@@ -164,4 +209,10 @@ Window {
     AccountSettings { id: accountsPage; parent: pages; control: settings.profileControl }
     Camera { id: camera; cameraDevice: devices.defaultVideoInput }
     CaptureSession { camera: camera; videoOutput: viewfinder }
+    Connections {
+        target: backend
+        function onConfigured() {
+            if (settings.profileControl) settings.profileControl.recognitionConfigurationChanged()
+        }
+    }
 }
