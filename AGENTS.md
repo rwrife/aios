@@ -11,3 +11,7 @@
 - Give every QEMU instance a unique, descriptive window title so the user can
   tell which VM they are viewing. Pass a task- or session-specific value to
   QEMU's `-name` option instead of leaving multiple windows titled `AIOS`.
+
+## Optimize your time
+
+The build process is quite slow, as is validating in a running VM, so please try to batch smaller changes together and validate them in a batch to speed up the dev lifecycle.
