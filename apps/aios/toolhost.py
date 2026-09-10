@@ -45,7 +45,6 @@ SAFE_MCP_FILTER_WARNING = "MCP some tool definitions were ignored."
 SAFE_MCP_LIMIT_WARNING = "MCP some tool definitions were ignored because the tool limit was reached."
 SAFE_MCP_BUDGET_WARNING = "MCP some tool definitions were ignored because the response size limit was reached."
 
-_STATIC_TOOLS = (BROWSER_TOOL, APPLICATION_TOOL)
 _APPLICATION_ACTIONS = (
     "search",
     "create",
@@ -111,10 +110,10 @@ def _definition_name(definition: Any) -> str | None:
     return name
 
 
-def _static_tools() -> list[dict[str, Any]]:
+def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> list[dict[str, Any]]:
     tools = []
     names = set()
-    for definition in _STATIC_TOOLS:
+    for definition in (BROWSER_TOOL, application_definition):
         name = _definition_name(definition)
         if name is None or name in names:
             raise RuntimeError("Built-in tool definitions are invalid.")
@@ -369,7 +368,11 @@ class ToolHost:
         self._close_lock = threading.Lock()
 
     def definitions(self) -> dict[str, Any]:
-        tools = _static_tools()
+        definition_factory = getattr(self.applications, "definition", None)
+        application_definition = definition_factory() if callable(definition_factory) else APPLICATION_TOOL
+        if not isinstance(application_definition, dict):
+            application_definition = APPLICATION_TOOL
+        tools = _static_tools(application_definition)
         names = {item["function"]["name"] for item in tools}
         mcp_definitions, mcp_warnings = self.mcp.definitions()
         source_warnings = _warning_strings(mcp_warnings)

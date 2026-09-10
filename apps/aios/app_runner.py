@@ -136,7 +136,7 @@ def _valid_published_manifest(folder: Path) -> dict[str, object]:
     if not isinstance(data, dict):
         raise ValueError(_GENERIC_LOAD_ERROR)
 
-    required = {
+    legacy_required = {
         "id",
         "title",
         "request",
@@ -147,7 +147,10 @@ def _valid_published_manifest(folder: Path) -> dict[str, object]:
         "entrypoint",
         "sha256",
     }
-    if set(data) != required:
+    new_required = legacy_required | {"runtime"}
+    if set(data) not in (legacy_required, new_required):
+        raise ValueError(_GENERIC_LOAD_ERROR)
+    if "runtime" in data and data["runtime"] != "web":
         raise ValueError(_GENERIC_LOAD_ERROR)
     if not isinstance(data["id"], str) or not ID_RE.fullmatch(data["id"]) or data["id"] != folder.name:
         raise ValueError(_GENERIC_LOAD_ERROR)
@@ -206,7 +209,7 @@ def load_document(folder: Path | str) -> str:
     return document
 
 
-def handler_for(document: str) -> type[BaseHTTPRequestHandler]:
+def handler_for(document: str, on_app_loaded=None) -> type[BaseHTTPRequestHandler]:
     wrapper_html = (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         f"<title>{_WRAPPER_TITLE}</title>"
@@ -223,6 +226,18 @@ def handler_for(document: str) -> type[BaseHTTPRequestHandler]:
     )
     wrapper_bytes = wrapper_html.encode("utf-8")
     app_bytes = document.encode("utf-8")
+    callback_lock = threading.Lock()
+    callback_invoked = False
+
+    def notify_app_loaded() -> None:
+        nonlocal callback_invoked
+        if on_app_loaded is None:
+            return
+        with callback_lock:
+            if callback_invoked:
+                return
+            callback_invoked = True
+        on_app_loaded()
 
     class ApplicationHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -245,7 +260,7 @@ def handler_for(document: str) -> type[BaseHTTPRequestHandler]:
                 self._send_document(wrapper_bytes, _WRAPPER_CSP, send_body)
                 return
             if parsed.path == _APP_PATH:
-                self._send_document(app_bytes, _APP_CSP, send_body)
+                self._send_document(app_bytes, _APP_CSP, send_body, notify=send_body)
                 return
             self._send_not_found(send_body)
 
@@ -262,7 +277,7 @@ def handler_for(document: str) -> type[BaseHTTPRequestHandler]:
             if send_body:
                 self.wfile.write(body)
 
-        def _send_document(self, body: bytes, csp: str, send_body: bool) -> None:
+        def _send_document(self, body: bytes, csp: str, send_body: bool, notify: bool = False) -> None:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Security-Policy", csp)
@@ -273,19 +288,53 @@ def handler_for(document: str) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             if send_body:
                 self.wfile.write(body)
+                if notify:
+                    self.wfile.flush()
+                    notify_app_loaded()
 
     return ApplicationHandler
 
 
-def run(folder: Path | str) -> None:
-    document = load_document(folder)
-    handler = handler_for(document)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+def run(folder: Path | str, ready_fd: int | None = None) -> None:
+    ready_lock = threading.Lock()
+    open_ready_fd = ready_fd
+
+    def close_ready_fd() -> None:
+        nonlocal open_ready_fd
+        with ready_lock:
+            fd = open_ready_fd
+            open_ready_fd = None
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def signal_ready() -> None:
+        nonlocal open_ready_fd
+        with ready_lock:
+            fd = open_ready_fd
+            open_ready_fd = None
+        if fd is None:
+            return
+        try:
+            os.write(fd, b"ready\n")
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    server = None
+    thread = None
     profile = None
     process = None
     try:
+        document = load_document(folder)
+        handler = handler_for(document, on_app_loaded=signal_ready if ready_fd is not None else None)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
         profile = tempfile.TemporaryDirectory(prefix="aios-chromium-")
         url = f"http://127.0.0.1:{server.server_address[1]}/"
         command = [
@@ -311,20 +360,66 @@ def run(folder: Path | str) -> None:
             _terminate_process(process)
         if profile is not None:
             profile.cleanup()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if thread is not None:
+            thread.join(timeout=5)
+        close_ready_fd()
+
+
+def _ready_fd_from_args(args: list[str]) -> int | None:
+    if "--ready-fd" not in args:
+        return None
+    index = args.index("--ready-fd")
+    if index + 1 >= len(args):
+        return None
+    try:
+        value = int(args[index + 1])
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _parse_args(args: list[str]) -> tuple[Path, int | None]:
+    if len(args) == 1:
+        return Path(args[0]), None
+    if len(args) == 3 and args[1] == "--ready-fd":
+        try:
+            ready_fd = int(args[2])
+        except ValueError:
+            raise ValueError("invalid arguments") from None
+        if ready_fd < 0:
+            raise ValueError("invalid arguments")
+        return Path(args[0]), ready_fd
+    raise ValueError("invalid arguments")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 1:
-        print("Usage: python -m aios.app_runner FOLDER", file=sys.stderr)
+    cleanup_fd = _ready_fd_from_args(args)
+    try:
+        folder, ready_fd = _parse_args(args)
+    except ValueError:
+        if cleanup_fd is not None:
+            try:
+                os.close(cleanup_fd)
+            except OSError:
+                pass
+        print("Usage: python -m aios.app_runner FOLDER [--ready-fd FD]", file=sys.stderr)
         return 2
-    previous_handlers = _install_termination_handlers()
+    try:
+        previous_handlers = _install_termination_handlers()
+    except BaseException:
+        if ready_fd is not None:
+            try:
+                os.close(ready_fd)
+            except OSError:
+                pass
+        raise
     try:
         try:
-            run(Path(args[0]))
+            run(folder, ready_fd=ready_fd)
         except _TerminationSignal as interrupted:
             return interrupted.exit_code
         except KeyboardInterrupt:

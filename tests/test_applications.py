@@ -8,6 +8,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import types
 import unittest
 from html.parser import HTMLParser
@@ -17,7 +19,7 @@ from unittest import mock
 from urllib import error, request
 
 import aios.applications as applications
-from aios.applications import APPLICATION_TOOL, ApplicationStore
+from aios.applications import APPLICATION_TOOL, NATIVE_TEMPLATES, ApplicationStore, application_tool
 
 
 def _read_json(path: Path):
@@ -44,8 +46,14 @@ class ApplicationStoreTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / "applications"
 
-    def _store(self, launcher=None):
-        return ApplicationStore(root=self.root, launcher=launcher)
+    def _store(self, launcher=None, **kwargs):
+        return ApplicationStore(root=self.root, launcher=launcher, **kwargs)
+
+    def _native_host(self, body):
+        path = Path(self.tmp.name) / "aios-app-host"
+        path.write_text("#!/usr/bin/env python3\n" + textwrap.dedent(body), encoding="utf-8")
+        path.chmod(0o700)
+        return path
 
     def test_tool_schema_rejects_additional_properties(self):
         parameters = APPLICATION_TOOL["function"]["parameters"]
@@ -58,6 +66,19 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertIn("html", parameters["properties"])
         self.assertIn("summary", parameters["properties"])
         self.assertIn("keywords", parameters["properties"])
+        self.assertNotIn("runtime", parameters["properties"])
+        self.assertNotIn("template", parameters["properties"])
+
+    def test_capability_tool_schema_is_deep_independent(self):
+        native = application_tool(("calculator",))
+        properties = native["function"]["parameters"]["properties"]
+        self.assertEqual(properties["runtime"]["enum"], ["web", "native"])
+        self.assertEqual(properties["template"]["enum"], ["calculator"])
+        properties["action"]["enum"].append("bad")
+        properties["template"]["enum"].append("bad")
+        second = application_tool(("calculator",))
+        self.assertNotIn("bad", APPLICATION_TOOL["function"]["parameters"]["properties"]["action"]["enum"])
+        self.assertEqual(second["function"]["parameters"]["properties"]["template"]["enum"], ["calculator"])
 
     def test_create_write_publish_search_launch_happy_path(self):
         launched = []
@@ -102,7 +123,12 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(matches[0]["title"], "Hello World")
 
         launch_result = store.launch({"id": created["id"]})
-        self.assertEqual(launch_result, {"launched": True, "id": created["id"], "title": "Hello World"})
+        self.assertEqual(launch_result, {
+            "launched": True,
+            "id": created["id"],
+            "title": "Hello World",
+            "runtime": "web",
+        })
         self.assertEqual(launched, [folder])
 
     def test_publish_cleanup_rejects_follow_up_writes(self):
@@ -144,7 +170,12 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertFalse(draft_path.exists())
 
         launch_result = store.launch({"id": created["id"]})
-        self.assertEqual(launch_result, {"launched": True, "id": created["id"], "title": "Recover"})
+        self.assertEqual(launch_result, {
+            "launched": True,
+            "id": created["id"],
+            "title": "Recover",
+            "runtime": "web",
+        })
         self.assertEqual(launched, [folder])
         self.assertEqual(publish_result["sha256"], _read_json(folder / "manifest.json")["sha256"])
 
@@ -402,10 +433,213 @@ class ApplicationStoreTests(unittest.TestCase):
         store.write({"id": created["id"], "html": "<!doctype html><p>keep</p>"})
         store.publish({"id": created["id"], "summary": "Kept", "keywords": ["keep"]})
         manifest = (self.root / created["id"] / "manifest.json").read_text(encoding="utf-8")
-        with self.assertRaises(RuntimeError):
-            store.launch({"id": created["id"]})
+        result = store.launch({"id": created["id"]})
+        self.assertEqual(result, {
+            "launched": False,
+            "id": created["id"],
+            "title": "Keep",
+            "runtime": "web",
+            "reason": "Application window could not open.",
+        })
         self.assertEqual((self.root / created["id"] / "manifest.json").read_text(encoding="utf-8"), manifest)
         self.assertTrue((self.root / created["id"] / "index.html").exists())
+
+    def test_native_create_publish_search_launch_and_reuse(self):
+        host = self._native_host("")
+        launched = []
+        store = self._store(
+            launcher=lambda folder: launched.append(Path(folder)),
+            native_host=host,
+            native_templates=("calculator",),
+        )
+        created = store.create({
+            "title": "Calculator",
+            "request": "Build a calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        self.assertEqual(created["runtime"], "native")
+        self.assertEqual(created["template"], "calculator")
+        with self.assertRaisesRegex(ValueError, "cannot accept HTML"):
+            store.write({"id": created["id"], "html": "<!doctype html>"})
+        with self.assertRaisesRegex(ValueError, "do not have"):
+            store.read({"id": created["id"]})
+
+        published = store.publish({
+            "id": created["id"],
+            "summary": "Trusted calculator",
+            "keywords": ["calculator"],
+        })
+        self.assertEqual(published, {
+            "published": True,
+            "id": created["id"],
+            "runtime": "native",
+            "template": "calculator",
+        })
+        folder = self.root / created["id"]
+        self.assertEqual({path.name for path in folder.iterdir()}, {"manifest.json"})
+        manifest = _read_json(folder / "manifest.json")
+        self.assertEqual(manifest["runtime"], "native")
+        self.assertEqual(manifest["template"], "calculator")
+        self.assertNotIn("entrypoint", manifest)
+        self.assertNotIn("sha256", manifest)
+        with self.assertRaisesRegex(ValueError, "do not have"):
+            store.read({"id": created["id"]})
+
+        matches = store.search({"query": "Build a calculator"})
+        self.assertEqual(matches[0]["runtime"], "native")
+        self.assertEqual(matches[0]["template"], "calculator")
+        launch = store.launch({"id": matches[0]["id"]})
+        self.assertEqual(launch, {
+            "launched": True,
+            "id": created["id"],
+            "title": "Calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        self.assertEqual(launched, [folder])
+
+    def test_legacy_web_manifest_loads_and_native_wins_exact_tie(self):
+        host = self._native_host("")
+        store = self._store(launcher=lambda folder: None, native_host=host, native_templates=NATIVE_TEMPLATES)
+        web = store.create({"title": "Calculator", "request": "Build calculator"})
+        store.write({"id": web["id"], "html": "<!doctype html><p>web</p>"})
+        store.publish({"id": web["id"], "summary": "Calculator", "keywords": ["calculator"]})
+        web_manifest_path = self.root / web["id"] / "manifest.json"
+        web_manifest = _read_json(web_manifest_path)
+        web_manifest.pop("runtime")
+        web_manifest["updated_at"] = "2026-01-01T00:00:00Z"
+        web_manifest_path.write_text(json.dumps(web_manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+        self.assertEqual(store.read({"id": web["id"]}), "<!doctype html><p>web</p>")
+
+        native = store.create({
+            "title": "Calculator",
+            "request": "Build calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        store.publish({"id": native["id"], "summary": "Calculator", "keywords": ["calculator"]})
+        native_manifest_path = self.root / native["id"] / "manifest.json"
+        native_manifest = _read_json(native_manifest_path)
+        native_manifest["updated_at"] = "2026-01-01T00:00:00Z"
+        native_manifest_path.write_text(json.dumps(native_manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+
+        results = store.search({"query": "Build calculator"})
+        self.assertEqual([result["runtime"] for result in results[:2]], ["native", "web"])
+        self.assertIsNone(results[1]["template"])
+
+    def test_invalid_or_unavailable_native_create_is_rejected(self):
+        with mock.patch.object(applications.shutil, "which", return_value=None):
+            store = self._store()
+        self.assertNotIn("runtime", store.definition()["function"]["parameters"]["properties"])
+        for payload in (
+            {"title": "Bad", "request": "Bad", "runtime": "desktop"},
+            {"title": "Bad", "request": "Bad", "runtime": "native", "template": "calculator"},
+            {"title": "Bad", "request": "Bad", "runtime": "web", "template": "calculator"},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    store.create(payload)
+        with self.assertRaises(ValueError):
+            ApplicationStore(root=Path(self.tmp.name) / "other", native_host=None, native_templates=("calculator",))
+        host = self._native_host("")
+        with self.assertRaises(ValueError):
+            ApplicationStore(root=Path(self.tmp.name) / "third", native_host=host, native_templates=("unknown",))
+
+    def test_injected_launcher_false_and_exception_are_structured(self):
+        for launcher in (lambda _folder: False, lambda _folder: (_ for _ in ()).throw(RuntimeError("secret"))):
+            with self.subTest(launcher=launcher):
+                root = Path(self.tmp.name) / f"applications-{id(launcher)}"
+                store = ApplicationStore(root=root, launcher=launcher)
+                created = store.create({"title": "Fail", "request": "Fail safely"})
+                store.write({"id": created["id"], "html": "<!doctype html><p>fail</p>"})
+                store.publish({"id": created["id"], "summary": "Failure", "keywords": ["failure"]})
+                result = store.launch({"id": created["id"]})
+                self.assertFalse(result["launched"])
+                self.assertEqual(result["reason"], "Application window could not open.")
+                self.assertNotIn(str(root), json.dumps(result))
+
+    @unittest.skipUnless(os.name == "posix", "verified fd launch requires POSIX")
+    def test_verified_native_launcher_ready_exit_and_timeout(self):
+        cases = {
+            "ready": """
+                import os
+                os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
+                os.close(int(os.environ["AIOS_APP_READY_FD"]))
+            """,
+            "exit": "pass\n",
+            "timeout": """
+                import os, time
+                with open(os.environ["AIOS_TEST_PID_FILE"], "w", encoding="utf-8") as stream:
+                    stream.write(str(os.getpid()))
+                time.sleep(10)
+            """,
+        }
+        for name, body in cases.items():
+            with self.subTest(name=name):
+                root = Path(self.tmp.name) / name
+                host = self._native_host(body)
+                pid_file = Path(self.tmp.name) / f"{name}.pid"
+                with mock.patch.dict(os.environ, {"AIOS_TEST_PID_FILE": str(pid_file)}):
+                    store = ApplicationStore(
+                        root=root,
+                        native_host=host,
+                        native_templates=("calculator",),
+                        launch_timeout=0.75,
+                    )
+                    created = store.create({
+                        "title": "Calculator",
+                        "request": f"Calculator {name}",
+                        "runtime": "native",
+                        "template": "calculator",
+                    })
+                    store.publish({"id": created["id"], "summary": "Calculator", "keywords": ["calculator"]})
+                    started = time.monotonic()
+                    result = store.launch({"id": created["id"]})
+                    elapsed = time.monotonic() - started
+                self.assertEqual(result["launched"], name == "ready")
+                self.assertLess(elapsed, 2)
+                if name == "timeout":
+                    pid = int(pid_file.read_text(encoding="utf-8"))
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(pid, 0)
+
+    @unittest.skipUnless(os.name == "posix", "verified fd launch requires POSIX")
+    def test_native_launcher_uses_fixed_argv_and_environment(self):
+        capture = Path(self.tmp.name) / "capture.json"
+        host = self._native_host("""
+            import json, os, sys
+            with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
+                json.dump({
+                    "argv": sys.argv,
+                    "template": os.environ["AIOS_APP_TEMPLATE"],
+                    "title": os.environ["AIOS_APP_TITLE"],
+                }, stream)
+            os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
+            os.close(int(os.environ["AIOS_APP_READY_FD"]))
+        """)
+        with mock.patch.dict(os.environ, {"AIOS_TEST_CAPTURE": str(capture)}):
+            store = self._store(native_host=host, native_templates=("calculator",))
+            created = store.create({
+                "title": "Calculator --bad",
+                "request": "Native calculator",
+                "runtime": "native",
+                "template": "calculator",
+            })
+            store.publish({"id": created["id"], "summary": "Calculator", "keywords": ["calculator"]})
+            self.assertTrue(store.launch({"id": created["id"]})["launched"])
+        captured = _read_json(capture)
+        self.assertEqual(captured["argv"], [str(host)])
+        self.assertEqual(captured["template"], "calculator")
+        self.assertEqual(captured["title"], "Calculator --bad")
+        capture.unlink()
+        manifest_path = self.root / created["id"] / "manifest.json"
+        manifest = _read_json(manifest_path)
+        manifest["template"] = "unsupported"
+        manifest_path.write_text(json.dumps(manifest, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            store.launch({"id": created["id"]})
+        self.assertFalse(capture.exists())
 
     def test_atomic_temp_cleanup(self):
         store = self._store()
@@ -488,6 +722,25 @@ class ApplicationStoreTests(unittest.TestCase):
             self.assertEqual(result["status"], 200)
             self.assertEqual(result["headers"]["Content-Length"], str(len(result["body"])))
             self.assertEqual(result["body"].decode("utf-8"), html)
+
+    def test_handler_signals_once_only_after_get_app_body(self):
+        from aios import app_runner
+
+        callbacks = []
+        handler = app_runner.handler_for(
+            "<!doctype html><p>ready</p>",
+            on_app_loaded=lambda: callbacks.append("ready"),
+        )
+        with self._serve(handler) as base_url:
+            self._get(base_url + "/")
+            self._get(base_url + "/missing", expect_error=True)
+            self._get(base_url + "/app", method="HEAD")
+            self.assertEqual(callbacks, [])
+            app = self._get(base_url + "/app")
+            self.assertEqual(app["body"], b"<!doctype html><p>ready</p>")
+            self.assertEqual(callbacks, ["ready"])
+            self._get(base_url + "/app")
+            self.assertEqual(callbacks, ["ready"])
 
     def test_load_document_accepts_published_app_and_rejects_digest_or_symlinks(self):
         from aios import app_runner
@@ -750,8 +1003,32 @@ class ApplicationStoreTests(unittest.TestCase):
             self.assertNotEqual(app_runner.main([]), 0)
             self.assertNotEqual(app_runner.main(["one", "two"]), 0)
 
-    def _get(self, url, expect_error=False):
-        req = request.Request(url)
+    @unittest.skipUnless(os.name == "posix", "fd cleanup requires POSIX")
+    def test_main_ready_fd_parsing_and_failure_cleanup(self):
+        from aios import app_runner
+
+        self.assertEqual(app_runner._parse_args(["folder"]), (Path("folder"), None))
+        self.assertEqual(app_runner._parse_args(["folder", "--ready-fd", "7"]), (Path("folder"), 7))
+        for args in (
+            ["folder", "--ready-fd"],
+            ["folder", "--ready-fd", "bad"],
+            ["folder", "--ready-fd", "-1"],
+            ["folder", "--ready-fd", "7", "extra"],
+        ):
+            with self.subTest(args=args):
+                with self.assertRaises(ValueError):
+                    app_runner._parse_args(args)
+
+        read_fd, write_fd = os.pipe()
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(app_runner.main(["folder", "--ready-fd", str(write_fd), "extra"]), 2)
+            self.assertEqual(os.read(read_fd, 1), b"")
+        finally:
+            os.close(read_fd)
+
+    def _get(self, url, expect_error=False, method="GET"):
+        req = request.Request(url, method=method)
         try:
             with request.urlopen(req, timeout=5) as response:
                 return {

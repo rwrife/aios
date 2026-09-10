@@ -1,17 +1,23 @@
-"""Persistent application cache for one self-contained HTML document."""
+"""Persistent cache for sandboxed web and trusted native applications."""
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
+import selectors
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -26,6 +32,9 @@ MAX_TITLE_LENGTH = 100
 MAX_REQUEST_LENGTH = 2000
 MAX_SUMMARY_LENGTH = 300
 MAX_KEYWORDS = 20
+NATIVE_TEMPLATES = ("calculator",)
+RUNTIMES = ("web", "native")
+LAUNCH_FAILURE_REASON = "Application window could not open."
 
 APPLICATION_TOOL = {
     "type": "function",
@@ -75,6 +84,24 @@ APPLICATION_TOOL = {
         },
     },
 }
+
+
+def application_tool(native_templates: Iterable[str] = ()) -> dict[str, Any]:
+    definition = copy.deepcopy(APPLICATION_TOOL)
+    templates = tuple(native_templates)
+    if templates:
+        properties = definition["function"]["parameters"]["properties"]
+        properties["runtime"] = {
+            "type": "string",
+            "enum": list(RUNTIMES),
+            "description": "Application runtime. Use native only with an advertised native template.",
+        }
+        properties["template"] = {
+            "type": "string",
+            "enum": list(templates),
+            "description": "Trusted native application template.",
+        }
+    return definition
 
 
 def _utc_now() -> str:
@@ -333,11 +360,42 @@ def _read_regular_file_bytes(path: Path, max_bytes: int) -> bytes:
 
 
 class ApplicationStore:
-    def __init__(self, root: Path | str | None = None, launcher: Callable[[Path], Any] | None = None):
+    def __init__(
+        self,
+        root: Path | str | None = None,
+        launcher: Callable[[Path], Any] | None = None,
+        native_host: Path | str | None = None,
+        native_templates: Iterable[str] | None = None,
+        launch_timeout: float = 10,
+    ):
         self.root = Path(root) if root is not None else core.data_dir() / "applications"
         self.root = self.root.expanduser()
         _ensure_secure_directory(self.root)
-        self.launcher = launcher or self._default_launcher
+        self.launcher = launcher
+        discovered_host = shutil.which("aios-app-host") if native_host is None else os.fspath(native_host)
+        self.native_host = Path(discovered_host).expanduser() if discovered_host else None
+        host_available = self.native_host is not None and _is_regular_file(self.native_host) and os.access(self.native_host, os.X_OK)
+        if native_templates is None:
+            configured_templates = NATIVE_TEMPLATES if host_available else ()
+        else:
+            if isinstance(native_templates, (str, bytes)):
+                raise ValueError("Choose supported native application templates.")
+            requested = tuple(native_templates)
+            if any(template not in NATIVE_TEMPLATES for template in requested):
+                raise ValueError("Choose supported native application templates.")
+            if requested and not host_available:
+                raise ValueError("Native application templates require an executable native host.")
+            configured_templates = tuple(template for template in NATIVE_TEMPLATES if template in requested)
+        self.native_templates = configured_templates
+        try:
+            self.launch_timeout = float(launch_timeout)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("Choose a valid application launch timeout.") from None
+        if self.launch_timeout < 0 or not math.isfinite(self.launch_timeout):
+            raise ValueError("Choose a valid application launch timeout.")
+
+    def definition(self) -> dict[str, Any]:
+        return application_tool(self.native_templates)
 
     def create(self, payload: dict[str, Any]) -> dict[str, str]:
         title = payload.get("title")
@@ -346,6 +404,20 @@ class ApplicationStore:
             raise ValueError("Enter a title and request.")
         title = _normalize_title(title)
         request = _normalize_request(request)
+        runtime = payload.get("runtime", "web")
+        template_value = payload.get("template")
+        if runtime not in RUNTIMES:
+            raise ValueError("Choose a supported application runtime.")
+        if runtime == "web":
+            if template_value not in (None, ""):
+                raise ValueError("Web applications do not use a native template.")
+            template = None
+        else:
+            if not self.native_templates:
+                raise ValueError("Native applications are not available.")
+            if template_value not in self.native_templates:
+                raise ValueError("Choose an advertised native application template.")
+            template = str(template_value)
 
         for _ in range(1000):
             app_id = _application_id(title)
@@ -357,32 +429,50 @@ class ApplicationStore:
             except FileExistsError:
                 continue
             folder.chmod(0o700)
+            draft = {
+                "id": app_id,
+                "title": title,
+                "request": request,
+                "created_at": _utc_now(),
+                "runtime": runtime,
+            }
+            if template is not None:
+                draft["template"] = template
             try:
-                _atomic_write_json(folder / ".draft.json", {
-                    "id": app_id,
-                    "title": title,
-                    "request": request,
-                    "created_at": _utc_now(),
-                })
+                _atomic_write_json(folder / ".draft.json", draft)
             except Exception:
                 shutil.rmtree(folder, ignore_errors=True)
                 raise
-            return {"id": app_id, "title": title}
+            result = {"id": app_id, "title": title, "runtime": runtime}
+            if template is not None:
+                result["template"] = template
+            return result
         raise RuntimeError("Could not allocate a new application identifier.")
 
     def write(self, payload: dict[str, Any]) -> dict[str, Any]:
         folder = self._draft_folder(payload)
+        draft = self._load_draft(folder)
+        if draft["runtime"] == "native":
+            raise ValueError("Native applications use a trusted template and cannot accept HTML.")
         html = payload.get("html")
         if not isinstance(html, str):
             raise ValueError("Enter HTML text.")
         if not DOCTYPE_RE.match(html):
             raise ValueError("HTML must start with <!doctype html>.")
-        index = folder / "index.html"
-        written = _atomic_write_text(index, html)
+        written = _atomic_write_text(folder / "index.html", html)
         return {"written": True, "bytes": written}
 
     def read(self, payload: dict[str, Any]) -> str:
         folder = self._existing_folder(payload)
+        manifest = self._load_manifest(folder)
+        if manifest is not None:
+            metadata = manifest
+        else:
+            metadata = self._load_draft(folder)
+            allowed = {".draft.json", "index.html"} if metadata["runtime"] == "web" else {".draft.json"}
+            self._validate_folder_contents(folder, allowed)
+        if metadata["runtime"] == "native":
+            raise ValueError("Native applications do not have an HTML document.")
         index = folder / "index.html"
         try:
             html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
@@ -400,9 +490,6 @@ class ApplicationStore:
     def publish(self, payload: dict[str, Any]) -> dict[str, Any]:
         folder = self._draft_folder(payload)
         draft = self._load_draft(folder)
-        index = folder / "index.html"
-        if not _is_regular_file(index):
-            raise ValueError("Write the HTML document before publishing.")
         summary_value = payload.get("summary")
         keywords_value = payload.get("keywords")
         if not isinstance(summary_value, str) or not isinstance(keywords_value, list):
@@ -411,20 +498,6 @@ class ApplicationStore:
             raise ValueError("Keep the keyword list to 20 items or fewer.")
         summary = _normalize_summary(summary_value)
         keywords = _normalize_keywords(keywords_value)
-        try:
-            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
-        except FileNotFoundError as error:
-            raise ValueError("Write the HTML document before publishing.") from error
-        except ValueError as error:
-            if str(error) == "The file is too large.":
-                raise ValueError("The HTML document is too large.") from error
-            raise ValueError("Write the HTML document before publishing.") from error
-        try:
-            if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
-                raise ValueError("HTML must start with <!doctype html>.")
-        except UnicodeDecodeError as error:
-            raise ValueError("The HTML document is not valid UTF-8.") from error
-        sha256 = _sha256_bytes(html_bytes)
         manifest = {
             "id": draft["id"],
             "title": draft["title"],
@@ -433,14 +506,35 @@ class ApplicationStore:
             "updated_at": _utc_now(),
             "summary": summary,
             "keywords": keywords,
-            "entrypoint": "index.html",
-            "sha256": sha256,
+            "runtime": draft["runtime"],
         }
+        result: dict[str, Any] = {"published": True, "id": draft["id"], "runtime": draft["runtime"]}
+        if draft["runtime"] == "native":
+            manifest["template"] = draft["template"]
+            result["template"] = draft["template"]
+        else:
+            index = folder / "index.html"
+            if not _is_regular_file(index):
+                raise ValueError("Write the HTML document before publishing.")
+            try:
+                html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
+            except FileNotFoundError as error:
+                raise ValueError("Write the HTML document before publishing.") from error
+            except ValueError as error:
+                if str(error) == "The file is too large.":
+                    raise ValueError("The HTML document is too large.") from error
+                raise ValueError("Write the HTML document before publishing.") from error
+            try:
+                if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
+                    raise ValueError("HTML must start with <!doctype html>.")
+            except UnicodeDecodeError as error:
+                raise ValueError("The HTML document is not valid UTF-8.") from error
+            sha256 = _sha256_bytes(html_bytes)
+            manifest.update({"entrypoint": "index.html", "sha256": sha256})
+            result["sha256"] = sha256
         _atomic_write_json(folder / "manifest.json", manifest)
-        draft_path = folder / ".draft.json"
-        if draft_path.exists():
-            draft_path.unlink()
-        return {"published": True, "id": draft["id"], "sha256": sha256}
+        (folder / ".draft.json").unlink(missing_ok=True)
+        return result
 
     def search(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         query = payload.get("query")
@@ -458,10 +552,9 @@ class ApplicationStore:
                 entry = self._load_manifest(folder)
                 if entry is None:
                     continue
-                title_tokens = _tokenize(entry["title"])
-                keyword_tokens = set(entry["keywords"])
                 exact = normalized.casefold() == entry["request"].casefold()
-                overlap = len(query_tokens & title_tokens) * 2 + len(query_tokens & keyword_tokens)
+                overlap = len(query_tokens & _tokenize(entry["title"])) * 2
+                overlap += len(query_tokens & set(entry["keywords"]))
                 score = (10_000 if exact else 0) + overlap
                 if score <= 0:
                     continue
@@ -470,47 +563,161 @@ class ApplicationStore:
                     "title": entry["title"],
                     "summary": entry["summary"],
                     "exact": exact,
+                    "runtime": entry["runtime"],
+                    "template": entry["template"],
                     "_score": score,
                     "_updated_at": entry["updated_at"],
                 })
             except (OSError, ValueError):
                 continue
-        results.sort(key=lambda item: (-item["_score"], -_timestamp_key(item["_updated_at"]), item["id"]))
-        return [{"id": item["id"], "title": item["title"], "summary": item["summary"], "exact": item["exact"]} for item in results[:5]]
+        results.sort(key=lambda item: (
+            -item["_score"],
+            -_timestamp_key(item["_updated_at"]),
+            0 if item["runtime"] == "native" else 1,
+            item["id"],
+        ))
+        return [
+            {key: item[key] for key in ("id", "title", "summary", "exact", "runtime", "template")}
+            for item in results[:5]
+        ]
 
-    def launch(self, payload: dict[str, Any]) -> dict[str, str]:
+    def launch(self, payload: dict[str, Any]) -> dict[str, Any]:
         folder = self._published_folder(payload)
         manifest = self._load_manifest(folder)
         if manifest is None:
             raise ValueError("Publish the application before launching it.")
-        index = folder / "index.html"
+        if manifest["runtime"] == "native":
+            if manifest["template"] not in self.native_templates or self.native_host is None:
+                raise ValueError("This native application template is not available.")
+        success = False
         try:
-            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
-        except FileNotFoundError as error:
-            raise ValueError("The application document is missing.") from error
-        except ValueError as error:
-            if str(error) == "The file is too large.":
-                raise ValueError("The HTML document is too large.") from error
-            raise ValueError("The application document is missing.") from error
-        if _sha256_bytes(html_bytes) != manifest["sha256"]:
-            raise ValueError("The application content changed after publication.")
-        try:
-            if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
-                raise ValueError("HTML must start with <!doctype html>.")
-        except UnicodeDecodeError as error:
-            raise ValueError("The HTML document is not valid UTF-8.") from error
-        self.launcher(folder)
-        return {"launched": True, "id": manifest["id"], "title": manifest["title"]}
+            if self.launcher is not None:
+                success = self.launcher(folder) is not False
+            else:
+                success = self._default_launcher(folder, manifest)
+        except Exception:
+            success = False
+        result: dict[str, Any] = {
+            "launched": success,
+            "id": manifest["id"],
+            "title": manifest["title"],
+            "runtime": manifest["runtime"],
+        }
+        if manifest["runtime"] == "native":
+            result["template"] = manifest["template"]
+        if not success:
+            result["reason"] = LAUNCH_FAILURE_REASON
+        return result
 
-    def _default_launcher(self, folder: Path) -> subprocess.Popen[Any]:
-        return subprocess.Popen(
-            [sys.executable, "-m", "aios.app_runner", str(folder)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-        )
+    def _default_launcher(self, folder: Path, manifest: dict[str, Any]) -> bool:
+        if os.name != "posix":
+            return False
+        if manifest["runtime"] == "native":
+            template = manifest["template"]
+            if template not in self.native_templates or template not in NATIVE_TEMPLATES or self.native_host is None:
+                return False
+        read_fd, write_fd = os.pipe()
+        process = None
+        try:
+            if manifest["runtime"] == "native":
+                command = [os.fspath(self.native_host)]
+                environment = os.environ.copy()
+                environment.update({
+                    "AIOS_APP_TEMPLATE": template,
+                    "AIOS_APP_TITLE": manifest["title"],
+                    "AIOS_APP_READY_FD": str(write_fd),
+                })
+            else:
+                command = [
+                    sys.executable,
+                    "-m",
+                    "aios.app_runner",
+                    str(folder),
+                    "--ready-fd",
+                    str(write_fd),
+                ]
+                environment = None
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+                pass_fds=(write_fd,),
+                env=environment,
+            )
+        except Exception:
+            if process is not None:
+                self._terminate_child(process)
+            os.close(read_fd)
+            return False
+        finally:
+            os.close(write_fd)
+
+        ready = False
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(read_fd, selectors.EVENT_READ)
+            deadline = time.monotonic() + self.launch_timeout
+            received = b""
+            while time.monotonic() < deadline:
+                events = selector.select(max(0, deadline - time.monotonic()))
+                if not events:
+                    break
+                chunk = os.read(read_fd, 64)
+                if not chunk:
+                    break
+                received += chunk
+                if received == b"ready\n":
+                    ready = True
+                    break
+                if not b"ready\n".startswith(received):
+                    break
+        finally:
+            selector.close()
+            os.close(read_fd)
+        if not ready:
+            self._terminate_child(process)
+            return False
+        threading.Thread(target=process.wait, name="aios-app-reaper", daemon=True).start()
+        return True
+
+    @staticmethod
+    def _terminate_child(process: subprocess.Popen[Any]) -> None:
+        group_signaled = False
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            group_signaled = True
+        except (AttributeError, OSError, ProcessLookupError):
+            pass
+        if process.poll() is not None:
+            try:
+                process.wait()
+            except Exception:
+                pass
+            return
+        if not group_signaled:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (AttributeError, OSError, ProcessLookupError):
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+            try:
+                process.wait(timeout=1)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _existing_folder(self, payload: dict[str, Any]) -> Path:
         app_id = payload.get("id")
@@ -519,123 +726,133 @@ class ApplicationStore:
         folder = self.root / app_id
         if not _is_regular_dir(folder) or folder.is_symlink():
             raise ValueError("Unknown application id.")
-        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=True)
         return folder
 
     def _draft_folder(self, payload: dict[str, Any]) -> Path:
         folder = self._existing_folder(payload)
         if not _is_regular_file(folder / ".draft.json"):
             raise ValueError("This application is no longer a draft.")
-        if _is_regular_file(folder / "manifest.json"):
+        if (folder / "manifest.json").exists():
             raise ValueError("This application is already published.")
-        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=False)
+        draft = self._load_draft(folder)
+        allowed = {".draft.json", "index.html"} if draft["runtime"] == "web" else {".draft.json"}
+        self._validate_folder_contents(folder, allowed)
         return folder
 
     def _published_folder(self, payload: dict[str, Any]) -> Path:
         folder = self._existing_folder(payload)
         if not _is_regular_file(folder / "manifest.json"):
             raise ValueError("This application is not published.")
-        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=True)
         return folder
 
     def _load_draft(self, folder: Path) -> dict[str, Any]:
-        draft_path = folder / ".draft.json"
-        if not draft_path.exists():
-            raise ValueError("This application is no longer a draft.")
         try:
-            data = _load_json(draft_path)
+            data = _load_json(folder / ".draft.json")
         except (FileNotFoundError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
             raise ValueError("Invalid draft metadata.") from error
         if not isinstance(data, dict):
             raise ValueError("Invalid draft metadata.")
-        required = {"id", "title", "request", "created_at"}
-        if set(data) != required:
+        legacy = {"id", "title", "request", "created_at"}
+        web = legacy | {"runtime"}
+        native = web | {"template"}
+        if set(data) == legacy:
+            data["runtime"] = "web"
+            data["template"] = None
+        elif set(data) == web and data.get("runtime") == "web":
+            data["template"] = None
+        elif set(data) == native and data.get("runtime") == "native" and data.get("template") in NATIVE_TEMPLATES:
+            pass
+        else:
             raise ValueError("Invalid draft metadata.")
-        if not _is_valid_id(data["id"]) or data["id"] != folder.name:
-            raise ValueError("Invalid draft metadata.")
-        if not isinstance(data["title"], str) or not (1 <= len(data["title"]) <= MAX_TITLE_LENGTH):
-            raise ValueError("Invalid draft metadata.")
-        if not isinstance(data["request"], str) or not (1 <= len(data["request"]) <= MAX_REQUEST_LENGTH):
-            raise ValueError("Invalid draft metadata.")
-        if not isinstance(data["created_at"], str) or not data["created_at"]:
-            raise ValueError("Invalid draft metadata.")
-        _timestamp_key(data["created_at"])
+        self._validate_common_metadata(data, folder, published=False)
         return data
 
     def _load_manifest(self, folder: Path) -> dict[str, Any] | None:
         manifest_path = folder / "manifest.json"
         if not manifest_path.exists():
             return None
-        self._validate_folder_contents(folder, allow_draft=True, allow_manifest=True)
-        index = folder / "index.html"
-        try:
-            html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
-        except (FileNotFoundError, ValueError) as error:
-            raise ValueError("Invalid manifest metadata.") from error
         try:
             data = _load_json(manifest_path)
         except (FileNotFoundError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
             raise ValueError("Invalid manifest metadata.") from error
         if not isinstance(data, dict):
             raise ValueError("Invalid manifest metadata.")
-        required = {"id", "title", "request", "created_at", "updated_at", "summary", "keywords", "entrypoint", "sha256"}
-        if set(data) != required:
+        base = {"id", "title", "request", "created_at", "updated_at", "summary", "keywords"}
+        legacy_web = base | {"entrypoint", "sha256"}
+        new_web = legacy_web | {"runtime"}
+        native = base | {"runtime", "template"}
+        if set(data) == legacy_web:
+            data["runtime"] = "web"
+            data["template"] = None
+        elif set(data) == new_web and data.get("runtime") == "web":
+            data["template"] = None
+        elif set(data) == native and data.get("runtime") == "native" and data.get("template") in NATIVE_TEMPLATES:
+            pass
+        else:
             raise ValueError("Invalid manifest metadata.")
-        if not _is_valid_id(data["id"]) or data["id"] != folder.name:
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["title"], str) or not (1 <= len(data["title"]) <= MAX_TITLE_LENGTH):
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["request"], str) or not (1 <= len(data["request"]) <= MAX_REQUEST_LENGTH):
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["created_at"], str) or not data["created_at"]:
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["updated_at"], str) or not data["updated_at"]:
-            raise ValueError("Invalid manifest metadata.")
-        _timestamp_key(data["created_at"])
-        _timestamp_key(data["updated_at"])
-        if not isinstance(data["summary"], str) or not (1 <= len(data["summary"]) <= MAX_SUMMARY_LENGTH):
-            raise ValueError("Invalid manifest metadata.")
-        if data["entrypoint"] != "index.html":
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", data["sha256"]):
-            raise ValueError("Invalid manifest metadata.")
-        if not isinstance(data["keywords"], list) or len(data["keywords"]) > MAX_KEYWORDS:
-            raise ValueError("Invalid manifest metadata.")
-        normalized_keywords: list[str] = []
-        for keyword in data["keywords"]:
-            if not isinstance(keyword, str) or not re.fullmatch(r"[a-z0-9]+", keyword):
+        self._validate_common_metadata(data, folder, published=True)
+        if data["runtime"] == "native":
+            self._validate_folder_contents(folder, {"manifest.json"})
+            if (folder / "index.html").exists():
                 raise ValueError("Invalid manifest metadata.")
-            normalized_keywords.append(keyword)
-        if normalized_keywords != sorted(set(normalized_keywords)):
-            raise ValueError("Invalid manifest metadata.")
-        data["keywords"] = normalized_keywords
-        if _sha256_bytes(html_bytes) != data["sha256"]:
-            raise ValueError("Invalid manifest metadata.")
-        try:
-            if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
+        else:
+            self._validate_folder_contents(folder, {"index.html", "manifest.json", ".draft.json"})
+            try:
+                html_bytes = _read_regular_file_bytes(folder / "index.html", MAX_HTML_BYTES)
+            except (FileNotFoundError, ValueError) as error:
+                raise ValueError("Invalid manifest metadata.") from error
+            if data.get("entrypoint") != "index.html":
                 raise ValueError("Invalid manifest metadata.")
-        except UnicodeDecodeError as error:
-            raise ValueError("Invalid manifest metadata.") from error
+            if not isinstance(data.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", data["sha256"]):
+                raise ValueError("Invalid manifest metadata.")
+            if _sha256_bytes(html_bytes) != data["sha256"]:
+                raise ValueError("Invalid manifest metadata.")
+            try:
+                if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
+                    raise ValueError("Invalid manifest metadata.")
+            except UnicodeDecodeError as error:
+                raise ValueError("Invalid manifest metadata.") from error
         draft_path = folder / ".draft.json"
         if draft_path.exists():
-            self._load_draft(folder)
+            draft = self._load_draft(folder)
+            if any(draft[key] != data[key] for key in ("id", "title", "request", "created_at", "runtime", "template")):
+                raise ValueError("Invalid manifest metadata.")
             draft_path.unlink()
         return data
 
-    def _validate_folder_contents(self, folder: Path, *, allow_draft: bool, allow_manifest: bool) -> None:
+    @staticmethod
+    def _validate_common_metadata(data: dict[str, Any], folder: Path, *, published: bool) -> None:
+        message = "Invalid manifest metadata." if published else "Invalid draft metadata."
+        if not _is_valid_id(data.get("id")) or data["id"] != folder.name:
+            raise ValueError(message)
+        if not isinstance(data.get("title"), str) or not (1 <= len(data["title"]) <= MAX_TITLE_LENGTH):
+            raise ValueError(message)
+        if not isinstance(data.get("request"), str) or not (1 <= len(data["request"]) <= MAX_REQUEST_LENGTH):
+            raise ValueError(message)
+        if not isinstance(data.get("created_at"), str) or not data["created_at"]:
+            raise ValueError(message)
+        _timestamp_key(data["created_at"])
+        if not published:
+            return
+        if not isinstance(data.get("updated_at"), str) or not data["updated_at"]:
+            raise ValueError(message)
+        _timestamp_key(data["updated_at"])
+        if not isinstance(data.get("summary"), str) or not (1 <= len(data["summary"]) <= MAX_SUMMARY_LENGTH):
+            raise ValueError(message)
+        if not isinstance(data.get("keywords"), list) or len(data["keywords"]) > MAX_KEYWORDS:
+            raise ValueError(message)
+        keywords = data["keywords"]
+        if any(not isinstance(keyword, str) or not re.fullmatch(r"[a-z0-9]+", keyword) for keyword in keywords):
+            raise ValueError(message)
+        if keywords != sorted(set(keywords)):
+            raise ValueError(message)
+
+    @staticmethod
+    def _validate_folder_contents(folder: Path, allowed: set[str]) -> None:
         if folder.is_symlink() or not _is_regular_dir(folder):
             raise ValueError("Unexpected application files found.")
-        allowed = {"index.html"}
-        if allow_draft:
-            allowed.add(".draft.json")
-        if allow_manifest:
-            allowed.add("manifest.json")
         for entry in folder.iterdir():
-            if entry.name not in allowed:
-                raise ValueError("Unexpected application files found.")
-            if entry.is_symlink():
-                raise ValueError("Unexpected application files found.")
-            if entry.name in {"index.html", ".draft.json", "manifest.json"} and not _is_regular_file(entry):
+            if entry.name not in allowed or entry.is_symlink() or not _is_regular_file(entry):
                 raise ValueError("Unexpected application files found.")
 
 

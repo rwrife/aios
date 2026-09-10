@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest import mock
 
-from aios.applications import APPLICATION_TOOL
+from aios.applications import APPLICATION_TOOL, application_tool
 from aios.browser import TOOL as BROWSER_TOOL
 import aios.toolhost as toolhost
 from aios.toolhost import (
@@ -246,6 +246,29 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(parameters["properties"]["element"]["description"], "Element ID from the most recent snapshot")
         self.assertEqual(parameters["properties"]["text"]["description"], "Text to type, or Enter/Tab/Escape for press")
         self.assertEqual(parameters["properties"]["tab"]["description"], "Handle returned by tabs")
+
+    def test_application_definition_reflects_native_capability_and_dispatches(self):
+        class NativeApplications(FakeApplications):
+            def definition(self):
+                return application_tool(("calculator",))
+
+        applications = NativeApplications()
+        host = ToolHost(browser=FakeBrowser(), applications=applications, mcp=FakeMcp())
+        definitions = host.definitions()["tools"]
+        self.assertEqual([item["function"]["name"] for item in definitions[:2]], ["browser", "application"])
+        properties = definitions[1]["function"]["parameters"]["properties"]
+        self.assertEqual(properties["runtime"]["enum"], ["web", "native"])
+        self.assertEqual(properties["template"]["enum"], ["calculator"])
+        result = host.call("application", {
+            "action": "create",
+            "title": "Calculator",
+            "request": "Build calculator",
+            "runtime": "native",
+            "template": "calculator",
+        })
+        self.assertEqual(result, {"id": "draft-1"})
+        self.assertEqual(applications.calls[-1][0], "create")
+        self.assertEqual(applications.calls[-1][1]["template"], "calculator")
 
     def test_browser_application_and_mcp_dispatch_requires_advertisement(self):
         browser = FakeBrowser(result={"snapshot": True})
