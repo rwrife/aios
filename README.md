@@ -20,9 +20,9 @@ bash scripts/build.sh
 On Windows, use PowerShell with WSL2 and a working Linux Docker daemon:
 
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 # Choose a different WSL distribution:
-.\build.ps1 -Distro Debian
+.\scripts\build.ps1 -Distro Debian
 ```
 
 Build caches use the Docker volume `aios-build-cache`; images are written to

@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$rootDir = $PSScriptRoot
+$rootDir = Split-Path -Parent $PSScriptRoot
 
 function Convert-ToWslPath([string]$Path) {
     $absolute = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
