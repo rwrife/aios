@@ -40,10 +40,11 @@ repeatable workflow, not a byte-reproducible release claim. A release manifest
 must record exact package versions. Docker uses a named Linux cache volume to
 avoid Windows bind-mount metadata overhead.
 
-The live root uses a tmpfs ceiling of 75% of RAM. The default development and
-voice packages occupy roughly 2 GiB, exceeding Alpine's default half-RAM limit
-on a 4 GiB guest. The ceiling does not reserve memory up front and does not apply
-to installed ext4 systems. Large models should use installed or mounted storage.
+The live root uses a tmpfs ceiling of 90% of RAM. The development packages,
+voice stack, and bundled Qwen starter exceed Alpine's default half-RAM limit and
+the former 75% ceiling on a 4 GiB guest. The ceiling does not reserve memory up
+front and does not apply to installed ext4 systems. Larger models should use
+installed or mounted storage.
 
 Models: the registry records source, quantization source, license, immutable
 revision URL, length, and checksum. Interrupted downloads restart from zero;
