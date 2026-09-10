@@ -11,9 +11,14 @@ does not run in the experimental session-broker desktop.
 
 The account step can create a local name/PIN profile with an optional camera
 photo, and can separately connect a ChatGPT service account.
-Camera checks are opt-in previews only: this build has no supported biometric
-enrollment service, so face login is explicitly unavailable even with a camera.
-The existing experimental recognition adapters are not an enrollment flow.
+Camera previews and account recognition are separate opt-ins. Recognition is
+disabled by default, requires a stable local `/dev/v4l/by-id/*-video-indexN`
+device plus an administrator-provided, checksum-verified and Brio-calibrated
+YuNet/SFace manifest, and never replaces the account PIN. Face samples are
+captured only during explicit enrollment or short background bursts; raw frames
+are discarded after local inference. OpenCV and encrypted-template support are
+included in the optional identity image; installed default systems must add
+those local runtime dependencies before enabling recognition.
 The Qwen3 0.6B starter reuses the bundled copy or downloads 462 MiB when missing;
 the [local model catalog](local-models.md) also offers three stronger Qwen3
 sizes with RAM and free-disk checks. Optional local speech downloads 75 MiB. Nothing downloads merely by opening or
@@ -52,8 +57,15 @@ individual applications.
 - **Sound:** opens PulseAudio Volume Control for input/output devices, volume,
   mute and per-application audio. Set fallback devices for subsequent voice use.
 - **Camera:** lists connected webcams and starts a local preview only on request.
-  Leaving the section or closing Settings stops capture. No pictures are saved
-  or sent to a model. Video chat and camera attachments remain future work.
+  Leaving the section or closing Settings stops preview capture. Optional account
+  suggestions can be enabled with a stable local camera path after an account
+  completes separate PIN-verified face enrollment. Suggestions expire after five
+  seconds, pause for profile-photo capture and secure input, and always open the
+  normal PIN prompt. Disabling recognition stops camera capture while preserving
+  enrolled face templates. **Purge facial recognition data** permanently deletes
+  those templates without deleting accounts, profile photos, or PINs. No raw
+  recognition pictures are saved or sent to a model. Video chat and camera
+  attachments remain future work.
 - **Network & Wi-Fi:** opens NetworkManager's nmtui. Activate a connection joins
   Wi-Fi or selects Ethernet; Edit a connection configures addresses and DNS.
   NetworkManager replaces dhcpcd as the default interface manager. Its internal

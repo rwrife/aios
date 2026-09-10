@@ -19,6 +19,8 @@ TestCase {
         signal enrollmentCompleted(string recovery)
         signal unlocked()
         signal photoCaptured(string preview, string rgb)
+        signal cameraReleaseRequested()
+        function setCameraPreviewActive(active) {}
         function setSecureInput(active) {}
         function enrollProfile(name, pin, consent, photo) {}
         function enroll(name, pin, consent) {}
@@ -102,6 +104,21 @@ TestCase {
         verify(create.enabled)
         mouseClick(create)
         tryCompare(findChild(wizard, "profileSubmit"), "visible", true)
+    }
+    function test_camera_preview_uses_bounded_format_without_runtime_enums() {
+        var selected = wizard.previewFormat({videoFormats: [
+            {resolution: {width: 640, height: 360}, mode: "raw"},
+            {resolution: {width: 1920, height: 1080}, mode: "large"},
+            {resolution: {width: 640, height: 360}, mode: "compressed"}
+        ]})
+        compare(selected.resolution.width, 640)
+        compare(selected.resolution.height, 360)
+        compare(selected.mode, "compressed")
+        wizard.moveTo(3)
+        wait(50)
+        var preview = findChild(wizard, "cameraPreview")
+        verify(Math.abs(preview.width / preview.height - 16 / 9) < 0.02)
+        verify(Math.abs(preview.width / preview.parent.width - 0.75) < 0.02)
     }
     function test_close_does_not_cancel_unrelated_work() {
         backend.busy = true

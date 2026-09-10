@@ -24,7 +24,8 @@ try {
 
     $buildScript = Convert-ToWslPath (Join-Path $rootDir 'scripts\build.sh')
     $wslArgs = @('-d', $Distro, '--exec', 'env')
-    foreach ($name in @('ARCH', 'RELEASE_TAG', 'RUNTIME', 'AIOS_IDENTITY_BUILD', 'AIOS_BUILDER_IMAGE')) {
+    foreach ($name in @('ARCH', 'RELEASE_TAG', 'RUNTIME', 'AIOS_IDENTITY_BUILD', 'AIOS_BUILDER_IMAGE',
+            'AIOS_BUILD_CACHE_NAMESPACE')) {
         $value = [Environment]::GetEnvironmentVariable($name)
         if ($value) {
             $wslArgs += "$name=$value"

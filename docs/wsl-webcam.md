@@ -187,30 +187,35 @@ Use `scripts/run.ps1` (Windows/WSL) or `scripts/run.sh` (Linux) to run the
 entire OS in one resizable window. Guest apps stay inside its desktop. Building
 the image in Docker does not mean running the desktop in a container.
 
-After attachment and a successful bounded WSL capture, close camera probes and
-look up the selected camera with `lsusb`. Set `AIOS_VM_CAMERA_BUS` and
-`AIOS_VM_CAMERA_ADDR` to its Linux bus and device numbers, without leading zeros
-(these are not the Windows usbipd bus ID). Both must be provided. For example,
-for a camera listed as Bus 002 Device 003:
+After a successful bounded WSL capture, close camera probes and pass the
+camera's Windows USB/IP bus ID to the launcher:
 
 ```powershell
-$env:AIOS_VM_CAMERA_BUS = '2'
-$env:AIOS_VM_CAMERA_ADDR = '3'
-.\scripts\run.ps1
+usbipd list
+.\scripts\run.ps1 -CameraBusId <BUSID>
 ```
+
+The launcher attaches that exact shared device if needed, resolves its current
+Linux USB bus/device numbers, and applies a temporary ACL only to the selected
+`/dev/bus/usb/BBB/DDD` node. If exactly one stable
+`/dev/v4l/by-id/*-video-index0` camera is already attached, `run.ps1` also
+discovers it automatically without `-CameraBusId`. Use the explicit form when
+multiple cameras are attached or after WSL restarts and USB reconnects.
 
 The launcher passes only that device through a virtual USB 3 controller using
 [QEMU USB passthrough](https://www.qemu.org/docs/master/system/devices/usb.html).
-It checks read/write access to that specific `/dev/bus/usb/BBB/DDD` node before
-starting. If access is missing, grant the development user access to that node
-with a temporary ACL or a narrowly scoped udev rule; do not run the entire VM as
-root or make every USB device world-writable. Recheck device numbers after every
-reattachment. The native Windows fallback does not accept these Linux selectors.
+It checks read/write access to that specific node before starting. Do not run the
+entire VM as root or make every USB device world-writable. The native Windows
+fallback does not accept USB/IP camera selection.
+
+Advanced callers may still set both `AIOS_VM_CAMERA_BUS` and
+`AIOS_VM_CAMERA_ADDR` to explicit Linux values. Supplying only one is rejected.
 
 Inside AIOS, verify device enumeration and run the bounded camera probe again.
 A working WSL capture alone does not verify the second hop into the guest. Remove
-the two environment variables to start without camera passthrough. Actual guest
-capture remains a hardware validation gate until frames have been received.
+explicit selectors and detach the camera from WSL to start without passthrough.
+Actual guest capture remains a hardware validation gate until frames have been
+received.
 
 Validated on 2026-09-09: the default desktop ISO built and booted in the windowed
 WSL QEMU launcher, with the ordinary-user `aios-shell` running. The Dell WB7022

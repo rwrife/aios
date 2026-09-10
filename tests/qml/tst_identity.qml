@@ -25,13 +25,21 @@ TestCase {
         property bool greetingOnly: false
         property var profile: ({})
         property var profiles: [{id: "test-id", name: "Test profile"}]
+        property string recognitionState: "ready"
+        property var recognitionSuggestion: ({})
         function listProfiles() {}
+        function requestRecognition() {}
+        function setCameraPreviewActive(active) {}
+        function setRecognitionEnabled(enabled) {}
+        function purgeRecognitionData() {}
+        function recognitionConfigurationChanged(enabled) {}
         function setSecureInput(active) { secureInput = active }
         signal privacyLost()
         signal documentLoaded(string content)
         signal documentSaved()
         signal enrollmentCompleted(string recovery)
         signal photoCaptured(string preview, string rgb)
+        signal cameraReleaseRequested()
         signal unlocked()
         signal accountDeleted(string id)
         property int deletions: 0
@@ -42,6 +50,14 @@ TestCase {
         property int signins: 0
         property int photosTaken: 0
         function takeProfilePhoto() { photosTaken++ }
+        property int recognitionEnrollments: 0
+        signal recognitionEnrollmentCompleted(string id)
+        function enrollRecognition(id, pin, consent) {
+            if (id === "test-id" && pin === "1234" && consent) {
+                recognitionEnrollments++
+                recognitionEnrollmentCompleted(id)
+            }
+        }
         function unlock(name, pin) { if (name === "Test profile" && pin === "1234") { signins++; profile = {name: name}; unlocked() } }
         property int recoveries: 0
         function recover(name, secret, pin) {
@@ -170,6 +186,45 @@ TestCase {
         compare(pin.text, "")
         control.privacyLost()
         bubble.destroy()
+    }
+    function test_recognition_suggestion_requires_pin_confirmation() {
+        control.profile = {}
+        control.recognitionSuggestion = {id: "test-id", name: "Test profile", photo: "", confidence: "candidate"}
+        var bubble = bubbleComponent.createObject(test, {control: control})
+        verify(bubble.greeting.indexOf("Confirm with your PIN") >= 0)
+        bubble.openPicker()
+        var suggestion = findChild(bubble, "recognitionSuggestion")
+        verify(suggestion.visible)
+        suggestion.triggered()
+        var form = findChild(bubble, "bubbleEnrollment")
+        tryCompare(form, "opened", true)
+        compare(findChild(bubble, "profileName").text, "Test profile")
+        compare(findChild(bubble, "enrollmentPin").text, "")
+        form.close()
+        bubble.destroy()
+        control.recognitionSuggestion = {}
+    }
+    function test_face_enrollment_requires_pin_and_explicit_consent() {
+        control.greetingOnly = true
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 620, height: 440})
+        waitForRendering(panel)
+        mouseClick(findChild(panel, "enrollRecognition"))
+        var prompt = findChild(panel, "faceEnrollmentDialog")
+        tryCompare(prompt, "opened", true); waitForRendering(prompt.contentItem)
+        var pin = findChild(prompt, "recognitionPin")
+        var consent = findChild(prompt, "recognitionConsent")
+        var confirm = findChild(prompt, "confirmRecognitionEnrollment")
+        pin.text = "1234"
+        compare(confirm.enabled, false)
+        consent.checked = true
+        compare(confirm.enabled, true)
+        var before = control.recognitionEnrollments
+        mouseClick(confirm)
+        compare(control.recognitionEnrollments, before + 1)
+        tryCompare(prompt, "opened", false)
+        compare(pin.text, "")
+        panel.destroy()
+        control.greetingOnly = false
     }
     function test_recovery_submits_and_clears_both_secrets() {
         var surface = enrollmentComponent.createObject(test, {control: control, recovering: true})

@@ -20,7 +20,8 @@ class ChatProfileTests(unittest.TestCase):
             with patch('aios.chat_profiles.time.time', return_value=103):
                 with self.assertRaises(ValueError): dispatch({**request, 'confirmed': False}, root)
                 self.assertEqual(dispatch(request, root), {'deleted': alice})
-            self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'], [{'id': bob, 'name': 'Bob'}])
+            self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'],
+                             [{'id': bob, 'name': 'Bob', 'photo': ''}])
             with self.assertRaises(ValueError): dispatch(request, root)
 
     def test_create_verify_and_reject_wrong_pin_without_returning_verifier(self):
@@ -28,7 +29,9 @@ class ChatProfileTests(unittest.TestCase):
             root = Path(directory)
             created = dispatch({'action': 'enroll_manual', 'name': 'Alice', 'pin': '1234', 'consent': True}, root)
             self.assertEqual(created['profile']['name'], 'Alice')
-            self.assertNotIn('1234', (root / 'profiles.json').read_text())
+            stored = json.loads((root / 'profiles.json').read_text())[created['profile']['id']]
+            self.assertNotEqual(stored['pin']['digest'], '1234')
+            self.assertNotEqual(stored['pin']['salt'], '1234')
             self.assertNotIn('pin', json.dumps(created))
             self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'][0]['name'], 'Alice')
             good = dispatch({'action': 'activate_verified', 'owner': 'alice', 'pin': '1234'}, root)
