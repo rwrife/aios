@@ -20,7 +20,9 @@ space before downloading or selecting a model. It reserves an extra 512 MiB of
 disk space for new downloads. If RAM detection is unavailable, the picker says
 so and allows a manual choice. Close other apps if memory is tight; refresh
 after changing resources. In a VM, increase `AIOS_VM_MEM_MB` before booting;
-host RAM does not count as guest RAM. Live-session downloads may be temporary.
+host RAM does not count as guest RAM. The launchers default to 16 GiB because
+live-session storage is RAM-backed; downloads are temporary until AIOS is
+installed.
 
 All entries use Apache-2.0 licensed Qwen models. Qwen's model cards document tool
 capabilities: [0.6B](https://huggingface.co/Qwen/Qwen3-0.6B),
