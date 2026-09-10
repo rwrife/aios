@@ -556,13 +556,33 @@ private:
 
     void handleRequest(QLocalSocket *socket, const QJsonObject &request)
     {
-        if (m_pending) {
-            respond(socket, QJsonObject{{"error", "Another browser operation is still running."}});
-            return;
-        }
         const QString action = request.value("action").toString();
         if (!kActions.contains(action)) {
             respond(socket, QJsonObject{{"error", "Unknown browser action."}});
+            return;
+        }
+        if (action == "close") {
+            if (request.size() != 1) {
+                respond(socket, QJsonObject{{"error", "Browser request contains unsupported fields."}});
+                return;
+            }
+            if (m_pending) {
+                auto pending = m_pending;
+                m_pending.clear();
+                respond(pending, QJsonObject{{"error", "Browser closed."}});
+            }
+            ++m_operation;
+            m_snapshotInFlight = false;
+            m_actionInFlight = false;
+            m_operationTimer.stop();
+            clearRegistration();
+            m_server.close();
+            respond(socket, QJsonObject{{"closed", true}});
+            QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+            return;
+        }
+        if (m_pending) {
+            respond(socket, QJsonObject{{"error", "Another browser operation is still running."}});
             return;
         }
         QSet<QString> allowedFields{"action"};
@@ -581,11 +601,6 @@ private:
                 respond(socket, QJsonObject{{"error", "Browser request contains unsupported fields."}});
                 return;
             }
-        }
-        if (action == "close") {
-            respond(socket, QJsonObject{{"closed", true}});
-            QTimer::singleShot(0, qApp, &QCoreApplication::quit);
-            return;
         }
         if (action == "open" || action == "navigate") {
             if (!request.value("url").isString()) {
@@ -606,9 +621,10 @@ private:
             raise();
             activateWindow();
             beginPending(socket);
+            const quint64 operation = m_operation;
             m_view->setUrl(url);
-            QTimer::singleShot(250, this, [this] {
-                if (m_pending && !m_loading)
+            QTimer::singleShot(250, this, [this, operation] {
+                if (m_pending && operation == m_operation && !m_loading)
                     snapshotPending();
             });
             return;
@@ -622,14 +638,15 @@ private:
             snapshotPending();
         } else if (action == "back" || action == "forward" || action == "reload") {
             beginPending(socket);
+            const quint64 operation = m_operation;
             if (action == "back")
                 m_view->back();
             else if (action == "forward")
                 m_view->forward();
             else
                 m_view->reload();
-            QTimer::singleShot(250, this, [this] {
-                if (m_pending && !m_loading)
+            QTimer::singleShot(250, this, [this, operation] {
+                if (m_pending && operation == m_operation && !m_loading)
                     snapshotPending();
             });
         } else if (action == "stop") {
@@ -764,6 +781,7 @@ private:
 
     void runElementAction(const QString &action, const QJsonObject &request)
     {
+        const quint64 operation = m_operation;
         QString script;
         if (action == "scroll") {
             if (request.contains("direction") && !request.value("direction").isString()) {
@@ -854,8 +872,8 @@ private:
             }
         }
         m_actionInFlight = true;
-        m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this](const QVariant &result) {
-            if (!m_pending)
+        m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this, operation](const QVariant &result) {
+            if (!m_pending || operation != m_operation)
                 return;
             m_actionInFlight = false;
             const auto object = jsonValue(result).toObject();
@@ -863,8 +881,8 @@ private:
                 failPending(object.value("error").toString());
                 return;
             }
-            QTimer::singleShot(250, this, [this] {
-                if (m_pending && !m_loading)
+            QTimer::singleShot(250, this, [this, operation] {
+                if (m_pending && operation == m_operation && !m_loading)
                     snapshotPending();
             });
         });
