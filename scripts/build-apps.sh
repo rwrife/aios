@@ -4,7 +4,8 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$ROOT/distro/alpine/build.env"
 BUILD=${BUILD_DIR:-$ROOT/distro/alpine/.work/apps}
 DEST=${DESTDIR:-$ROOT/distro/alpine/.work/stage}
-mkdir -p "$BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
+SHELL_BUILD=${AIOS_SHELL_BUILD_DIR:-$BUILD/shell}
+mkdir -p "$BUILD" "$SHELL_BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
 python3 "$ROOT/scripts/stage-codex.py" "$BUILD" "$DEST"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
 git config --global --add safe.directory "$BUILD/llama"
@@ -15,12 +16,12 @@ case "${AIOS_IDENTITY_BUILD:-0}" in
 esac
 AIOS_COMMIT="${AIOS_COMMIT:-$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
 AIOS_BUILD_NUMBER="${AIOS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-$(date -u +%Y%m%d.%H%M)}}"
-cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja \
+cmake -S "$ROOT/apps/shell" -B "$SHELL_BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DAIOS_EMBEDDED_DISPLAY="$embedded_display" \
   -DAIOS_COMMIT="$AIOS_COMMIT" -DAIOS_BUILD_NUMBER="$AIOS_BUILD_NUMBER"
-cmake --build "$BUILD/shell" -j "${JOBS:-4}"
-DESTDIR="$DEST" cmake --install "$BUILD/shell"
+cmake --build "$SHELL_BUILD" -j "${JOBS:-4}"
+DESTDIR="$DEST" cmake --install "$SHELL_BUILD"
 cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"
 if [ ! -d "$BUILD/llama/.git" ]; then
   git init "$BUILD/llama"
