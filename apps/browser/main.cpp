@@ -31,7 +31,6 @@
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFullScreenRequest>
 #include <QWebEngineHistory>
-#include <QWebEngineLoadingInfo>
 #include <QWebEnginePage>
 #include <QWebEnginePermission>
 #include <QWebEngineProfile>
@@ -447,6 +446,8 @@ private:
             m_progress->setValue(0);
             m_progress->show();
             updateNavigation();
+            if (m_pending && !m_actionInFlight && m_navigationOperation == m_operation)
+                m_navigationStarted = true;
         });
         connect(m_view, &QWebEngineView::loadProgress, m_progress, &QProgressBar::setValue);
         connect(m_view, &QWebEngineView::loadFinished, this, [this](bool) {
@@ -454,19 +455,9 @@ private:
             m_stop->setEnabled(false);
             m_progress->hide();
             updateNavigation();
-        });
-        connect(m_page, &QWebEnginePage::loadingChanged, this,
-                [this](const QWebEngineLoadingInfo &info) {
-            if (!m_pending || m_actionInFlight || m_navigationOperation != m_operation)
-                return;
-            if (info.status() == QWebEngineLoadingInfo::LoadStartedStatus) {
-                if (allowedUrl(info.url()) || allowedUrl(m_page->requestedUrl()))
-                    m_navigationStarted = true;
-                return;
-            }
-            if (m_navigationStarted) {
+            if (m_pending && !m_actionInFlight
+                    && m_navigationOperation == m_operation && m_navigationStarted)
                 snapshotPending();
-            }
         });
         connect(m_page, &RestrictedPage::blocked, this, [this](const QString &message) {
             if (m_pending)
