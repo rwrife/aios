@@ -6,6 +6,14 @@ Baseline reviewed: `origin/main` at `7789e0e`.
 
 ## 1. Intended experience
 
+The webcam is optional. When no webcam is connected, the expected way to identify
+users is the normal manual authentication flow: open the account bubble, select
+an existing account and enter its PIN/passphrase, or create an account through
+the native account UI. This is a supported primary experience, not an incomplete
+setup or error condition. It must work without camera hardware, face enrollment,
+recognition models or biometric consent. The same manual flow remains available
+when camera use is disabled or unavailable.
+
 With ambient camera use enabled, the idle desktop watches locally for a person
 who stays near the computer. Passing through the picture does not trigger a
 greeting. A sustained unknown visitor makes the chat orb brighten. Clicking or
@@ -386,7 +394,7 @@ existing real Linux and display-isolation suites remain separate gates.
 | Disk full, power loss, failed profile allocation | Existing accounts usable; incomplete association never committed to wrong owner |
 | Reference photo retaken/canceled/sent | Only selected photo sent after Send; no gallery reuse; correct history/owner binding |
 | Model lacks vision or remote request fails | Clear recoverable status; no false “image seen” claim or duplicate send |
-| No camera, opt-out, closed cover, inaccessible device | Manual guest/PIN flows remain functional |
+| No camera, opt-out, closed cover, inaccessible device | Normal manual account selection, PIN/passphrase authentication, account creation and guest use work without biometric prerequisites; no camera-required setup or repeated missing-camera prompts |
 
 Before evaluation, freeze numerical release criteria and the test protocol in a
 local calibration report: false accept/reject bounds, confidence intervals,
@@ -425,5 +433,9 @@ quiet idle detection; distinct unknown/known invitations; consented account-boun
 sampling; interaction-triggered Low access to the correct private context;
 per-chat PIN Full access; reliable departure locking; bounded verified learning;
 and a working preview-and-send camera attachment to a vision-capable model.
+It also means a camera-free installation supports normal manual identification
+and authentication end to end, including account creation, selection, PIN-based
+personal access and recovery. Camera presence or recognition enrollment must
+never be a prerequisite for those flows.
 All privacy, isolation, replay, retention and hardware gates above must have
 recorded results. This documentation PR implements none of those runtime changes.
