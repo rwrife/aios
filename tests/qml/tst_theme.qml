@@ -29,6 +29,35 @@ TestCase {
         }
     }
     Component { id: settingsComponent; SettingsWindow {} }
+    Component {
+        id: borderComponent
+        Rectangle {
+            width: 96; height: 80
+            color: borderTheme.night
+            property alias frame: outline
+            property alias theme: borderTheme
+            Theme { id: borderTheme }
+            WindowBorder { id: outline; theme: borderTheme }
+        }
+    }
+    function test_window_border_matches_rounded_surface_data() {
+        return [{tag: "Ocean", theme: "blue"}, {tag: "Sage", theme: "sage"}]
+    }
+    function test_window_border_matches_rounded_surface(data) {
+        var surface = createTemporaryObject(borderComponent, test.parent)
+        surface.theme.selected = data.theme
+        verify(waitForRendering(surface))
+        compare(surface.frame.radius, surface.theme.windowRadius)
+        compare(surface.frame.border.width, 1)
+        compare(surface.frame.border.color, surface.theme.waveAlpha(0.5))
+        var image = grabImage(surface)
+        var background = String(surface.color)
+        compare(String(image.pixel(0, 0)), background)
+        compare(String(image.pixel(image.width - 1, 0)), background)
+        compare(String(image.pixel(0, image.height - 1)), background)
+        compare(String(image.pixel(image.width - 1, image.height - 1)), background)
+        verify(String(image.pixel(image.width / 2, 0)) !== background)
+    }
     function test_setup_action_keeps_full_label_data() {
         return [{tag: "default", width: 820}, {tag: "minimum", width: 540}]
     }
