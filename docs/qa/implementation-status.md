@@ -88,7 +88,9 @@ python3 scripts/test-boot.py path/to/aios.iso
 python3 scripts/test-boot.py path/to/aios.iso --uefi /usr/share/OVMF/OVMF_CODE_4M.fd
 ```
 
-The boot checks use disposable VMs with 4 GiB RAM and no host-disk passthrough.
+Current boot checks use disposable VMs with 8 GiB RAM, four CPUs and no
+host-disk passthrough. Earlier checkpoints above record their historical 4 GiB
+results.
 The manual GitHub image workflow runs both firmware checks before uploading
 the ISO, checksums, package manifest and source pins.
 

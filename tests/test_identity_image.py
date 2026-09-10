@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'posix', 'Alpine image generation requires Linux')
 class IdentityImageTests(unittest.TestCase):
-    def test_live_profile_allows_qwen_image_to_fit_four_gib_guest(self):
+    def test_live_profile_and_boot_gate_match_current_capacity(self):
         result = subprocess.run(
             ['sh', '-c',
              'profile_standard() { :; }; . "$1"; profile_aios; printf "%s" "$kernel_cmdline"',
@@ -31,7 +31,11 @@ class IdentityImageTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertIn('rootflags=size=90%', result.stdout)
+        self.assertIn('rootflags=size=75%', result.stdout)
+        workflow = (ROOT / '.github/workflows/build-iso.yml').read_text()
+        self.assertEqual(workflow.count('--memory-mb 8192'), 2)
+        self.assertEqual(workflow.count('--cpus 4'), 2)
+        self.assertEqual(workflow.count('--timeout 900'), 2)
 
     def test_optional_world_is_in_overlay_and_package_profile(self):
         for enabled in (False, True):
