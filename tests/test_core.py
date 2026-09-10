@@ -63,10 +63,17 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(config["mode"], "remote")
             self.assertEqual(config["model_path"], "")
 
-    def test_background_motion_is_opt_in_and_saved_choice_wins(self):
-        self.assertTrue(core.load_config()["reduced_motion"])
+    def test_background_motion_default_uses_system_capacity_and_saved_choice_wins(self):
+        gib = 1024 ** 3
+        with patch.object(core.os, "cpu_count", return_value=2), patch.object(core, "total_memory_bytes", return_value=4 * gib):
+            self.assertFalse(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=1), patch.object(core, "total_memory_bytes", return_value=4 * gib):
+            self.assertTrue(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=2), patch.object(core, "total_memory_bytes", return_value=4 * gib - 1):
+            self.assertTrue(core.load_config()["reduced_motion"])
         core.save_config({"reduced_motion": False})
-        self.assertFalse(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=1), patch.object(core, "total_memory_bytes", return_value=0):
+            self.assertFalse(core.load_config()["reduced_motion"])
 
     def test_config_preserves_key_and_rejects_insecure_remote(self):
         core.save_config({"mode": "remote", "url": "https://example.com/v1", "api_key": "private"})

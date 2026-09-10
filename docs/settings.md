@@ -22,9 +22,11 @@ advancing through the wizard. Network setup opens the existing connection tool.
 Appearance offers eight saved theme colors: Ocean (default), Lagoon, Sage,
 Amber, Copper, Rose, Dusk, and Slate. A selection immediately updates the AIOS
 background, wave crests and fades, launcher, and open chat/settings panels.
-Text stays light for contrast. The existing reduced-motion setting remains
-independent. Installed sessions retain the selection after login; live-session
-preferences remain temporary like other live settings.
+Text stays light for contrast. Background motion defaults on when the system has
+at least two CPU cores and 4 GiB of RAM, and defaults off on smaller systems.
+The saved reduced-motion choice overrides this detection. Installed sessions
+retain the selection after login; live-session preferences remain temporary like
+other live settings.
 
 Open the sliders icon beside Terminal and Power. Settings is a single reusable
 window; opening it again raises the existing panel. Chat continues in its own

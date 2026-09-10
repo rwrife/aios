@@ -15,6 +15,8 @@ THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "sl
 SAFE_AGENT_KEY_ERROR = "Choose a valid agent API key."
 SAFE_AGENT_KEY_CONFIG_ERROR = "The agent API key configuration is invalid."
 SAFE_REQUEST_VALUE_ERROR = "The model request could not be constructed safely."
+MOTION_MIN_CPU_CORES = 2
+MOTION_MIN_MEMORY_BYTES = 4 * 1024 ** 3
 
 
 def config_dir():
@@ -43,9 +45,20 @@ def write_json(path, value):
     path.chmod(0o600)
 
 
+def total_memory_bytes():
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
+def motion_enabled_by_default():
+    return (os.cpu_count() or 0) >= MOTION_MIN_CPU_CORES and total_memory_bytes() >= MOTION_MIN_MEMORY_BYTES
+
+
 def load_config():
     defaults = {"mode": "local", "url": "http://127.0.0.1:8080/v1", "model": "local",
-                "model_path": "", "api_key": "", "subscription_model": "", "reduced_motion": True, "theme_color": "blue",
+                "model_path": "", "api_key": "", "subscription_model": "", "theme_color": "blue",
                 "agent_mode": "current", "agent_url": "", "agent_model": "", "agent_api_key": "",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
@@ -53,6 +66,7 @@ def load_config():
     path = config_dir() / "config.json"
     if path.exists():
         defaults.update(json.loads(path.read_text()))
+    defaults.setdefault("reduced_motion", not motion_enabled_by_default())
     if defaults["mode"] == "local" and not defaults["model_path"] and BUNDLED_MODEL.is_file():
         defaults["model_path"] = str(BUNDLED_MODEL)
     return defaults
