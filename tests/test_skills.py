@@ -255,6 +255,11 @@ class SkillsTests(unittest.TestCase):
         self.assertIn("need a calculator", skill.triggers)
         self.assertNotIn("Compatibility:", skill.instructions)
         self.assertIn("Search first for an existing cached app", skill.instructions)
+        self.assertIn("Inspect the advertised `application` tool schema", skill.instructions)
+        self.assertIn("trusted native `calculator` template", skill.instructions)
+        self.assertIn("self-contained `index.html`", skill.instructions)
+        self.assertIn("Do not call `read` or `write`", skill.instructions)
+        self.assertIn("Do not rebuild, re-publish, or retry", skill.instructions)
 
 
 if __name__ == "__main__":

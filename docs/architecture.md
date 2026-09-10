@@ -20,11 +20,20 @@ OpenAI-compatible service. There is no silent paid fallback. The ChatGPT adapter
 supplies the same validated registry as dynamic tools while keeping Codex host
 tools disabled.
 
-The application tool stores single-file offline apps in the user's XDG data
-directory. Publication records a digest and searchable manifest. Launch
-revalidates both, serves a sandboxed wrapper and app over loopback, and starts
-Chromium app mode with a temporary profile and restrictive CSP. The application
-builder searches this cache before creating anything.
+The application tool stores cached apps in the user's XDG data directory and
+derives its model-facing schema from runtime capabilities. If the executable
+`aios-app-host` is installed, the schema advertises trusted native templates;
+calculator is currently the only one. Native entries are manifest-only and
+select precompiled Qt code—the model never writes or compiles C++ or QML. Their
+launch handshake completes after the first Qt frame is presented.
+
+Unsupported app types and systems without the native host use the existing web
+fallback. Web entries contain one offline `index.html` plus a searchable
+manifest and digest. Launch revalidates both, serves a sandboxed wrapper and app
+over loopback, starts Chromium app mode with a temporary profile and restrictive
+CSP, and waits for the first `/app` request. A failed readiness handshake returns
+`launched: false`. The application builder always searches before creating and
+cannot create arbitrary native or backend applications.
 
 The CLI uses the same Python backend for configuration and streaming. The local
 llama-server runs as the desktop user, is bound to loopback, and is owned by the

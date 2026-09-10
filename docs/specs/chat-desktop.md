@@ -14,9 +14,15 @@ Chat supports a local GGUF model through llama.cpp or a remote OpenAI-compatible
 HTTPS endpoint. Tool-capable chat can discover Agent Skills, use built-in
 browser/application tools, and call allowlisted stdio MCP tools. Requests such
 as "I need a calculator" activate the application builder, search the persistent
-app cache first, then build and launch one sandboxed offline `index.html` only
-when reuse is not suitable. Skills and MCP servers are installed/configured in
-the user's XDG directories and remain ephemeral in an unpersisted live session.
+app cache first, then prefer the advertised trusted, compiled Qt calculator
+template when `aios-app-host` is available. Native cache entries are
+manifest-only, and the model never generates or compiles C++ or QML. If the
+request has no advertised native template, the builder creates one sandboxed
+offline `index.html` instead. Native launch is verified after its first frame;
+web launch is verified after the first `/app` request. A failed handshake returns
+`launched: false`, which must not be reported as success. Skills and MCP servers
+are installed/configured in the user's XDG directories and remain ephemeral in
+an unpersisted live session.
 
 Replies stream as plain text and can be stopped. Only validated structured calls
 to tools advertised for that turn execute; prose, code blocks, JSON-looking text,

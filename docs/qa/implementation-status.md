@@ -224,34 +224,33 @@ This checkpoint does not claim a new ISO or interactive VM validation.
 ## Agentic tools checkpoint (2026-09-09)
 
 Agent Skills, the shared per-chat tool host, allowlisted stdio MCP tools, Agent
-tasks provider routing, and the cached single-file application builder are now
+tasks provider routing, and the cached native/web application builder are now
 covered by backend integration tests and user/architecture documentation.
 
 The new deterministic end-to-end test starts a real worker subprocess, agent
 loop, AF_UNIX ToolHost and ApplicationStore, plus a loopback OpenAI-compatible
 streaming server. It copies the shipped application-builder skill into a
-temporary user skill directory. The first turn searches an empty cache, creates,
-writes, publishes and launches an accessible offline calculator. The second
-turn finds the exact cached request and launches it without changing the
-document or manifest. Chromium and paid providers are intentionally replaced by
-a recording launcher and loopback model fixture.
+temporary user skill directory. The store has an executable native-host
+capability stub, a recording launcher, and an exact legacy web calculator. The
+first turn verifies the advertised native schema, searches, deliberately creates
+the trusted native calculator instead of reusing the web entry, publishes a
+manifest-only cache entry, and launches it without `read` or `write`. The second
+turn finds the exact native entry first and launches it without changing the
+manifest. Chromium, the real Qt host, and paid providers are intentionally
+replaced by deterministic fixtures.
 
-Executed under WSL:
+Validation results:
 
-- The new end-to-end test passed three times: 1 test in 4.027 seconds, 2.830
-  seconds, and 2.967 seconds.
-- The relevant agent, ToolHost, application, worker, subscription, skill, MCP,
-  core and new integration modules passed 230 tests in 33.935 seconds, with one
-  existing platform/fixture skip.
-- Final full Python discovery passed 233 tests in 31.175 seconds, with one
-  existing platform/fixture skip. One preceding full run hit the existing
-  timing-sensitive MCP notification-flood test; that test passed alone in 0.174
-  seconds and the complete retry passed.
-- `sh -n scripts/build-apps.sh` passed.
-- `git diff --check` passed.
+- Under WSL, the native application-builder end-to-end test passed three
+  requested runs:
+  1 test in 3.536 seconds, 3.642 seconds, and 3.383 seconds.
+- Under WSL, the skill, browser-agent, application-builder agent,
+  application-store, and ToolHost test files passed 154 tests in 13.205
+  seconds, with one existing platform/fixture skip.
+- Under WSL, final full Python discovery passed 337 tests in 47.774 seconds,
+  with two existing platform/fixture skips.
+- Windows Git `diff --check` passed.
 
-The pinned Alpine QML/native validation already passed in Task 9 and was not
-repeated because Task 10 changes only Python tests and documentation. A full ISO
-build, real paid OpenAI/ChatGPT model calls, and a real configured third-party
-MCP server remain release validation work. This checkpoint does not claim those
-results.
+The previously validated compiled host was not rebuilt, as requested. No new
+interactive VM, real Qt-window, full ISO, paid OpenAI/ChatGPT, or configured
+third-party MCP run is claimed by this checkpoint.

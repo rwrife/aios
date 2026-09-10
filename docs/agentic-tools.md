@@ -76,10 +76,24 @@ calculator does not activate the builder.
 The skill permits only the `application` tool and requires this workflow:
 
 1. Search the cache with the complete user request.
-2. Reuse an exact match when available; otherwise consider keyword matches.
-3. If no suitable app exists, create a draft, write one self-contained offline
-   `index.html`, publish its metadata and digest, and launch it.
-4. Report success only after launch returns `launched: true`.
+2. Inspect the advertised application schema. `runtime` and `template` appear
+   only when an executable `aios-app-host` is available. The advertised native
+   templates are the complete native capability set for that turn.
+3. For a supported request, prefer an exact or strong cached native match.
+   Calculator is currently the only native template. If search finds only a
+   legacy web calculator while the native calculator template is advertised,
+   create the native calculator rather than treating the web result as a
+   permanent preference.
+4. Create a native calculator with `runtime: "native"` and
+   `template: "calculator"`, publish its summary and keywords, then launch it.
+   Native creation never uses `read`, `write`, generated HTML, or model-supplied
+   native source.
+5. When native support is absent or the requested app type has no advertised
+   template, use the web fallback: create a draft, write one self-contained
+   offline `index.html`, publish its metadata and digest, and launch it.
+6. Report success only after launch returns `launched: true`. A
+   `launched: false` result is terminal for that attempt: report its safe reason
+   without rebuilding, re-publishing, or retrying in a loop.
 
 Published applications are stored under:
 
@@ -87,21 +101,33 @@ Published applications are stored under:
 $XDG_DATA_HOME/aios/applications/<application-id>/
 ```
 
-Each published directory contains only `index.html` and `manifest.json`.
-Documents are limited to 16 KiB and must not depend on remote scripts, styles,
-fonts, media, packages, or extra asset files. Search ranks exact normalized
-request matches first, then title and keyword overlap.
+Native cache entries contain only `manifest.json`, including the trusted runtime
+and template identifiers. Web cache entries contain `index.html` and
+`manifest.json`. Web documents are limited to 16 KiB and must not depend on
+remote scripts, styles, fonts, media, packages, or extra asset files. Search
+ranks exact normalized request matches first, then title and keyword overlap;
+native entries win equal-ranked ties.
 
-The runner verifies the manifest and SHA-256 digest, serves an AIOS wrapper and
-the app from a temporary loopback HTTP server, and opens Chromium in app mode.
-The generated document runs in a sandboxed iframe with a restrictive Content
-Security Policy. Chromium keeps its normal process sandbox, blocks non-loopback
-name resolution for the app window, and uses a temporary profile.
+Native templates are trusted, compiled Qt implementations shipped with AIOS.
+The model selects an advertised template and supplies metadata only; it never
+generates or compiles C++ or QML. Native launch is considered ready only after
+the host presents its first frame and completes the readiness handshake.
+
+For web apps, the runner verifies the manifest and SHA-256 digest, serves an
+AIOS wrapper and the app from a temporary loopback HTTP server, and opens
+Chromium in app mode. Readiness is acknowledged only after Chromium makes the
+first `/app` request. The generated document runs in a sandboxed iframe with a
+restrictive Content Security Policy. Chromium keeps its normal process sandbox,
+blocks non-loopback name resolution for the app window, and uses a temporary
+profile. Either runtime returns `launched: false` with a bounded safe reason when
+its readiness check fails.
 
 This is not arbitrary application generation. The model cannot run host shell
 commands, install dependencies, write outside the application cache, or create
-backend services or native applications. Those capabilities require a future
-approval UI and stronger build sandbox.
+backend services. It can select only precompiled native templates advertised by
+AIOS; calculator is currently the sole template. All other supported generated
+utilities remain frontend-only web applications in the sandbox. Arbitrary
+native applications and arbitrary backend applications are not supported.
 
 ## Agent task provider routing
 
@@ -231,7 +257,9 @@ ordinary chat content when selected.
 
 ## Current limitations and release validation
 
-- Application generation is single-file, offline browser content only.
+- Native application selection is limited to trusted templates compiled into
+  AIOS (currently calculator); other generated applications are single-file,
+  offline browser content only. Arbitrary native code and backends are absent.
 - MCP is stdio/tools-only and has no installation or marketplace UI.
 - The bundled 135M starter model is not a reliable planner or app builder.
 - Provider, model, and third-party MCP behavior varies and needs an explicit
@@ -242,4 +270,5 @@ ordinary chat content when selected.
 
 The repository integration test uses a real worker, agent, Unix-socket tool
 host, application store, and loopback OpenAI-compatible server. It verifies a
-calculator build followed by exact cache reuse without Chromium or a paid model.
+native calculator build over an existing legacy web match, followed by exact
+native cache reuse, without Chromium, the real Qt host, or a paid model.

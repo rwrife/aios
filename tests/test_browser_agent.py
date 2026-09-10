@@ -447,6 +447,93 @@ class BrowserAgentTests(unittest.TestCase):
 
     @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "tool-model"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_builder_uses_web_fallback_when_native_schema_is_absent(self, _list_tools, _load_config):
+        warnings = []
+        skill = skills._load_skill_dir(
+            Path(__file__).resolve().parents[1] / "apps/skills/application-builder",
+            warnings,
+        )
+        self.assertEqual(warnings, [])
+        self.assertIsNotNone(skill)
+        session = agent.AgentSession(
+            [{"role": "user", "content": "I need a calculator"}],
+            "tools.sock",
+            catalog=[skill],
+        )
+        bodies = []
+        html = "<!doctype html><title>Calculator</title><button>1</button>"
+        calls = [
+            ("fallback-search", {"action": "search", "query": "I need a calculator"}),
+            ("fallback-create", {"action": "create", "title": "Calculator", "request": "I need a calculator"}),
+            ("fallback-write", {"action": "write", "id": "calculator-web", "html": html}),
+            ("fallback-publish", {
+                "action": "publish",
+                "id": "calculator-web",
+                "summary": "Offline web calculator.",
+                "keywords": ["calculator", "offline"],
+            }),
+            ("fallback-launch", {"action": "launch", "id": "calculator-web"}),
+        ]
+
+        def request(route, body, **kwargs):
+            bodies.append(clone(body))
+            if len(bodies) == 1:
+                prompt = body["messages"][0]["content"]
+                self.assertIn("Inspect the advertised `application` tool schema", prompt)
+                self.assertIn("self-contained `index.html`", prompt)
+                properties = body["tools"][1]["function"]["parameters"]["properties"]
+                self.assertNotIn("runtime", properties)
+                self.assertNotIn("template", properties)
+            if len(bodies) <= len(calls):
+                call_id, arguments = calls[len(bodies) - 1]
+                return stream([{
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": call_id,
+                        "function": {
+                            "name": "application",
+                            "arguments": json.dumps(arguments, separators=(",", ":")),
+                        },
+                    }],
+                }], "tool_calls")
+            self.assertEqual(json.loads(body["messages"][-1]["content"]), {
+                "launched": True,
+                "id": "calculator-web",
+                "runtime": "web",
+            })
+            return stream([{"content": "Web calculator launched."}])
+
+        results = [
+            {"matches": []},
+            {"id": "calculator-web", "title": "Calculator", "runtime": "web"},
+            {"written": True, "bytes": len(html.encode("utf-8"))},
+            {"published": True, "id": "calculator-web", "runtime": "web"},
+            {"launched": True, "id": "calculator-web", "runtime": "web"},
+        ]
+        with patch("aios.agent.core.request", side_effect=request), patch(
+            "aios.agent.toolhost.call",
+            side_effect=results,
+        ) as call:
+            events = list(agent.openai_chat(session))
+
+        self.assertEqual(
+            [item.args[2] for item in call.call_args_list],
+            [arguments for _call_id, arguments in calls],
+        )
+        self.assertEqual(
+            [event["text"] for event in events if event["type"] == "progress"],
+            [
+                "Application: search",
+                "Application: create",
+                "Application: write",
+                "Application: publish",
+                "Application: launch",
+            ],
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Web calculator launched."})
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "tool-model"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
     def test_current_round_tool_results_remain_intact_after_compaction(self, _list_tools, _load_config):
         session = agent.AgentSession([{"role": "user", "content": "calculator"}], "tools.sock", catalog=[])
         bodies = []

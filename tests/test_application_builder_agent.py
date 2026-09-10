@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,8 +22,8 @@ from aios.toolhost import ToolHost, close_service, list_tools, serve
 
 USER_REQUEST = "I need a calculator"
 APP_TITLE = "Calculator"
-APP_SUMMARY = "An accessible offline calculator for basic arithmetic."
-APP_KEYWORDS = ["arithmetic", "calculator", "offline"]
+APP_SUMMARY = "A trusted native calculator for basic arithmetic."
+APP_KEYWORDS = ["arithmetic", "calculator", "native"]
 MODEL_NAME = "calculator-workflow-test"
 CALCULATOR_HTML = """<!doctype html>
 <html lang="en">
@@ -148,7 +147,18 @@ class _ModelState:
         prompt = system.get("content", "")
         _require('Activated skill: "application-builder"' in prompt, "Application builder was not active.")
         _require("Search first for an existing cached app" in prompt, "Shipped cache-first instructions were absent.")
-        _require("Build exactly one self-contained `index.html` file" in prompt, "Shipped application instructions were absent.")
+        _require("Inspect the advertised `application` tool schema" in prompt, "Schema inspection instructions were absent.")
+        _require("trusted native `calculator` template" in prompt, "Native calculator instructions were absent.")
+        _require("self-contained `index.html`" in prompt, "Web fallback instructions were absent.")
+        application_tools = [
+            tool for tool in body["tools"]
+            if tool.get("function", {}).get("name") == "application"
+        ]
+        _require(len(application_tools) == 1, "Expected one application tool definition.")
+        parameters = application_tools[0]["function"]["parameters"]
+        properties = parameters["properties"]
+        _require(properties.get("runtime", {}).get("enum") == ["web", "native"], "Native runtime was not advertised.")
+        _require(properties.get("template", {}).get("enum") == ["calculator"], "Calculator template was not advertised.")
         serialized = json.dumps(body).casefold()
         for forbidden in ("api_key", "agent_api_key", "authorization", "bearer "):
             _require(forbidden not in serialized, f"Request body contained {forbidden!r}.")
@@ -189,22 +199,27 @@ class _ModelState:
                 return _tool_call("run1-search", arguments), "tool_calls"
             if tool_count == 1:
                 result = self._latest_result(body, "run1-search")
-                _require(result == {"matches": []}, f"Expected an empty cache, got {result!r}.")
-                arguments = {"action": "create", "title": APP_TITLE, "request": USER_REQUEST}
+                matches = result.get("matches")
+                _require(isinstance(matches, list) and len(matches) == 1, f"Expected one legacy web match, got {result!r}.")
+                _require(matches[0].get("exact") is True, "Legacy web match was not exact.")
+                _require(matches[0].get("runtime") == "web", "Expected the existing match to use the web runtime.")
+                _require(matches[0].get("template") is None, "Legacy web match unexpectedly had a template.")
+                arguments = {
+                    "action": "create",
+                    "title": APP_TITLE,
+                    "request": USER_REQUEST,
+                    "runtime": "native",
+                    "template": "calculator",
+                }
                 self.actions[run].append(arguments)
                 return _tool_call("run1-create", arguments), "tool_calls"
             if tool_count == 2:
                 result = self._latest_result(body, "run1-create")
                 app_id = result.get("id")
                 _require(isinstance(app_id, str) and app_id.startswith("calculator-"), "Create did not return a calculator ID.")
+                _require(result.get("runtime") == "native", "Create did not return the native runtime.")
+                _require(result.get("template") == "calculator", "Create did not return the calculator template.")
                 self.application_id = app_id
-                arguments = {"action": "write", "id": app_id, "html": CALCULATOR_HTML}
-                self.actions[run].append(arguments)
-                return _tool_call("run1-write", arguments), "tool_calls"
-            if tool_count == 3:
-                result = self._latest_result(body, "run1-write")
-                _require(result.get("written") is True, f"Write failed: {result!r}")
-                _require(result.get("bytes") == len(CALCULATOR_HTML.encode("utf-8")), "Write byte count was incorrect.")
                 arguments = {
                     "action": "publish",
                     "id": self.application_id,
@@ -213,19 +228,23 @@ class _ModelState:
                 }
                 self.actions[run].append(arguments)
                 return _tool_call("run1-publish", arguments), "tool_calls"
-            if tool_count == 4:
+            if tool_count == 3:
                 result = self._latest_result(body, "run1-publish")
                 _require(result.get("published") is True, f"Publish failed: {result!r}")
                 _require(result.get("id") == self.application_id, "Publish returned the wrong application ID.")
+                _require(result.get("runtime") == "native", "Publish did not preserve the native runtime.")
+                _require(result.get("template") == "calculator", "Publish did not preserve the calculator template.")
                 arguments = {"action": "launch", "id": self.application_id}
                 self.actions[run].append(arguments)
                 return _tool_call("run1-launch", arguments), "tool_calls"
-            if tool_count == 5:
+            if tool_count == 4:
                 result = self._latest_result(body, "run1-launch")
                 _require(result.get("launched") is True, f"Launch failed: {result!r}")
                 _require(result.get("id") == self.application_id, "Launch returned the wrong application ID.")
+                _require(result.get("runtime") == "native", "Launch did not report the native runtime.")
+                _require(result.get("template") == "calculator", "Launch did not report the calculator template.")
                 self.completed_runs = 1
-                return {"content": "Calculator created and launched."}, "stop"
+                return {"content": "Native calculator launched."}, "stop"
         else:
             if tool_count == 0:
                 arguments = {"action": "search", "query": USER_REQUEST}
@@ -234,10 +253,13 @@ class _ModelState:
             if tool_count == 1:
                 result = self._latest_result(body, "run2-search")
                 matches = result.get("matches")
-                _require(isinstance(matches, list) and len(matches) == 1, f"Expected one cached match, got {result!r}.")
+                _require(isinstance(matches, list) and len(matches) == 2, f"Expected native and web matches, got {result!r}.")
                 match = matches[0]
                 _require(match.get("id") == self.application_id, "Search returned the wrong cached application.")
                 _require(match.get("exact") is True, "Cached search match was not exact.")
+                _require(match.get("runtime") == "native", "Native cached match did not outrank legacy web.")
+                _require(match.get("template") == "calculator", "Cached native match had the wrong template.")
+                _require(matches[1].get("runtime") == "web", "Expected the legacy web match second.")
                 arguments = {"action": "launch", "id": match["id"]}
                 self.actions[run].append(arguments)
                 return _tool_call("run2-launch", arguments), "tool_calls"
@@ -246,7 +268,7 @@ class _ModelState:
                 _require(result.get("launched") is True, f"Cached launch failed: {result!r}")
                 _require(result.get("id") == self.application_id, "Cached launch returned the wrong ID.")
                 self.completed_runs = 2
-                return {"content": "Reused the cached calculator application."}, "stop"
+                return {"content": "Reused and launched the native calculator."}, "stop"
         raise AssertionError(f"Unexpected run {run} tool count {tool_count}.")
 
 
@@ -319,13 +341,6 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
         return events
 
     def test_real_worker_builds_then_reuses_cached_calculator(self):
-        self.assertLess(len(CALCULATOR_HTML.encode("utf-8")), 16 * 1024)
-        self.assertNotIn("eval(", CALCULATOR_HTML)
-        self.assertNotIn("Function(", CALCULATOR_HTML)
-        self.assertNotIn("<script src", CALCULATOR_HTML)
-        self.assertNotIn("http://", CALCULATOR_HTML)
-        self.assertNotIn("https://", CALCULATOR_HTML)
-
         scratch = ROOT / "tmp"
         scratch.mkdir(exist_ok=True)
         temp_path = None
@@ -361,7 +376,24 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
             browser = _NeverBrowser()
             mcp = _EmptyMcpRegistry()
             application_root = data_root / "aios" / "applications"
-            store = ApplicationStore(root=application_root, launcher=lambda folder: launched.append(Path(folder)))
+            native_host = temp_path / "aios-app-host"
+            native_host.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            native_host.chmod(0o700)
+            self.assertTrue(os.access(native_host, os.X_OK))
+            store = ApplicationStore(
+                root=application_root,
+                launcher=lambda folder: launched.append(Path(folder)),
+                native_host=native_host,
+            )
+            self.assertEqual(store.native_templates, ("calculator",))
+            legacy = store.create({"title": APP_TITLE, "request": USER_REQUEST})
+            store.write({"id": legacy["id"], "html": CALCULATOR_HTML})
+            store.publish({
+                "id": legacy["id"],
+                "summary": "Legacy offline web calculator.",
+                "keywords": ["calculator", "legacy", "offline"],
+            })
+            legacy_folder = application_root / legacy["id"]
             host = ToolHost(browser=browser, applications=store, mcp=mcp)
             # WSL cannot bind AF_UNIX sockets on a mounted Windows filesystem.
             tool_socket = runtime_path / "tools.sock"
@@ -406,36 +438,39 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                     [
                         "Application: search",
                         "Application: create",
-                        "Application: write",
                         "Application: publish",
                         "Application: launch",
                     ],
                 )
                 self.assertEqual(
                     "".join(event["text"] for event in first_events if event["type"] == "token"),
-                    "Calculator created and launched.",
+                    "Native calculator launched.",
+                )
+                self.assertEqual(
+                    [action["action"] for action in state.actions[1]],
+                    ["search", "create", "publish", "launch"],
                 )
 
                 self.assertIsNotNone(state.application_id)
                 app_folder = application_root / state.application_id
-                self.assertEqual({path.name for path in app_folder.iterdir()}, {"index.html", "manifest.json"})
-                index_path = app_folder / "index.html"
+                self.assertNotEqual(app_folder, legacy_folder)
+                self.assertEqual({path.name for path in app_folder.iterdir()}, {"manifest.json"})
                 manifest_path = app_folder / "manifest.json"
-                index_bytes = index_path.read_bytes()
                 manifest_bytes = manifest_path.read_bytes()
                 manifest = json.loads(manifest_bytes)
-                self.assertEqual(index_bytes, CALCULATOR_HTML.encode("utf-8"))
-                self.assertEqual(manifest["sha256"], hashlib.sha256(index_bytes).hexdigest())
                 self.assertEqual(manifest["title"], APP_TITLE)
                 self.assertEqual(manifest["request"], USER_REQUEST)
                 self.assertEqual(manifest["summary"], APP_SUMMARY)
                 self.assertEqual(manifest["keywords"], APP_KEYWORDS)
-                self.assertEqual(manifest["entrypoint"], "index.html")
+                self.assertEqual(manifest["runtime"], "native")
+                self.assertEqual(manifest["template"], "calculator")
+                self.assertNotIn("entrypoint", manifest)
+                self.assertNotIn("sha256", manifest)
+                self.assertFalse((app_folder / "index.html").exists())
+                self.assertFalse((app_folder / ".draft.json").exists())
+                self.assertFalse(any(path.name.endswith((".tmp", ".temp")) for path in app_folder.iterdir()))
                 self.assertEqual(launched, [app_folder])
-                before = {
-                    "index": (index_bytes, index_path.stat().st_mtime_ns),
-                    "manifest": (manifest_bytes, manifest_path.stat().st_mtime_ns),
-                }
+                before = (manifest_bytes, manifest_path.stat().st_mtime_ns)
 
                 second_events = self._events(self._run_worker(env, tool_socket))
                 self.assertEqual(
@@ -443,8 +478,8 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                     ["Application: search", "Application: launch"],
                 )
                 final_text = "".join(event["text"] for event in second_events if event["type"] == "token")
-                self.assertEqual(final_text, "Reused the cached calculator application.")
-                self.assertIn("cached", final_text.casefold())
+                self.assertEqual(final_text, "Reused and launched the native calculator.")
+                self.assertIn("native", final_text.casefold())
                 self.assertEqual(
                     [action["action"] for action in state.actions[2]],
                     ["search", "launch"],
@@ -459,20 +494,16 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                                 )
                 self.assertEqual(sorted(set(second_transcript_actions)), ["launch", "search"])
                 self.assertFalse(
-                    {"create", "write", "publish"}
+                    {"create", "publish", "write", "read"}
                     & set(second_transcript_actions)
                 )
                 self.assertEqual(
-                    (index_path.read_bytes(), index_path.stat().st_mtime_ns),
-                    before["index"],
-                )
-                self.assertEqual(
                     (manifest_path.read_bytes(), manifest_path.stat().st_mtime_ns),
-                    before["manifest"],
+                    before,
                 )
                 self.assertEqual(launched, [app_folder, app_folder])
                 self.assertEqual(state.completed_runs, 2)
-                self.assertEqual(len(state.requests), 9)
+                self.assertEqual(len(state.requests), 8)
                 self.assertEqual(state.errors, [], "\n".join(state.errors))
                 self.assertEqual(browser.calls, [])
                 self.assertEqual(mcp.calls, [])
