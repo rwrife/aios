@@ -16,10 +16,10 @@ Window {
     minimumWidth: 540; minimumHeight: 400
     x: (Screen.width-width)/2; y: (Screen.height-height)/2
     color: theme.panel
-    onVisibleChanged: { if (!visible) camera.stop(); else { models.reload(); if (pages.currentIndex === 6) accountsPage.refresh(); } }
+    onVisibleChanged: { if (!visible) camera.stop(); else { models.reload(); if (pages.currentIndex === 7) accountsPage.refresh(); } }
     onClosing: camera.stop()
     // Add a section here and its page to the StackLayout below.
-    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "Accounts"]
+    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
     component Action: Button {
         id: control
         padding: 12
@@ -29,6 +29,22 @@ Window {
     component Note: Text {
         color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap
         Layout.fillWidth: true
+    }
+    component InfoRow: RowLayout {
+        id: infoRow
+        required property string label
+        required property string value
+        required property string fieldName
+        Layout.fillWidth: true; spacing: 20
+        Text {
+            text: infoRow.label; color: theme.muted; font.pixelSize: 13
+            Layout.preferredWidth: 110
+        }
+        Text {
+            objectName: infoRow.fieldName
+            text: infoRow.value; color: theme.ink; font.pixelSize: 13
+            wrapMode: Text.Wrap; Layout.fillWidth: true
+        }
     }
     RowLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
@@ -162,6 +178,30 @@ Window {
     }
     MediaDevices { id: devices }
     AccountSettings { id: accountsPage; parent: pages; control: settings.profileControl }
+    ColumnLayout {
+        parent: pages
+        spacing: 16
+        Note { text: "Build and system information for this computer." }
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: aboutDetails.implicitHeight + 32
+            color: theme.input; radius: 8
+            ColumnLayout {
+                id: aboutDetails
+                anchors.fill: parent; anchors.margins: 16; spacing: 12
+                InfoRow { label: "AIOS version"; value: backend.systemInfo.version; fieldName: "aboutVersion" }
+                InfoRow { label: "Build"; value: backend.systemInfo.build; fieldName: "aboutBuild" }
+                InfoRow { label: "Commit"; value: backend.systemInfo.commit; fieldName: "aboutCommit" }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
+                InfoRow { label: "Operating system"; value: backend.systemInfo.os; fieldName: "aboutOs" }
+                InfoRow { label: "Kernel"; value: backend.systemInfo.kernel; fieldName: "aboutKernel" }
+                InfoRow { label: "Architecture"; value: backend.systemInfo.architecture; fieldName: "aboutArchitecture" }
+                InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
+                InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
+            }
+        }
+        Item { Layout.fillHeight: true }
+    }
     Camera { id: camera; cameraDevice: devices.defaultVideoInput }
     CaptureSession { camera: camera; videoOutput: viewfinder }
 }
