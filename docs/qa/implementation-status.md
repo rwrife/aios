@@ -247,10 +247,19 @@ Validation results:
 - Under WSL, the skill, browser-agent, application-builder agent,
   application-store, and ToolHost test files passed 154 tests in 13.205
   seconds, with one existing platform/fixture skip.
-- Under WSL, final full Python discovery passed 337 tests in 47.774 seconds,
+- Under WSL, final full Python discovery passed 337 tests in 46.331 seconds,
   with two existing platform/fixture skips.
+- In Alpine 3.23, all 65 QML tests passed, the complete native CMake build
+  produced `aios-shell` and `aios-app-host`, and the compiled host passed its
+  real ready-pipe protocol and input-validation smoke test.
+- The resulting 2.09 GB x86_64 ISO passed checksum, manifest, hybrid USB,
+  BIOS and UEFI verification. Separate offline BIOS and UEFI boots confirmed
+  the ordinary-user shell, desktop example compilation, and bundled model
+  reply.
+- The verified ISO was launched interactively with QEMU and reached the AIOS
+  Welcome screen for hands-on native calculator testing.
 - Windows Git `diff --check` passed.
 
-The previously validated compiled host was not rebuilt, as requested. No new
-interactive VM, real Qt-window, full ISO, paid OpenAI/ChatGPT, or configured
-third-party MCP run is claimed by this checkpoint.
+No paid OpenAI/ChatGPT or configured third-party MCP run is claimed by this
+checkpoint. The compiled native host and its readiness protocol were exercised
+directly; user-facing calculator interaction remains a hands-on VM check.
