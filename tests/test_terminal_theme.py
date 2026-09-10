@@ -32,6 +32,7 @@ class TerminalThemeTests(unittest.TestCase):
     def test_compositor_rounds_only_native_browser_and_terminal(self):
         config = (ROOT / "distro/alpine/overlay/etc/xdg/picom.conf").read_text()
         self.assertIn('backend = "glx"', config)
+        self.assertIn("use-damage = false;", config)
         world = (ROOT / "distro/alpine/apks/world.x11").read_text().splitlines()
         self.assertIn("mesa-dri-gallium", world)
         terminal_rule = re.search(
