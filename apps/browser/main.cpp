@@ -464,7 +464,7 @@ private:
                     m_navigationStarted = true;
                 return;
             }
-            if (m_navigationStarted) {
+            if (m_navigationStarted && allowedUrl(info.url())) {
                 m_navigationStarted = false;
                 snapshotPending();
             }
