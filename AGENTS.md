@@ -12,6 +12,7 @@
   tell which VM they are viewing. Pass a task- or session-specific value to
   QEMU's `-name` option instead of leaving multiple windows titled `AIOS`.
 
-## Optimize your time
+## Optimize Your Time
 
-The build process is quite slow, as is validating in a running VM, so please try to batch smaller changes together and validate them in a batch to speed up the dev lifecycle.
+- The build process is quite slow, as is validating in a running VM, so please try to batch smaller changes together and validate them in a batch to speed up the dev lifecycle.
+- Do not use GitHub for building ISO images, run locally in WSL or QEMU and validate there whenever possible.
