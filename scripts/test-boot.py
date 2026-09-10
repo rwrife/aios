@@ -4,6 +4,7 @@
 Uses only a disposable VM, no host disk passthrough. Requires QEMU on Linux.
 """
 import argparse
+import json
 import os
 from pathlib import Path
 import socket
@@ -21,12 +22,46 @@ parser.add_argument("--log", type=Path, help="Write the complete guest serial lo
 args = parser.parse_args()
 if args.memory_mb < 1024 or args.cpus < 1:
     parser.error("memory and CPU counts must be positive")
+
+
+def verify_desktop(qmp_path, screenshot):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as control:
+        control.settimeout(10)
+        control.connect(qmp_path)
+        with control.makefile("rwb") as stream:
+            json.loads(stream.readline())  # QMP greeting
+            for command in (
+                {"execute": "qmp_capabilities"},
+                {"execute": "screendump", "arguments": {"filename": str(screenshot)}},
+            ):
+                stream.write(json.dumps(command).encode() + b"\n")
+                stream.flush()
+                while True:
+                    response = json.loads(stream.readline())
+                    if "error" in response:
+                        raise RuntimeError(f"Desktop capture failed: {response['error']}")
+                    if "return" in response:
+                        break
+    magic, dimensions, maximum, pixels = screenshot.read_bytes().split(b"\n", 3)
+    width, height = map(int, dimensions.split())
+    if magic != b"P6" or maximum != b"255" or len(pixels) != width * height * 3:
+        raise RuntimeError("Unexpected QEMU framebuffer format")
+    colors = {pixels[offset:offset + 3] for offset in range(0, len(pixels), 3)}
+    visible = sum(max(pixels[offset:offset + 3]) > 32
+                  for offset in range(0, len(pixels), 3))
+    if len(colors) < 32 or visible < width * height // 20:
+        raise RuntimeError("Desktop is black/blank despite a running aios-shell")
+
+
 with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
     serial_path = str(Path(directory) / "serial.sock")
+    qmp_path = str(Path(directory) / "qmp.sock")
     command = ["qemu-system-x86_64", "-m", str(args.memory_mb), "-smp", str(args.cpus),
+               "-name", f"AIOS-boot-check-{os.getpid()}",
                "-cdrom", str(args.iso.resolve()),
                "-boot", "d", "-display", "none", "-nic", "none", "-no-reboot",
-               "-serial", f"unix:{serial_path},server=on,wait=off"]
+               "-serial", f"unix:{serial_path},server=on,wait=off",
+               "-qmp", f"unix:{qmp_path},server=on,wait=off"]
     if os.access("/dev/kvm", os.R_OK | os.W_OK):
         command += ["-enable-kvm", "-cpu", "host"]
     if args.uefi:
@@ -76,6 +111,7 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                     serial.sendall(check.encode())
                     sent_test = True
                 if "\nAIOS_QA_READY" in output:
+                    verify_desktop(qmp_path, Path(directory) / "desktop.ppm")
                     print("PASS: offline boot, ordinary-user shell, desktop example compilation, bundled model reply")
                     break
             else:

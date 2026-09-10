@@ -1,10 +1,65 @@
 import unittest
 import re
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from aios.terminal_theme import HUES, OCEAN, palette
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@unittest.skipUnless(os.name == "posix", "Desktop startup requires a POSIX shell")
+class CompositorSelectionTests(unittest.TestCase):
+    def test_renderer_selection(self):
+        cases = (
+            ("Mesa software", "    Accelerated: no\nOpenGL renderer string: llvmpipe (LLVM)\n", 0, "xrender"),
+            ("Software without acceleration field", "OpenGL renderer string: softpipe\n", 0, "xrender"),
+            ("Mesa hardware", "    Accelerated: yes\nOpenGL renderer string: Mesa Intel UHD\n", 0, "glx"),
+            ("NVIDIA hardware", "OpenGL renderer string: NVIDIA GeForce\n", 0, "glx"),
+            ("Failed probe", "Cannot open display\n", 1, "xrender"),
+            ("Timed out probe", "", 124, "xrender"),
+            ("Incomplete probe", "name of display: :0\n", 0, "xrender"),
+        )
+        for name, output, status, backend in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                home = Path(directory)
+                bin_dir = home / "bin"
+                bin_dir.mkdir()
+                stubs = {
+                    "xsetroot": "exit 0",
+                    "openbox": "exit 0",
+                    "pulseaudio": "exit 0",
+                    "glxinfo": 'printf "%s" "$PROBE_OUTPUT"; exit "$PROBE_STATUS"',
+                    "picom": 'printf "%s\\n" "$@" >"$HOME/compositor-args"',
+                    "aios-shell": (
+                        'for n in $(seq 1 100); do '
+                        '[ ! -f "$HOME/compositor-args" ] || exit 0; sleep 0.02; done; exit 1'
+                    ),
+                }
+                for command, body in stubs.items():
+                    path = bin_dir / command
+                    path.write_text("#!/bin/sh\n" + body + "\n")
+                    path.chmod(0o755)
+                subprocess.run(
+                    ["sh", str(ROOT / "distro/alpine/overlay/usr/local/bin/aios-session")],
+                    env=dict(os.environ, HOME=str(home),
+                             PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+                             PROBE_OUTPUT=output, PROBE_STATUS=str(status)),
+                    capture_output=True, text=True, check=True, timeout=10,
+                )
+                args = (home / "compositor-args").read_text().splitlines()
+                self.assertIn("/etc/xdg/picom.conf", args)
+                if backend == "xrender":
+                    self.assertEqual(args[-3:], ["--backend", "xrender", "--no-vsync"])
+                else:
+                    self.assertNotIn("--backend", args)
+                    self.assertNotIn("--no-vsync", args)
+                state = home / ".local/state/aios"
+                self.assertEqual((state / "graphics.log").read_text(), output)
+                self.assertIn("AIOS compositor: " + backend,
+                              (state / "compositor.log").read_text())
 
 
 class TerminalThemeTests(unittest.TestCase):
@@ -35,6 +90,7 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("use-damage = false;", config)
         world = (ROOT / "distro/alpine/apks/world.x11").read_text().splitlines()
         self.assertIn("mesa-dri-gallium", world)
+        self.assertIn("mesa-utils", world)
         terminal_rule = re.search(
             r'\{\s*match = "class_g = \'AIOS-Terminal\'";(.*?)\}', config, re.S)
         browser_rule = re.search(

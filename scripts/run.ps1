@@ -3,6 +3,7 @@
 param(
     [Parameter(Position = 0)][string]$IsoPath,
     [string]$Distro = 'Ubuntu',
+    [string]$Name,
     [ValidatePattern('^[0-9]+-[0-9]+$')][string]$CameraBusId,
     [switch]$DryRun,
     [switch]$Native
@@ -13,7 +14,7 @@ if ($Native) {
         Write-Error '-CameraBusId is supported only by the WSL QEMU launcher.'
         exit 1
     }
-    & "$PSScriptRoot/run-native.ps1" -IsoPath $IsoPath -DryRun:$DryRun
+    & "$PSScriptRoot/run-native.ps1" -IsoPath $IsoPath -Name $Name -DryRun:$DryRun
     exit $LASTEXITCODE
 }
 try {
@@ -101,6 +102,8 @@ done
     }
     $launcher = Convert-ToWslPath "$PSScriptRoot/run.sh"
     $wslArgs = @('-d', $Distro, '--exec', 'env')
+    $vmName = if ($Name) { $Name } else { $env:AIOS_VM_NAME }
+    if ($vmName) { $wslArgs += "AIOS_VM_NAME=$vmName" }
     foreach ($name in @('AIOS_VM_MEM_MB', 'AIOS_VM_CPUS', 'AIOS_VM_DISK_SIZE',
                         'AIOS_QEMU_AUDIO', 'AIOS_QEMU_HEADLESS', 'AIOS_QEMU_UEFI', 'AIOS_QEMU_SERIAL')) {
         $value = [Environment]::GetEnvironmentVariable($name)
