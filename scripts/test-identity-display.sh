@@ -6,8 +6,9 @@ docker run --rm --privileged --cgroupns=private \
   -e AIOS_DISPOSABLE_TEST_CONTAINER=1 \
   -v "$ROOT:/workspace:ro" -w /workspace "${AIOS_DISPLAY_TEST_IMAGE:-$IMAGE}" sh -ec '
     apk add --no-cache build-base cmake ninja pkgconf qt6-qtbase-dev qt6-qtdeclarative-dev \
-      qt6-qtmultimedia-dev qt6-qtmultimedia-gstreamer qt6-qtwebengine-dev qt6-qtwayland-dev python3 py3-cryptography bubblewrap \
+      qt6-qtmultimedia-dev qt6-qtmultimedia-gstreamer gst-plugins-good gstreamer-tools qt6-qtwebengine-dev qt6-qtwayland-dev python3 py3-cryptography bubblewrap \
       cryptsetup e2fsprogs wayland-utils font-dejavu py3-pillow >/dev/null
+    gst-inspect-1.0 v4l2src >/dev/null
     cmake -S apps/shell -B /tmp/display-shell -G Ninja -DAIOS_EMBEDDED_DISPLAY=ON -DAIOS_DISPLAY_TESTS=ON -DAIOS_PROFILE_TESTS=ON >/dev/null
     cmake --build /tmp/display-shell
     # Exercise the installed layout without an inherited Python module path.

@@ -58,6 +58,8 @@ Window {
         RowLayout {
             id: chatHeader
             objectName: "chatHeader"
+            readonly property real minimumChromeHeight: Layout.minimumHeight
+            readonly property real maximumChromeHeight: Layout.maximumHeight
             Layout.fillWidth: true
             Layout.preferredHeight: 44
             Layout.minimumHeight: 44

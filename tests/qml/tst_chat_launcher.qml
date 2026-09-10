@@ -310,6 +310,8 @@ TestCase {
         verify(profile !== null)
         compare(profile.parent, header)
         verify(header.y < 80)
+        compare(header.minimumChromeHeight, 44)
+        compare(header.maximumChromeHeight, 44)
         verify(header.height >= 40)
         verify(header.height <= 44)
         compare(findChild(first, "chatCloseButton").implicitWidth, 36)
