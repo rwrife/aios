@@ -65,14 +65,18 @@ jobs:
       - name: Boot offline with BIOS
         run: |
           sudo python3 scripts/test-boot.py "${{ steps.image.outputs.iso }}" \
-            --timeout 600 \
+            --timeout 900 \
+            --memory-mb 8192 \
+            --cpus 4 \
             --log distro/alpine/out/boot-bios.log
 
       - name: Boot offline with UEFI
         run: |
           sudo python3 scripts/test-boot.py "${{ steps.image.outputs.iso }}" \
             --uefi /usr/share/OVMF/OVMF_CODE_4M.fd \
-            --timeout 600 \
+            --timeout 900 \
+            --memory-mb 8192 \
+            --cpus 4 \
             --log distro/alpine/out/boot-uefi.log
 
       - name: Upload ISO artifact

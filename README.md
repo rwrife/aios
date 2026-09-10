@@ -125,10 +125,18 @@ remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
-Chromium is available through chat with a tool-capable model, without a desktop
-browser icon. See [browser tools](docs/browser.md). The starter supports simple
-tool bootstrap but is not a reliable browser agent; critical setup controls call
-deterministic backend actions instead of relying on the model. Settings and setup offer
+Tool-capable models can use AIOS Agent Skills, approved stdio MCP tools, and
+built-in browser/application tools. For example, try `I need a calculator` with
+a capable configured model to build or reuse a cached app. When the compiled
+`aios-app-host` capability is installed, calculator requests prefer its trusted
+native Qt template; unsupported app types fall back to a sandboxed offline web
+app. Agent tasks
+can stay on the current model or be explicitly routed to ChatGPT or a separate
+remote service. See [agentic tools](docs/agentic-tools.md). Chromium remains
+available as one built-in tool, without a desktop browser icon; see
+[browser tools](docs/browser.md). The starter supports simple tool bootstrap but
+is not a reliable tool agent; critical setup controls call deterministic backend
+actions instead of relying on the model. Settings and setup offer
 [three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
 The current CPU inference build targets x86_64 with AVX2. The VM launchers
@@ -144,6 +152,7 @@ aios-llm serve
 # In another terminal:
 aios-llm chat 'Hello'
 aios-llm configure --mode remote --url https://your-provider.example/v1 --model MODEL --ask-key
+aios-llm configure --agent-mode remote --agent-url https://your-agent.example/v1 --agent-model MODEL --ask-agent-key
 aios-new-app hello
 cmake -S hello -B hello/build -G Ninja
 cmake --build hello/build

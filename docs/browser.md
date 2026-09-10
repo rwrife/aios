@@ -7,8 +7,10 @@ Normal Chromium tabs, address bar and navigation controls remain available once
 it opens; a minimal browser frame is future work. This is a desktop workflow,
 not an operating-system prohibition on launching a binary from the terminal.
 
-The desktop's Chat Completions agent advertises a browser function to the chosen
-local or remote model. Use a model/provider that supports structured tool calls.
+Browser is one built-in in the shared per-chat tool registry, alongside the
+application tool and explicitly approved MCP tools. The provider-neutral agent
+advertises the filtered registry to the chosen local, remote, or ChatGPT model.
+Use a model/provider that supports structured tool calls.
 The bundled Qwen3 0.6B starter is for simple chat and tool bootstrap, but is not
 a reliable browser agent. Critical setup controls invoke fixed backend actions
 directly and do not depend on model-generated tool calls.
@@ -23,14 +25,16 @@ up to 40 labeled controls. IDs expire after the next snapshot. There is no raw
 JavaScript, shell-command, local-file navigation, file-upload or screenshot tool.
 Canvas-only applications and complex nested frames are not covered yet.
 
-Each chat owns a private local socket and a lazily opened browser with a temporary
-profile. Browser state survives between messages in that chat; other chats have
-separate cookies and tabs. Closing the chat or pressing Stop terminates its
-browser service and removes its temporary profile. Closing Chromium manually
-may require asking the agent to close and reopen its browser session.
+Each chat owns a private local tool-host socket and a lazily opened browser with
+a temporary profile. Browser state survives between messages in that chat;
+other chats have separate cookies and tabs. Closing the chat or pressing Stop
+terminates its tool host, browser, and MCP children and removes the browser's
+temporary profile. Closing Chromium manually may require asking the agent to
+close and reopen its browser session.
 
-Chromium runs as the ordinary desktop user with its sandbox enabled. The private
-broker accepts only fixed operations, and ChromeDriver permits loopback clients.
+Chromium runs as the ordinary desktop user with its sandbox enabled. The shared
+tool host accepts only validated registry operations, and ChromeDriver permits
+loopback clients.
 Web content is marked untrusted and the agent is instructed to follow the user's
 task rather than page instructions. The tool loop executes only completed,
 structured calls (never model prose), with at most eight rounds and four calls
@@ -41,6 +45,9 @@ On installed systems Chromium must receive security updates through Alpine's
 package updates. Live images need rebuilding to pick up newer Chromium packages.
 Allow additional memory for Chromium alongside local models; 6 GiB or more is a
 better starting point for combined use than the minimal offline boot test.
+
+Skills, MCP tools, routing, and shared limits are documented in
+[agentic tools](agentic-tools.md).
 
 Protocol references: [Chat Completions function calling](https://developers.openai.com/api/docs/guides/function-calling),
 [WebDriver](https://www.w3.org/TR/webdriver2/), and

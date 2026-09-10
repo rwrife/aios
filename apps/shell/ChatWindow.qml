@@ -136,7 +136,7 @@ Window {
                 }
             }
         }
-        Text { Layout.fillWidth: true; visible: text.length > 0; text: session.recording ? "Listening… tap the microphone to finish" : session.status; color: session.recording ? theme.accent : theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+        Text { Layout.fillWidth: true; visible: text.length > 0; text: session.recording ? "Listening… tap the microphone to finish" : session.status; textFormat: Text.PlainText; color: session.recording ? theme.accent : theme.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
         Flow {
             Layout.fillWidth: true; visible: session.attachments.length > 0; spacing: 6
             Repeater {
@@ -144,7 +144,7 @@ Window {
                 Rectangle {
                     required property string modelData; required property int index
                     width: Math.min(230, chip.implicitWidth + 42); height: 28; radius: 6; color: theme.input
-                    Text { id: chip; text: modelData; color: theme.muted; font.pixelSize: 11; anchors.left: parent.left; anchors.leftMargin: 8; anchors.right: remove.left; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideMiddle }
+                    Text { id: chip; text: modelData; textFormat: Text.PlainText; color: theme.muted; font.pixelSize: 11; anchors.left: parent.left; anchors.leftMargin: 8; anchors.right: remove.left; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideMiddle }
                     QuietButton { id: remove; text: "×"; tip: "Remove " + modelData; anchors.right: parent.right; width: 28; height: 28; onClicked: session.removeAttachment(index) }
                 }
             }

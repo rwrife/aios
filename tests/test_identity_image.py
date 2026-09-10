@@ -12,6 +12,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'posix', 'Alpine image generation requires Linux')
 class IdentityImageTests(unittest.TestCase):
+    def test_live_profile_and_boot_gate_match_current_capacity(self):
+        result = subprocess.run(
+            ['sh', '-c',
+             'profile_standard() { :; }; . "$1"; profile_aios; printf "%s" "$kernel_cmdline"',
+             'sh', str(ROOT / 'distro/alpine/profiles/mkimg.aios.sh')],
+            env=dict(
+                os.environ,
+                AIOS_WORLD_BASE=str(ROOT / 'distro/alpine/apks/world.base'),
+                AIOS_WORLD_X11=str(ROOT / 'distro/alpine/apks/world.x11'),
+                AIOS_WORLD_VM=str(ROOT / 'distro/alpine/apks/world.vm'),
+                AIOS_WORLD_DEVEL=str(ROOT / 'distro/alpine/apks/world.devel'),
+                AIOS_WORLD_AI=str(ROOT / 'distro/alpine/apks/world.ai'),
+                AIOS_WORLD_IDENTITY='',
+                AIOS_APKOVL_SCRIPT='genapkovl-aios.sh',
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn('rootflags=size=75%', result.stdout)
+        workflow = (ROOT / '.github/workflows/build-iso.yml').read_text()
+        self.assertEqual(workflow.count('--memory-mb 8192'), 2)
+        self.assertEqual(workflow.count('--cpus 4'), 2)
+        self.assertEqual(workflow.count('--timeout 900'), 2)
+
     def test_optional_world_is_in_overlay_and_package_profile(self):
         for enabled in (False, True):
             with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as directory:

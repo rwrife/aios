@@ -15,11 +15,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument("iso", type=Path)
 parser.add_argument("--uefi", type=Path, help="OVMF_CODE firmware file")
 parser.add_argument("--timeout", type=int, default=240)
+parser.add_argument("--memory-mb", type=int, default=8192)
+parser.add_argument("--cpus", type=int, default=4)
 parser.add_argument("--log", type=Path, help="Write the complete guest serial log")
 args = parser.parse_args()
+if args.memory_mb < 1024 or args.cpus < 1:
+    parser.error("memory and CPU counts must be positive")
 with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
     serial_path = str(Path(directory) / "serial.sock")
-    command = ["qemu-system-x86_64", "-m", "4096", "-smp", "2", "-cdrom", str(args.iso.resolve()),
+    command = ["qemu-system-x86_64", "-m", str(args.memory_mb), "-smp", str(args.cpus),
+               "-cdrom", str(args.iso.resolve()),
                "-boot", "d", "-display", "none", "-nic", "none", "-no-reboot",
                "-serial", f"unix:{serial_path},server=on,wait=off"]
     if os.access("/dev/kvm", os.R_OK | os.W_OK):
