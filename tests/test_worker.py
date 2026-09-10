@@ -111,6 +111,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"/tools.sock"', source)
         self.assertIn('{"-m", "aios.toolhost", socket}', source)
         self.assertIn('request.insert("tool_socket", socket)', source)
+        self.assertIn('env.insert("AIOS_BROWSER_SESSION", sessionId)', source)
+        self.assertIn('env.insert("AIOS_BROWSER_THEME", m_config.value("theme_color", "blue").toString())', source)
         self.assertIn("tieToDesktop(tools)", source)
         self.assertIn("ToolHostGracefulWaitMs", source)
         self.assertEqual(source.count("waitForFinished(ToolHostGracefulWaitMs)"), 2)
@@ -181,11 +183,17 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("qt_add_executable(aios-app-host app_host.cpp)", source)
         self.assertIn("qt_add_resources(aios-app-host app_host_ui", source)
         self.assertIn("AppHost.qml", source)
-        self.assertIn("install(TARGETS aios-shell aios-app-host RUNTIME DESTINATION bin)", source)
+        self.assertIn(
+            "install(TARGETS aios-shell aios-browser aios-app-host RUNTIME DESTINATION bin)",
+            source,
+        )
 
     def test_preview_exports_built_native_host(self):
         source = self.read("scripts/preview-chat.sh")
-        self.assertIn("cmake --build /preview-build --target aios-shell aios-app-host", source)
+        self.assertIn(
+            "cmake --build /preview-build --target aios-shell aios-browser aios-app-host",
+            source,
+        )
         self.assertIn("export AIOS_APP_HOST=/preview-build/aios-app-host", source)
 
 

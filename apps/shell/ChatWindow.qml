@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import QtQuick.Dialogs
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: chat
@@ -14,8 +15,9 @@ Window {
     title: "AIOS Chat"
     visible: true
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
-    width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
-    x: (Screen.width - width)/2; y: (Screen.height - height)/2
+    width: WindowSizing.extent(740, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(650, Screen.height, Screen.desktopAvailableHeight)
+    x: Screen.virtualX + (Screen.width - width)/2; y: Screen.virtualY + (Screen.height - height)/2
     color: "transparent"
     signal minimized()
     signal removed()
@@ -55,20 +57,41 @@ Window {
     }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
-        RowLayout {
+        Item {
+            id: chatHeader
+            objectName: "chatHeader"
             Layout.fillWidth: true
             Layout.preferredHeight: 44
+            Layout.minimumHeight: 44
+            Layout.maximumHeight: 44
             Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.left: parent.left
+                anchors.right: userProfile.left
+                anchors.rightMargin: 12
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 WindowTitle { objectName: "chatWindowTitle"; anchors.fill: parent; theme: chat.theme; text: "Chat" }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
-            WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
-            WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
-            WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
+            UserBubble {
+                id: userProfile
+                objectName: "chatProfile"
+                anchors.centerIn: parent
+                width: 40
+                height: 40
+                control: chat.profileControl
+                ink: theme.ink
+                surface: theme.input
+            }
+            RowLayout {
+                objectName: "chatWindowControls"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                WindowControlButton { objectName: "chatSettingsButton"; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
+                WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
+                WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
+            }
         }
-        UserBubble { id: userProfile; parent: chat.contentItem; anchors.top: parent.top; anchors.topMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; control: chat.profileControl; ink: theme.ink; surface: theme.input }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
             Column {
@@ -183,19 +206,38 @@ Window {
     }
     Popup {
         id: options; parent: chat.contentItem; anchors.centerIn: parent
+        objectName: "chatSettingsPopup"
         width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24)
-        modal: true; padding: 20; closePolicy: Popup.CloseOnEscape
-        background: Rectangle { color: theme.panel; border.color: theme.line; radius: theme.windowRadius }
+        modal: true; focus: true; padding: 20; closePolicy: Popup.CloseOnEscape
+        background: Rectangle {
+            color: theme.panel; radius: theme.windowRadius
+            WindowBorder { objectName: "chatSettingsBorder"; theme: chat.theme; radius: parent.radius }
+        }
         onOpened: { modelSettings.reload(); if (optionsTabs.currentIndex === 1) chatAccounts.refresh(); }
         contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                objectName: "chatSettingsHeader"
+                Layout.fillWidth: true
+                Layout.minimumHeight: 44
+                Layout.maximumHeight: 44
+                WindowTitle { objectName: "chatSettingsTitle"; theme: chat.theme; text: "Chat settings"; Layout.fillWidth: true }
+                WindowControlButton {
+                    objectName: "closeChatSettings"
+                    theme: chat.theme
+                    symbol: "\u00d7"
+                    tip: "Close chat settings"
+                    onClicked: options.close()
+                }
+            }
             TabBar {
-                id: optionsTabs; Layout.fillWidth: true
+                id: optionsTabs; objectName: "chatSettingsTabs"; Layout.fillWidth: true
                 TabButton { text: "AI and voice" }
                 TabButton { objectName: "accountsTab"; text: "Accounts" }
             }
             StackLayout {
                 currentIndex: optionsTabs.currentIndex; Layout.fillWidth: true; Layout.fillHeight: true
-                ModelSettings { id: modelSettings; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
+                ModelSettings { id: modelSettings; objectName: "chatModelSettings"; showClose: false; backend: chat.backend; theme: chat.theme; onCloseRequested: options.close() }
                 AccountSettings { id: chatAccounts; control: chat.profileControl }
             }
         }
@@ -205,4 +247,5 @@ Window {
         function onChanged() { conversation.syncMessages() }
         function onTranscribed(text) { composer.text += (composer.text ? " " : "") + text; composer.forceActiveFocus() }
     }
+    WindowBorder { theme: chat.theme }
 }

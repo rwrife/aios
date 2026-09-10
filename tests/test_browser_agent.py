@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ from unittest.mock import patch
 
 from aios import agent, skills, toolhost
 from aios.applications import APPLICATION_TOOL
-from aios.browser import Browser, TOOL as BROWSER_TOOL, web_url
+from aios.browser import Browser, TOOL as BROWSER_TOOL, discover, web_url
 from aios.skills import Skill
 
 
@@ -48,8 +49,52 @@ class BrowserAgentTests(unittest.TestCase):
         browser = Browser()
         with self.assertRaises(ValueError):
             browser.act({"action": "snapshot"})
-        self.assertIsNone(browser.driver)
+        self.assertIsNone(browser.process)
         self.assertEqual(browser.act({"action": "close"}), {"closed": True})
+
+    def test_browser_uses_chat_theme_and_session_from_environment(self):
+        with patch.dict(os.environ, {
+            "AIOS_BROWSER_THEME": "violet",
+            "AIOS_BROWSER_SESSION": "chat-session",
+        }):
+            browser = Browser()
+        self.assertEqual(browser.theme, "violet")
+        self.assertEqual(browser.session, "chat-session")
+
+    def test_local_browser_discovery_requires_live_registration(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            directory = Path(runtime) / "aios" / "browsers"
+            directory.mkdir(parents=True)
+            socket_path = Path(runtime) / "browser.sock"
+            socket_path.touch()
+            private = directory / "private.json"
+            private.write_text(json.dumps({
+                "version": 1,
+                "session": "private",
+                "socket": str(socket_path),
+                "pid": os.getpid(),
+                "actions": ["snapshot"],
+            }))
+            os.chmod(private, 0o600)
+            self.assertEqual([entry["session"] for entry in discover(runtime)], ["private"])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file modes are required")
+    def test_local_browser_discovery_rejects_public_registration(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            directory = Path(runtime) / "aios" / "browsers"
+            directory.mkdir(parents=True)
+            socket_path = Path(runtime) / "browser.sock"
+            socket_path.touch()
+            public = directory / "public.json"
+            public.write_text(json.dumps({
+                "version": 1,
+                "session": "public",
+                "socket": str(socket_path),
+                "pid": os.getpid(),
+                "actions": ["snapshot"],
+            }))
+            os.chmod(public, 0o644)
+            self.assertEqual(discover(runtime), [])
 
     @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "test-model"})
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(BROWSER_TOOL)], "warnings": []})

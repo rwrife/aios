@@ -65,6 +65,29 @@ TestCase {
         compare(findChild(wizard, "closeSetup").background.radius, 8)
     }
     function cleanup() { wizard.close(); wizard.destroy() }
+    function clickScrolledAction(name) {
+        var button = findChild(wizard, name)
+        verify(button !== null)
+        verify(waitForRendering(wizard.contentItem))
+        var viewport = button.parent
+        while (viewport && viewport.contentY === undefined)
+            viewport = viewport.parent
+        verify(viewport !== null)
+        var position = button.mapToItem(viewport.contentItem, 0, 0)
+        viewport.contentY = Math.max(0, Math.min(
+            viewport.contentHeight - viewport.height,
+            position.y - (viewport.height - button.height) / 2))
+        var visiblePosition = button.mapToItem(viewport, 0, 0)
+        verify(visiblePosition.y >= 0)
+        verify(visiblePosition.y + button.height <= viewport.height)
+        mouseClick(button)
+    }
+    function test_default_size_fits_screen() {
+        verify(wizard.width <= Math.floor(wizard.screen.desktopAvailableWidth * 0.7))
+        verify(wizard.height <= Math.floor(wizard.screen.desktopAvailableHeight * 0.7))
+        verify(wizard.minimumWidth <= wizard.width)
+        verify(wizard.minimumHeight <= wizard.height)
+    }
     function test_skip_every_step_without_side_effects() {
         mouseClick(findChild(wizard, "setupNext"))
         for (var i = 1; i < 5; ++i) {
@@ -80,7 +103,7 @@ TestCase {
     }
     function test_close_cancels_download_and_reopen_resets_step() {
         wizard.moveTo(4)
-        mouseClick(findChild(wizard, "setupModel"))
+        clickScrolledAction("setupModel")
         compare(backend.downloads, 1)
         compare(backend.selectedId, "qwen3-0.6b")
         verify(backend.busy)
@@ -92,7 +115,7 @@ TestCase {
     }
     function test_skip_cancels_sign_in() {
         wizard.moveTo(2)
-        mouseClick(findChild(wizard, "setupSignIn"))
+        clickScrolledAction("setupSignIn")
         compare(backend.logins, 1)
         mouseClick(findChild(wizard, "setupSkip"))
         compare(wizard.step, 3)
@@ -102,7 +125,7 @@ TestCase {
         wizard.moveTo(2)
         var create = findChild(wizard, "setupLocalAccount")
         verify(create.enabled)
-        mouseClick(create)
+        clickScrolledAction("setupLocalAccount")
         tryCompare(findChild(wizard, "profileSubmit"), "visible", true)
     }
     function test_camera_preview_uses_bounded_format_without_runtime_enums() {

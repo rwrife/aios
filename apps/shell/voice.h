@@ -17,16 +17,10 @@ public:
     explicit Voice(QObject *parent = nullptr) : QObject(parent) {
         limit.setSingleShot(true);
         connect(&limit, &QTimer::timeout, this, &Voice::finish);
-        player.setAudioOutput(&output);
-        connect(&player, &QMediaPlayer::playbackStateChanged, this, [this] { emit changed(); });
-        connect(&player, &QMediaPlayer::errorOccurred, this, [this] { emit error("Could not play the spoken reply. Check your audio output."); });
-        connect(&player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
-            if (status == QMediaPlayer::EndOfMedia) { player.setSource({}); QFile::remove(speechPath()); }
-        });
     }
     ~Voice() { cancel(); }
     bool recording() const { return source != nullptr; }
-    bool speaking() const { return player.playbackState() == QMediaPlayer::PlayingState; }
+    bool speaking() const { return player && player->playbackState() == QMediaPlayer::PlayingState; }
     QString speechPath() const { return files.path() + "/reply.wav"; }
     void start() {
         if (source) return;
@@ -63,8 +57,18 @@ public:
         if (source) { auto old = source; source = nullptr; old->stop(); delete old; }
         buffer.close(); samples.clear(); QFile::remove(files.path() + "/recording.wav"); stopPlayback(); emit changed();
     }
-    void play(const QString &path) { player.setSource(QUrl::fromLocalFile(path)); player.play(); }
-    void stopPlayback() { player.stop(); player.setSource({}); QFile::remove(speechPath()); }
+    void play(const QString &path) {
+        ensurePlayer();
+        player->setSource(QUrl::fromLocalFile(path));
+        player->play();
+    }
+    void stopPlayback() {
+        if (player) {
+            player->stop();
+            player->setSource({});
+        }
+        QFile::remove(speechPath());
+    }
 signals:
     void changed();
     void recorded(const QString &path);
@@ -75,6 +79,23 @@ private:
     QBuffer buffer;
     QAudioSource *source = nullptr;
     QTimer limit;
-    QAudioOutput output;
-    QMediaPlayer player;
+    QAudioOutput *output = nullptr;
+    QMediaPlayer *player = nullptr;
+    void ensurePlayer() {
+        if (player)
+            return;
+        output = new QAudioOutput(this);
+        player = new QMediaPlayer(this);
+        player->setAudioOutput(output);
+        connect(player, &QMediaPlayer::playbackStateChanged, this, [this] { emit changed(); });
+        connect(player, &QMediaPlayer::errorOccurred, this, [this] {
+            emit error("Could not play the spoken reply. Check your audio output.");
+        });
+        connect(player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
+            if (status == QMediaPlayer::EndOfMedia) {
+                player->setSource({});
+                QFile::remove(speechPath());
+            }
+        });
+    }
 };

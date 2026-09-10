@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import QtMultimedia
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: wizard
@@ -11,10 +12,11 @@ Window {
     required property var profileControl
     title: "Welcome to AIOS"
     flags: Qt.Window | Qt.FramelessWindowHint
-    width: Math.min(720, Screen.width - 32)
-    height: Math.min(640, Screen.height - 48)
-    minimumWidth: 440; minimumHeight: 360
-    x: (Screen.width - width) / 2; y: (Screen.height - height) / 2
+    width: WindowSizing.extent(720, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(640, Screen.height, Screen.desktopAvailableHeight)
+    minimumWidth: WindowSizing.extent(440, Screen.width, Screen.desktopAvailableWidth)
+    minimumHeight: WindowSizing.extent(360, Screen.height, Screen.desktopAvailableHeight)
+    x: Screen.virtualX + (Screen.width - width) / 2; y: Screen.virtualY + (Screen.height - height) / 2
     color: "transparent"
     property int step: 0
     property bool ownsOperation: false
@@ -92,6 +94,8 @@ Window {
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
+            Layout.minimumHeight: 44
+            Layout.maximumHeight: 44
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -237,4 +241,5 @@ Window {
     }
     CaptureSession { id: cameraSession; videoOutput: preview }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
+    WindowBorder { theme: wizard.theme }
 }

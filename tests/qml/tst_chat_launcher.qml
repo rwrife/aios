@@ -27,6 +27,7 @@ TestCase {
         signal documentLoaded(string content)
         signal documentSaved()
         function chatProfile() { return sessionControl }
+        function listProfiles() {}
         function dispose() {}
         function setSecureInput(active) { secureInput = active }
         property var challenge: ({})
@@ -95,6 +96,7 @@ TestCase {
         })
         property var createdSessions: []
         property int createSessionCalls: 0
+        property var configureCalls: []
         property int refreshVolumeCalls: 0
         property var setVolumeCalls: []
         property var setMutedCalls: []
@@ -110,7 +112,7 @@ TestCase {
             createSessionCalls += 1
             return session
         }
-        function configure(values) {}
+        function configure(values) { configureCalls = configureCalls.concat([values]) }
         function power(action) {}
         function terminal() {}
         function openSystemSettings(section) {}
@@ -133,6 +135,8 @@ TestCase {
         desktop = null
         backend.createdSessions = []
         backend.createSessionCalls = 0
+        backend.configureCalls = []
+        palette.selected = "blue"
         backend.volume = 65
         backend.muted = false
         backend.volumeAvailable = true
@@ -328,6 +332,13 @@ TestCase {
         var second = main.openChat()
         compare(findChild(first, "chatWindowSurface").radius, palette.windowRadius)
         compare(findChild(first, "chatWindowTitle").font.pixelSize, 22)
+        var header = findChild(first, "chatHeader")
+        var profile = findChild(first, "chatProfile")
+        verify(header !== null)
+        verify(profile !== null)
+        compare(profile.parent, header)
+        tryCompare(header, "height", 44)
+        fuzzyCompare(header.mapToItem(first.contentItem, 0, 0).y, 24, 0.5)
         compare(findChild(first, "chatCloseButton").implicitWidth, 36)
         compare(findChild(first, "chatCloseButton").implicitHeight, 36)
         compare(findChild(first, "chatCloseButton").background.radius, 8)
@@ -337,6 +348,113 @@ TestCase {
         verify(first !== second)
         verify(first.visibility !== Window.Minimized)
         verify(second.visibility !== Window.Minimized)
+    }
+
+    function test_default_chat_size_fits_screen() {
+        var chat = createDesktop().openChat()
+        verify(chat.width <= Math.floor(chat.screen.desktopAvailableWidth * 0.7))
+        verify(chat.height <= Math.floor(chat.screen.desktopAvailableHeight * 0.7))
+    }
+
+    function test_profile_stays_top_center_when_resized_data() {
+        return [
+            {tag: "compact", width: 480, height: 480},
+            {tag: "default", width: 740, height: 650},
+            {tag: "wide", width: 1040, height: 720}
+        ]
+    }
+
+    function test_profile_stays_top_center_when_resized(data) {
+        var chat = createDesktop().openChat()
+        var profile = findChild(chat, "chatProfile")
+        var header = findChild(chat, "chatHeader")
+        var controls = findChild(chat, "chatWindowControls")
+        chat.width = data.width
+        chat.height = data.height
+        tryCompare(header, "width", chat.width - 48)
+        tryCompare(header, "height", 44)
+        var center = profile.mapToItem(chat.contentItem, profile.width / 2, profile.height / 2)
+        fuzzyCompare(center.x, chat.width / 2, 0.5)
+        fuzzyCompare(center.y, 46, 0.5)
+        verify(profile.x + profile.width < controls.x)
+        var title = findChild(chat, "chatWindowTitle")
+        verify(title.mapToItem(header, title.width, 0).x < profile.x)
+    }
+
+    function test_chat_settings_title_and_close_data() {
+        return [
+            {tag: "AI-Ocean", tab: 0, width: 740, height: 650, theme: "blue"},
+            {tag: "Accounts-Ocean", tab: 1, width: 740, height: 650, theme: "blue"},
+            {tag: "AI-Sage-compact", tab: 0, width: 480, height: 480, theme: "sage"},
+            {tag: "Accounts-Sage-compact", tab: 1, width: 480, height: 480, theme: "sage"}
+        ]
+    }
+
+    function test_chat_settings_title_and_close(data) {
+        var chat = createDesktop().openChat()
+        palette.selected = data.theme
+        chat.theme = palette
+        chat.width = data.width
+        chat.height = data.height
+        mouseClick(findChild(chat, "chatSettingsButton"))
+        var popup = findChild(chat, "chatSettingsPopup")
+        tryCompare(popup, "opened", true)
+        waitForRendering(popup.contentItem)
+        var header = findChild(popup, "chatSettingsHeader")
+        var title = findChild(popup, "chatSettingsTitle")
+        var close = findChild(popup, "closeChatSettings")
+        var tabs = findChild(popup, "chatSettingsTabs")
+        var frame = findChild(popup, "chatSettingsBorder")
+        compare(title.text, "Chat settings")
+        compare(title.font.pixelSize, 22)
+        compare(title.color, palette.ink)
+        compare(header.height, 44)
+        fuzzyCompare(header.y, 0, 0.5)
+        verify(tabs.y >= header.y + header.height)
+        compare(close.Accessible.name, "Close chat settings")
+        compare(close.width, 36)
+        compare(close.height, 36)
+        fuzzyCompare(close.mapToItem(popup.contentItem, close.width, 0).x, popup.availableWidth, 0.5)
+        compare(frame.border.width, 1)
+        compare(frame.border.color, palette.waveAlpha(0.5))
+        compare(findChild(popup, "chatModelSettings").showClose, false)
+        verify(popup.width <= chat.width)
+        verify(popup.height <= chat.height)
+        tabs.currentIndex = data.tab
+        waitForRendering(popup.contentItem)
+        verify(close.visible)
+        mouseClick(close)
+        tryCompare(popup, "opened", false)
+        verify(chat.visible)
+        compare(chat.session.closeCalls, 0)
+        compare(backend.configureCalls.length, 0)
+        mouseClick(findChild(chat, "chatSettingsButton"))
+        tryCompare(popup, "opened", true)
+        compare(tabs.currentIndex, data.tab)
+        popup.close()
+    }
+
+    function test_chat_settings_escape_and_save() {
+        var chat = createDesktop().openChat()
+        chat.requestActivate()
+        tryCompare(chat, "active", true)
+        mouseClick(findChild(chat, "chatSettingsButton"))
+        var popup = findChild(chat, "chatSettingsPopup")
+        tryCompare(popup, "opened", true)
+        var close = findChild(popup, "closeChatSettings")
+        close.forceActiveFocus()
+        tryCompare(close, "activeFocus", true)
+        keyClick(Qt.Key_Escape)
+        tryCompare(popup, "opened", false)
+        verify(chat.visible)
+        compare(backend.configureCalls.length, 0)
+        mouseClick(findChild(chat, "chatSettingsButton"))
+        tryCompare(popup, "opened", true)
+        mouseClick(findChild(popup, "saveModel"))
+        compare(backend.configureCalls.length, 1)
+        compare(backend.configureCalls[0].model_path, backend.config.model_path)
+        verify(popup.opened)
+        popup.close()
     }
 
     function test_minimized_chats_restore_newest_first_without_new_sessions() {

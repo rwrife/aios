@@ -6,7 +6,8 @@ qt6-qtbase-x11
 qt6-qtdeclarative
 font-dejavu
 qt6-qtmultimedia
-qt6-qtmultimedia-ffmpeg
+qt6-qtmultimedia-gstreamer
+gst-plugins-good
 ffmpeg
 pulseaudio
 pulseaudio-alsa
@@ -14,5 +15,4 @@ pulseaudio-utils
 alsa-utils
 espeak-ng
 poppler-utils
-chromium
-chromium-chromedriver
+qt6-qtwebengine

@@ -18,7 +18,7 @@ Updated 2026-09-08. Detailed execution evidence is in
 | T11 Installer | BIOS/UEFI installs and disk boots passed; UEFI persistence tested | Repeat install smoke for final release package |
 | T13 Voice | Remote-first settings plus local STT/TTS, illuminated waveform control, reviewed transcription | Real microphone/speaker hardware and provider coverage |
 | T14 Desktop settings | Sectioned panel, shared AI settings, sound/network/display tools, opt-in camera preview | Physical Wi-Fi/camera/audio, multi-monitor and resolution persistence QA |
-| T15 Agent browser | Chromium in the shared per-chat tool host, bounded structured tool loop | Real tool-capable model/provider matrix, broader websites and embedded-browser UI |
+| T15 Agent browser | Themed Qt WebEngine browser in the shared per-chat tool host, bounded structured tool loop and owner-only local discovery | Real tool-capable model/provider matrix, broader websites and cross-origin frames |
 | T16 Agentic tools | Skills, shared tool host, stdio MCP, provider routing, cached offline application builder | Full ISO, real paid-provider, and configured third-party MCP validation |
 | T12 Release validation | Backend tests, BIOS/UEFI offline smoke automation, manifests | CI build execution, ten cold boots, VMware/hardware, release publication |
 

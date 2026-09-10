@@ -50,11 +50,11 @@ must record exact package versions. Docker uses a named Linux cache volume to
 avoid Windows bind-mount metadata overhead.
 
 The live root uses a tmpfs ceiling of 75% of RAM. The development packages,
-voice stack, and bundled Qwen starter exceed Alpine's default half-RAM limit.
-The automated boot gate uses 8 GiB, while development launchers default to
-16 GiB so every curated model can be downloaded in the RAM-backed live system.
-The ceiling does not reserve memory up front and does not apply to installed
-ext4 systems. Larger models should use installed or mounted storage.
+voice stack, WebEngine browser, and bundled Qwen starter exceed Alpine's default
+half-RAM limit. The automated boot gate uses 8 GiB, while development launchers
+default to 16 GiB so every curated model can be downloaded in the RAM-backed
+live system. The ceiling does not reserve memory up front and does not apply to
+installed ext4 systems. Larger models should use installed or mounted storage.
 
 Models: the registry records source, quantization source, license, immutable
 revision URL, length, and checksum. Interrupted downloads restart from zero;

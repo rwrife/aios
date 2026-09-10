@@ -9,3 +9,4 @@ curl
 nano
 qt6-qtbase-dev
 qt6-qtdeclarative-dev
+qt6-qtwebengine-dev

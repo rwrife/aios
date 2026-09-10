@@ -62,6 +62,60 @@ TestCase {
         function purgeRecognitionData() { purges++; recognitionDataPurged() }
     }
     Component { id: settingsComponent; SettingsWindow {} }
+    Component {
+        id: borderComponent
+        Rectangle {
+            width: 96; height: 80
+            color: borderTheme.night
+            property alias frame: outline
+            property alias theme: borderTheme
+            Theme { id: borderTheme }
+            WindowBorder { id: outline; theme: borderTheme }
+        }
+    }
+    function test_window_border_matches_rounded_surface_data() {
+        return [{tag: "Ocean", theme: "blue"}, {tag: "Sage", theme: "sage"}]
+    }
+    function test_window_border_matches_rounded_surface(data) {
+        var surface = createTemporaryObject(borderComponent, test.parent)
+        surface.theme.selected = data.theme
+        verify(waitForRendering(surface))
+        compare(surface.frame.radius, surface.theme.windowRadius)
+        compare(surface.frame.border.width, 1)
+        compare(surface.frame.border.color, surface.theme.waveAlpha(0.5))
+        var image = grabImage(surface)
+        var background = String(surface.color)
+        compare(String(image.pixel(0, 0)), background)
+        compare(String(image.pixel(image.width - 1, 0)), background)
+        compare(String(image.pixel(0, image.height - 1)), background)
+        compare(String(image.pixel(image.width - 1, image.height - 1)), background)
+        verify(String(image.pixel(image.width / 2, 0)) !== background)
+    }
+    function test_setup_action_keeps_full_label_data() {
+        return [{tag: "default", width: 820}, {tag: "minimum", width: 540}]
+    }
+    function test_default_size_fits_screen() {
+        var window = createTemporaryObject(settingsComponent, test, {
+            backend: backend, theme: palette
+        })
+        window.show()
+        verify(window.width <= Math.floor(window.screen.desktopAvailableWidth * 0.7))
+        verify(window.height <= Math.floor(window.screen.desktopAvailableHeight * 0.7))
+        verify(window.minimumWidth <= window.width)
+        verify(window.minimumHeight <= window.height)
+        window.close()
+    }
+    function test_setup_action_keeps_full_label(data) {
+        var window = settingsComponent.createObject(test, {
+            backend: backend, theme: palette, width: data.width, height: 620
+        })
+        window.show()
+        var setup = findChild(window, "launchSetup")
+        waitForRendering(setup)
+        compare(setup.contentItem.truncated, false)
+        verify(setup.width >= 170)
+        window.destroy()
+    }
     function test_pick_color_updates_existing_window() {
         var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
         verify(window !== null)
@@ -71,6 +125,10 @@ TestCase {
         compare(findChild(window, "settingsCloseButton").implicitWidth, 36)
         compare(findChild(window, "settingsCloseButton").implicitHeight, 36)
         compare(findChild(window, "settingsCloseButton").background.radius, 8)
+        var setup = findChild(window, "launchSetup")
+        compare(setup.implicitHeight, 44)
+        compare(setup.contentItem.horizontalAlignment, Text.AlignHCenter)
+        compare(setup.contentItem.elide, Text.ElideRight)
         findChild(window, "settingsPages").currentIndex = 5
         wait(100)
         compare(palette.choices.length, 8)

@@ -78,6 +78,42 @@ TestCase {
     Component { id: enrollmentComponent; EnrollmentFlow {} }
     Component { id: bubbleComponent; UserBubble {} }
     Component { id: accountsComponent; AccountSettings {} }
+    Component { id: themeComponent; Theme {} }
+
+    function test_new_account_hover_and_focus_colors_data() {
+        return [{tag: "Ocean", selected: "blue"}, {tag: "Sage", selected: "sage"}]
+    }
+
+    function test_new_account_hover_and_focus_colors(data) {
+        var theme = createTemporaryObject(themeComponent, test, {selected: data.selected})
+        var bubble = createTemporaryObject(bubbleComponent, test, {
+            control: control, x: 200, y: 80, ink: theme.ink, surface: theme.input
+        })
+        bubble.openPicker()
+        var menu = findChild(bubble, "profilePicker")
+        tryCompare(menu, "opened", true)
+        waitForRendering(menu.contentItem)
+        var create = findChild(menu.contentItem, "createUser")
+        var choose = findChild(menu.contentItem, "chooseProfile")
+        mouseMove(create, create.width / 2, create.height / 2)
+        tryCompare(create, "hovered", true)
+        compare(create.background.color, menu.palette.highlight)
+        compare(create.contentItem.color, theme.ink)
+        verify(create.background.color !== create.contentItem.color)
+        mousePress(create)
+        verify(create.down)
+        compare(create.background.color, menu.palette.highlight)
+        mouseMove(choose, choose.width / 2, choose.height / 2)
+        mouseRelease(choose)
+        create.forceActiveFocus(Qt.TabFocusReason)
+        tryCompare(create, "activeFocus", true)
+        compare(create.background.color, menu.palette.highlight)
+        compare(create.background.border.width, 1)
+        create.enabled = false
+        compare(create.contentItem.opacity, 0.5)
+        menu.close()
+    }
+
     function test_settings_delete_requires_pin_and_clears_prompt() {
         control.greetingOnly = true
         var panel = accountsComponent.createObject(test.parent, {control: control, width: 420, height: 440})

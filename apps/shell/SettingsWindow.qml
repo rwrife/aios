@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import QtMultimedia
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: settings
@@ -15,9 +16,11 @@ Window {
     signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
-    width: Math.min(820, Screen.width - 32); height: Math.min(620, Screen.height - 48)
-    minimumWidth: 540; minimumHeight: 400
-    x: (Screen.width-width)/2; y: (Screen.height-height)/2
+    width: WindowSizing.extent(820, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(620, Screen.height, Screen.desktopAvailableHeight)
+    minimumWidth: WindowSizing.extent(540, Screen.width, Screen.desktopAvailableWidth)
+    minimumHeight: WindowSizing.extent(400, Screen.height, Screen.desktopAvailableHeight)
+    x: Screen.virtualX + (Screen.width-width)/2; y: Screen.virtualY + (Screen.height-height)/2
     color: "transparent"
     function stopCameraPreview() {
         if (activeCamera) activeCamera.stop()
@@ -71,9 +74,24 @@ Window {
     readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
     component Action: Button {
         id: control
+        hoverEnabled: true
+        implicitHeight: 44
         padding: 12
-        contentItem: Text { text: control.text; color: theme.ink; font.pixelSize: 14 }
-        background: Rectangle { color: control.hovered || control.down ? theme.horizon : theme.input; radius: 6; border.color: control.activeFocus ? theme.accent : theme.line }
+        contentItem: Text {
+            text: control.text
+            color: control.enabled ? theme.ink : theme.muted
+            font.pixelSize: 14
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            color: control.hovered || control.down ? theme.horizon : theme.input
+            radius: 8
+            border.width: control.activeFocus ? 2 : 1
+            border.color: control.activeFocus ? theme.accent : theme.line
+        }
     }
     component Note: Text {
         color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap; textFormat: Text.PlainText
@@ -98,7 +116,7 @@ Window {
     RowLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
         ColumnLayout {
-            Layout.preferredWidth: 170; Layout.fillHeight: true; spacing: 6
+            Layout.preferredWidth: 170; Layout.minimumWidth: 170; Layout.fillHeight: true; spacing: 6
             WindowTitle {
                 objectName: "settingsWindowTitle"
                 theme: settings.theme
@@ -120,7 +138,13 @@ Window {
                 }
             }
             Item { Layout.fillHeight: true }
-            Action { objectName: "launchSetup"; text: "Run setup wizard"; Layout.fillWidth: true; onClicked: { settings.close(); settings.setupRequested() } }
+            Action {
+                objectName: "launchSetup"
+                text: "Run setup wizard"
+                Accessible.name: "Run setup wizard"
+                Layout.fillWidth: true
+                onClicked: { settings.close(); settings.setupRequested() }
+            }
             Note { text: backend.config.live ? "Live session\nChanges are lost after reboot." : "This computer"; font.pixelSize: 11 }
         }
         Rectangle { Layout.fillHeight: true; implicitWidth: 1; color: theme.line; opacity: 0.5 }
@@ -129,6 +153,8 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 44
+                Layout.minimumHeight: 44
+                Layout.maximumHeight: 44
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -361,6 +387,7 @@ Window {
         }
         Item { Layout.fillHeight: true }
     }
+    WindowBorder { theme: settings.theme }
     Camera {
         id: camera
         cameraDevice: devices.defaultVideoInput

@@ -1,0 +1,12 @@
+import QtQuick
+
+Rectangle {
+    required property var theme
+    anchors.fill: parent
+    z: 1000000
+    color: "transparent"
+    radius: theme.windowRadius
+    border.width: 1
+    border.color: typeof theme.waveAlpha === "function" ? theme.waveAlpha(0.5) : theme.line
+    enabled: false
+}

@@ -21,7 +21,6 @@
 #include <QUuid>
 #include <QTemporaryDir>
 #include <QSettings>
-#include <QDesktopServices>
 #include <QSysInfo>
 #include <QThread>
 #include "BuildInfo.h"
@@ -358,7 +357,13 @@ public:
     Q_INVOKABLE void openSubscriptionLogin() {
         const QUrl url(m_loginUrl);
         if (url.scheme() != "https" || (url.host() != "auth.openai.com" && url.host() != "chatgpt.com") || !url.userInfo().isEmpty()) return;
-        if (!QDesktopServices::openUrl(url)) { m_status = "Open the sign-in address in your browser."; emit changed(); }
+        if (!QProcess::startDetached("aios-browser", {
+                "--url", url.toString(),
+                "--theme", m_config.value("theme_color", "blue").toString()
+            })) {
+            m_status = "Open the sign-in address in your browser.";
+            emit changed();
+        }
     }
     Q_INVOKABLE void refreshLocalModels() {
         if (!m_busy && !m_configuring) run({{"action", "local-models"}});
@@ -484,6 +489,8 @@ private:
         if (action == "chat" && toolDirectory.isValid()) {
             const auto socket = toolDirectory.path() + "/tools.sock";
             if (tools.state() == QProcess::NotRunning) {
+                env.insert("AIOS_BROWSER_SESSION", sessionId);
+                env.insert("AIOS_BROWSER_THEME", m_config.value("theme_color", "blue").toString());
                 tools.setProcessEnvironment(env);
                 tools.setStandardOutputFile(QProcess::nullDevice());
                 tools.setStandardErrorFile(QProcess::nullDevice());

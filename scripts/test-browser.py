@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run as a normal user in an X11 session with Chromium/ChromeDriver installed."""
+"""Run as a normal user in an X11 session with aios-browser installed."""
 import http.server
 import json
 import threading
@@ -27,15 +27,22 @@ try:
     page=browser.act({'action':'click','element':link})
     assert page['title']=='Next page',page
     assert browser.act({'action':'back'})['title']=='AIOS Browser QA'
-    browser.act({'action':'open','url':url+'next'})
-    tabs=browser.act({'action':'tabs'})['tabs']; assert len(tabs)==2
-    browser.act({'action':'switch','tab':tabs[0]})
+    tabs=browser.act({'action':'tabs'})['tabs']; assert tabs==['main']
+    browser.act({'action':'switch','tab':'main'})
     page=browser.act({'action':'navigate','url':url})
     assert not any(c['label']=='Bottom control' for c in page['controls'])
-    for _ in range(5):
+    for _ in range(30):
         page=browser.act({'action':'scroll','direction':'down'})
+        if any(c['label']=='Bottom control' for c in page['controls']):
+            break
     assert 'Bottom marker' in page['text'],page
     assert any(c['label']=='Bottom control' for c in page['controls'])
-    print('PASS: real Chromium open, read, type, click, navigation, tabs, switching and viewport scrolling',flush=True)
+    try:
+        browser.act({'action':'navigate','url':'http://127.0.0.1:1/'})
+    except RuntimeError as error:
+        assert 'navigation failed' in str(error).lower(),error
+    else:
+        raise AssertionError('Failed navigation was reported as successful')
+    print('PASS: themed WebEngine browser open, read, type, click, navigation and viewport scrolling',flush=True)
 finally:
     browser.close(); server.shutdown()

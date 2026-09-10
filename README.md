@@ -126,14 +126,16 @@ lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
 Tool-capable models can use AIOS Agent Skills, approved stdio MCP tools, and
-built-in browser/application tools. For example, try `I need a calculator` with
-a capable configured model to build or reuse a cached app. When the compiled
-`aios-app-host` capability is installed, calculator requests prefer its trusted
+built-in themed WebEngine browser and application tools. For example, try
+`I need a calculator` with a capable configured model to build or reuse a cached
+app. When `aios-app-host` is installed, calculator requests prefer its trusted
 native Qt template; unsupported app types fall back to a sandboxed offline web
-app. Agent tasks
-can stay on the current model or be explicitly routed to ChatGPT or a separate
-remote service. See [agentic tools](docs/agentic-tools.md). Chromium remains
-available as one built-in tool, without a desktop browser icon; see
+app. Agent tasks can stay on the current model or be explicitly routed to
+ChatGPT or a separate remote service. See
+[agentic tools](docs/agentic-tools.md).
+
+The browser has no desktop icon and exposes only an address bar, Back, Refresh
+and Stop, plus bounded owner-only local automation. See
 [browser tools](docs/browser.md). The starter supports simple tool bootstrap but
 is not a reliable tool agent; critical setup controls call deterministic backend
 actions instead of relying on the model. Settings and setup offer

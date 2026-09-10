@@ -2,13 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: calculator
-    width: 360
-    height: 520
-    minimumWidth: 320
-    minimumHeight: 460
+    width: WindowSizing.extent(360, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(520, Screen.height, Screen.desktopAvailableHeight)
+    minimumWidth: WindowSizing.extent(320, Screen.width, Screen.desktopAvailableWidth)
+    minimumHeight: WindowSizing.extent(460, Screen.height, Screen.desktopAvailableHeight)
     visible: true
     color: "#101b27"
     title: appTitle

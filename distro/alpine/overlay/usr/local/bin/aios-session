@@ -17,6 +17,9 @@ compositor=$!
 trap 'kill "$compositor" "$wm" 2>/dev/null || true' EXIT INT TERM
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on
 # its RHI renderer because the software scenegraph cannot display video frames.
+# GStreamer avoids the Qt FFmpeg startup crash on the live desktop while
+# preserving PulseAudio playback and camera support.
+export QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-gstreamer}"
 # Match multimedia to the software-rendered desktop: avoid probing unavailable
 # GPU media drivers in a VM. Audio capture/playback still uses PulseAudio.
 # A comma is Qt's explicit empty hardware-backend list (an empty value is not).
