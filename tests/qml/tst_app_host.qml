@@ -180,6 +180,15 @@ TestCase {
         compare(host.displayValue, "-4")
         host.press("=")
         compare(host.displayValue, "4")
+
+        host.reset()
+        host.press("2")
+        host.press("+")
+        host.press("±")
+        host.press("×")
+        host.press("3")
+        host.press("=")
+        compare(host.displayValue, "6")
     }
 
     function test_clicked_button_keeps_focus_and_real_key_events_still_work() {

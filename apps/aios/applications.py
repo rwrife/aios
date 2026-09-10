@@ -40,7 +40,7 @@ APPLICATION_TOOL = {
     "type": "function",
     "function": {
         "name": "application",
-        "description": "Create, store, search, publish, read, write, and launch cached single-file HTML applications.",
+        "description": "Create, store, search, publish, and launch cached desktop applications, with sandboxed single-file HTML fallback.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -370,7 +370,7 @@ class ApplicationStore:
         launcher: Callable[[Path], Any] | None = None,
         native_host: Path | str | None = None,
         native_templates: Iterable[str] | None = None,
-        launch_timeout: float = 10,
+        launch_timeout: float = 30,
     ):
         self.root = Path(root) if root is not None else core.data_dir() / "applications"
         self.root = self.root.expanduser()

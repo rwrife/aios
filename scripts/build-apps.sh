@@ -20,6 +20,8 @@ cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja \
   -DAIOS_EMBEDDED_DISPLAY="$embedded_display" \
   -DAIOS_COMMIT="$AIOS_COMMIT" -DAIOS_BUILD_NUMBER="$AIOS_BUILD_NUMBER"
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
+AIOS_APP_HOST_TEST_BINARY="$BUILD/shell/aios-app-host" PYTHONPATH="$ROOT/apps" \
+  python3 -m unittest tests.test_applications.ApplicationStoreTests.test_compiled_native_host_binary_ready_protocol_and_validation -v
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
 rm -rf "$DEST/usr/local/share/aios/examples"
 cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"

@@ -65,8 +65,12 @@ class ApplicationStoreTests(unittest.TestCase):
     def _wait_for_path(self, path: Path, timeout=5):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if path.exists():
-                return
+            if path.exists() and path.stat().st_size:
+                try:
+                    _read_json(path)
+                    return
+                except (OSError, json.JSONDecodeError):
+                    pass
             time.sleep(0.05)
         self.fail(f"Timed out waiting for {path}")
 
@@ -1134,17 +1138,24 @@ class ApplicationStoreTests(unittest.TestCase):
         from aios import app_runner
 
         callbacks = []
+        ready = Event()
+
+        def on_app_loaded():
+            callbacks.append("ready")
+            ready.set()
+
         handler = app_runner.handler_for(
             "<!doctype html><p>ready</p>",
-            on_app_loaded=lambda: callbacks.append("ready"),
+            on_app_loaded=on_app_loaded,
         )
         with self._serve(handler) as base_url:
             self._get(base_url + "/")
             self._get(base_url + "/missing", expect_error=True)
             self._get(base_url + "/app", method="HEAD")
-            self.assertEqual(callbacks, [])
+            self.assertFalse(ready.is_set())
             app = self._get(base_url + "/app")
             self.assertEqual(app["body"], b"<!doctype html><p>ready</p>")
+            self.assertTrue(ready.wait(timeout=1))
             self.assertEqual(callbacks, ["ready"])
             self._get(base_url + "/app")
             self.assertEqual(callbacks, ["ready"])

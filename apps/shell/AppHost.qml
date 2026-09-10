@@ -107,6 +107,12 @@ Window {
     function chooseOperator(operator) {
         if (errorState)
             return
+        if (pendingOperator !== "" && replaceDisplay) {
+            pendingOperator = operator
+            pendingNegativeEntry = false
+            formatNumber(storedValue)
+            return
+        }
         var operand = Number(displayValue)
         if (pendingOperator !== "" && !replaceDisplay) {
             if (!applyPending(operand))

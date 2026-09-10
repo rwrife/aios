@@ -148,6 +148,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"', source)
         self.assertIn('rm -rf "$DEST/usr/local/share/aios/skills"', source)
         self.assertIn('cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"', source)
+        self.assertIn('AIOS_APP_HOST_TEST_BINARY="$BUILD/shell/aios-app-host"', source)
         self.assertNotIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"', source)
         self.assertEqual(source.count('rm -rf "$DEST/usr/local/share/aios/'), 2)
         self.assertTrue((ROOT / "apps/skills/application-builder/SKILL.md").is_file())
