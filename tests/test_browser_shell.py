@@ -49,6 +49,11 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('m_address->setText(url == QUrl("about:blank")', source)
         self.assertNotIn('if (!m_address->hasFocus())', source)
 
+    def test_manual_browser_controls_interrupt_agent_operations(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        self.assertEqual(source.count('interruptPendingForUserAction();'), 4)
+        self.assertIn('Browser operation interrupted by a manual browser control.', source)
+
 
 if __name__ == '__main__':
     unittest.main()

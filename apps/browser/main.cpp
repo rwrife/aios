@@ -417,9 +417,18 @@ private:
             failPending("Browser operation timed out. Try a fresh snapshot.");
         });
 
-        connect(m_back, &QPushButton::clicked, m_view, &QWebEngineView::back);
-        connect(m_refresh, &QPushButton::clicked, m_view, &QWebEngineView::reload);
-        connect(m_stop, &QPushButton::clicked, m_view, &QWebEngineView::stop);
+        connect(m_back, &QPushButton::clicked, this, [this] {
+            interruptPendingForUserAction();
+            m_view->back();
+        });
+        connect(m_refresh, &QPushButton::clicked, this, [this] {
+            interruptPendingForUserAction();
+            m_view->reload();
+        });
+        connect(m_stop, &QPushButton::clicked, this, [this] {
+            interruptPendingForUserAction();
+            m_view->stop();
+        });
         connect(m_address, &QLineEdit::returnPressed, this, [this] {
             QString text = m_address->text().trimmed();
             if (!text.contains("://"))
@@ -430,6 +439,7 @@ private:
                 m_address->selectAll();
                 return;
             }
+            interruptPendingForUserAction();
             m_address->setToolTip({});
             m_view->setFocus();
             m_opened = true;
@@ -492,6 +502,12 @@ private:
     {
         m_back->setEnabled(m_view->history()->canGoBack());
         m_refresh->setEnabled(m_opened);
+    }
+
+    void interruptPendingForUserAction()
+    {
+        if (m_pending)
+            failPending("Browser operation interrupted by a manual browser control.");
     }
 
     void startServer()
