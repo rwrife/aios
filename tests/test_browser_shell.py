@@ -17,7 +17,10 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('qt6-qtwebengine', runtime)
         self.assertIn('qt6-qtwebengine-dev', development)
         self.assertIn('rootflags=size=75%', profile)
-        self.assertIn('"qemu-system-x86_64", "-m", "6144"', boot_test)
+        self.assertIn('parser.add_argument("--memory-mb", type=int, default=8192)', boot_test)
+        self.assertIn('parser.add_argument("--cpus", type=int, default=4)', boot_test)
+        self.assertIn('"-m", str(args.memory_mb)', boot_test)
+        self.assertIn('"-smp", str(args.cpus)', boot_test)
         self.assertNotIn('chromium-chromedriver', runtime)
 
     def test_browser_exposes_only_bounded_local_actions(self):
@@ -25,7 +28,7 @@ class BrowserShellTests(unittest.TestCase):
         client = (ROOT / 'apps/aios/browser.py').read_text(encoding='utf-8')
         for action in ('snapshot', 'click', 'type', 'back', 'reload', 'stop'):
             self.assertIn(f'"{action}"', source)
-            self.assertIn(f"'{action}'", client)
+            self.assertIn(f'"{action}"', client)
         self.assertIn('QLocalServer::UserAccessOption', source)
         self.assertIn('QWebEngineScript::ApplicationWorld', source)
         self.assertIn('QWebEngineView::loadStarted', source)

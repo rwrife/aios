@@ -49,7 +49,7 @@ Window {
         }
     }
     component Note: Text {
-        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap
+        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap; textFormat: Text.PlainText
         Layout.fillWidth: true
     }
     component InfoRow: RowLayout {

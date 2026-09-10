@@ -47,7 +47,18 @@ retain a second durable conversation. Browser observations are retained only
 within that turn, matching AIOS's existing agent. Previous tools are not replayed.
 The runtime runs in an empty temporary working directory with no execution
 environments, disabled host tools, read-only sandbox and no approval escalation.
-Only AIOS's bounded browser function is supplied; other client requests are rejected.
+AIOS supplies only the same validated, filtered dynamic tools used by the
+OpenAI-compatible agent path. These can include built-in browser/application
+functions and user-approved MCP tools; Codex's own shell, browser, MCP, skills,
+web search, and other host tools remain disabled. Other client requests are
+rejected.
+
+Deterministic trigger activation and explicit `/skill-name` activation happen
+before the ephemeral thread starts, so those skill instructions and permissions
+are present immediately. If the model calls `activate_skill` during a ChatGPT
+turn, its tool permissions narrow at once, but its newly loaded instructions
+take effect on the next user turn because the running thread's base instructions
+are not rewritten mid-turn. See [agentic tools](agentic-tools.md).
 
 The dynamic-tool and history-injection interfaces are experimental. Upgrade the
 pinned binary only after checking generated schemas and running the subscription

@@ -21,8 +21,16 @@ cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja \
   -DAIOS_EMBEDDED_DISPLAY="$embedded_display" \
   -DAIOS_COMMIT="$AIOS_COMMIT" -DAIOS_BUILD_NUMBER="$AIOS_BUILD_NUMBER"
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
+(
+  cd "$ROOT"
+  AIOS_APP_HOST_TEST_BINARY="$BUILD/shell/aios-app-host" PYTHONPATH="$ROOT/apps" \
+    python3 -m unittest tests.test_applications.ApplicationStoreTests.test_compiled_native_host_binary_ready_protocol_and_validation -v
+)
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
-cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"
+rm -rf "$DEST/usr/local/share/aios/examples"
+cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"
+rm -rf "$DEST/usr/local/share/aios/skills"
+cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"
 if [ ! -d "$BUILD/llama/.git" ]; then
   git init "$BUILD/llama"
   git -C "$BUILD/llama" remote add origin https://github.com/ggml-org/llama.cpp.git

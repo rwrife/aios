@@ -45,9 +45,10 @@ profile_aios() {
 	# Boot optimization for VM-first targets.
 	initfs_features="$initfs_features virtio"
 	initfs_cmdline="modules=loop,squashfs,sd-mod,usb-storage,virtio_blk,virtio_scsi,ahci,nvme quiet"
-	# Alpine's default tmpfs root is half of RAM. The bundled development and
-	# voice and WebEngine packages need more than that in a 6 GiB live VM; this
-	# is a ceiling, not an up-front allocation. Installed ext4 systems do not use it.
+	# Alpine's default tmpfs root is half of RAM. The development packages and
+	# bundled model, voice stack, and WebEngine browser need more room in the
+	# live VM; this is a ceiling, not an up-front allocation. Installed ext4
+	# systems do not use it.
 	kernel_cmdline="console=tty0 console=ttyS0,115200 loglevel=4 rootflags=size=75%"
 	syslinux_serial="0 115200"
 

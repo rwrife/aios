@@ -12,8 +12,10 @@ open a website. A browser is created lazily for that chat and remains available
 between messages until the chat is stopped or closed. The browser has one page,
 not user-visible tabs.
 
-The desktop's Chat Completions agent advertises a browser function to the chosen
-local or remote model. Use a model/provider that supports structured tool calls.
+Browser is one built-in in the shared per-chat tool registry, alongside the
+application tool and explicitly approved MCP tools. The provider-neutral agent
+advertises the filtered registry to the chosen local, remote, or ChatGPT model.
+Use a model/provider that supports structured tool calls.
 The bundled Qwen3 0.6B starter is for simple chat and tool bootstrap, but is not
 a reliable browser agent. Critical setup controls invoke fixed backend actions
 directly and do not depend on model-generated tool calls.
@@ -27,11 +29,29 @@ command, local-file navigation, file upload, download, remote debugging, or
 screenshot tool. Canvas-only applications and cross-origin frames are not
 covered yet.
 
-Each chat owns an off-the-record WebEngine profile and an owner-only Unix socket
-inside a private temporary directory. Closing the chat or pressing Stop
-terminates its browser process and removes its runtime registration. Browser
-permissions, popup windows, downloads, certificate exceptions, clipboard
-access, screen capture and fullscreen requests are denied by default.
+Each chat owns a private local tool-host socket and a lazily opened browser with
+a temporary off-the-record WebEngine profile. The tool host launches
+`aios-browser` with the chat's theme and session identifier, then communicates
+through an owner-only Unix socket in a private temporary directory. Browser
+state survives between messages in that chat; other chats have separate
+profiles and pages. Closing the chat or pressing Stop terminates its tool host,
+browser, and MCP children and removes the browser's profile and runtime
+registration. If the window is closed manually, the next `open` action starts a
+fresh browser.
+
+Qt WebEngine and its Chromium renderer run as the ordinary desktop user with
+the renderer sandbox enabled. Browser permissions, popup windows, downloads,
+certificate exceptions, clipboard access, screen capture and fullscreen
+requests are denied by default. The shared tool host accepts only validated
+registry operations. Web content is marked untrusted and the agent is instructed
+to follow the user's task rather than page instructions. The tool loop executes
+only completed structured calls (never model prose), with at most eight rounds
+and four calls per round. Page content sent to a remote model goes to the
+configured model provider, like other chat content. There is no
+microphone/wake-word integration.
+
+Skills, MCP tools, routing, and shared limits are documented in
+[agentic tools](agentic-tools.md).
 
 ## Local skill and MCP control
 
@@ -58,14 +78,7 @@ use only an advertised action and element IDs from the latest snapshot. The
 socket is intentionally per-chat and local-only; no TCP listener or reusable
 authentication token is created.
 
-Web content is marked untrusted and the agent is instructed to follow the
-user's task rather than page instructions. The tool loop executes only
-completed structured calls, with at most eight rounds and four calls per round.
-Page content sent to a remote model goes to the configured model provider, like
-other chat content.
-
-Qt WebEngine runs as the ordinary desktop user with its renderer sandbox
-enabled. Do not set `QTWEBENGINE_DISABLE_SANDBOX` or pass `--no-sandbox`.
+Do not set `QTWEBENGINE_DISABLE_SANDBOX` or pass `--no-sandbox`.
 Installed systems receive browser-engine fixes through Alpine's
 `qt6-qtwebengine` updates; live images need rebuilding to pick up newer
 packages. Allow additional memory for the browser alongside local models.

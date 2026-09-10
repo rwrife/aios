@@ -88,7 +88,9 @@ python3 scripts/test-boot.py path/to/aios.iso
 python3 scripts/test-boot.py path/to/aios.iso --uefi /usr/share/OVMF/OVMF_CODE_4M.fd
 ```
 
-The boot checks use disposable VMs with 6 GiB RAM and no host-disk passthrough.
+Current boot checks use disposable VMs with 8 GiB RAM, four CPUs and no
+host-disk passthrough. Earlier checkpoints above record their historical 4 GiB
+results.
 The manual GitHub image workflow runs both firmware checks before uploading
 the ISO, checksums, package manifest and source pins.
 
@@ -235,3 +237,46 @@ order, while visible chat windows continue to allow additional sessions.
 Source-level Qt Quick regression tests cover accessibility metadata, tooltip
 removal, minimize tracking, restore order, close cleanup and session creation.
 This checkpoint does not claim a new ISO or interactive VM validation.
+
+## Agentic tools checkpoint (2026-09-09)
+
+Agent Skills, the shared per-chat tool host, allowlisted stdio MCP tools, Agent
+tasks provider routing, and the cached native/web application builder are now
+covered by backend integration tests and user/architecture documentation.
+
+The new deterministic end-to-end test starts a real worker subprocess, agent
+loop, AF_UNIX ToolHost and ApplicationStore, plus a loopback OpenAI-compatible
+streaming server. It copies the shipped application-builder skill into a
+temporary user skill directory. The store has an executable native-host
+capability stub, a recording launcher, and an exact legacy web calculator. The
+first turn verifies the advertised native schema, searches, deliberately creates
+the trusted native calculator instead of reusing the web entry, publishes a
+manifest-only cache entry, and launches it without `read` or `write`. The second
+turn finds the exact native entry first and launches it without changing the
+manifest. Chromium, the real Qt host, and paid providers are intentionally
+replaced by deterministic fixtures.
+
+Validation results:
+
+- Under WSL, the native application-builder end-to-end test passed three
+  requested runs:
+  1 test in 3.536 seconds, 3.642 seconds, and 3.383 seconds.
+- Under WSL, the skill, browser-agent, application-builder agent,
+  application-store, and ToolHost test files passed 154 tests in 13.205
+  seconds, with one existing platform/fixture skip.
+- Under WSL, final full Python discovery passed 338 tests in 46.028 seconds,
+  with two existing platform/fixture skips.
+- In Alpine 3.23, all 66 QML tests passed, the complete native CMake build
+  produced `aios-shell` and `aios-app-host`, and the compiled host passed its
+  real ready-pipe protocol and input-validation smoke test.
+- The resulting 2.09 GB x86_64 ISO passed checksum, manifest, hybrid USB,
+  BIOS and UEFI verification. Separate offline BIOS and UEFI boots confirmed
+  the ordinary-user shell, desktop example compilation, and bundled model
+  reply.
+- The verified ISO was launched interactively with QEMU and reached the AIOS
+  Welcome screen for hands-on native calculator testing.
+- Windows Git `diff --check` passed.
+
+No paid OpenAI/ChatGPT or configured third-party MCP run is claimed by this
+checkpoint. The compiled native host and its readiness protocol were exercised
+directly; user-facing calculator interaction remains a hands-on VM check.

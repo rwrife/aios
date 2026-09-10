@@ -2,13 +2,15 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import Mock, patch
-from aios import core
+from aios import cli, core
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -85,6 +87,252 @@ class CoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 core.save_config({"url": url})
 
+    def test_agent_config_defaults_persistence_and_key_independence(self):
+        config = core.load_config()
+        self.assertEqual(
+            {key: config[key] for key in ("agent_mode", "agent_url", "agent_model", "agent_api_key")},
+            {"agent_mode": "current", "agent_url": "", "agent_model": "", "agent_api_key": ""},
+        )
+        self.assertTrue({"agent_mode", "agent_url", "agent_model", "agent_api_key"} <= set(core.defaults_keys()))
+
+        core.save_config({
+            "mode": "remote",
+            "url": "https://ordinary.example/v1",
+            "model": "ordinary-model",
+            "api_key": "ordinary-secret",
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "  agent-model  ",
+            "agent_api_key": "agent-secret",
+        })
+        config = core.load_config()
+        self.assertEqual(config["agent_model"], "agent-model")
+        self.assertEqual(config["api_key"], "ordinary-secret")
+        self.assertEqual(config["agent_api_key"], "agent-secret")
+
+        core.save_config({"url": "https://ordinary-two.example/v1"})
+        config = core.load_config()
+        self.assertEqual(config["api_key"], "")
+        self.assertEqual(config["agent_api_key"], "agent-secret")
+        core.save_config({"api_key": "ordinary-replacement", "agent_url": "https://agent-two.example/v1"})
+        config = core.load_config()
+        self.assertEqual(config["api_key"], "ordinary-replacement")
+        self.assertEqual(config["agent_api_key"], "")
+        core.save_config({"agent_url": "https://agent-three.example/v1", "agent_api_key": "agent-replacement"})
+        self.assertEqual(core.load_config()["agent_api_key"], "agent-replacement")
+        self.assertEqual((core.config_dir() / "config.json").stat().st_mode & 0o777, 0o600)
+
+    def test_agent_config_validation_and_remote_requirements(self):
+        for values in (
+            {"agent_mode": "other"},
+            {"agent_mode": "remote"},
+            {"agent_mode": "remote", "agent_url": "https://agent.example/v1"},
+            {"agent_mode": "remote", "agent_url": "http://example.com/v1", "agent_model": "model"},
+            {"agent_url": "https://user:secret@agent.example/v1"},
+            {"agent_url": "https://agent.example/v1?secret=yes"},
+            {"agent_model": 7},
+            {"agent_model": "x" * 201},
+            {"agent_model": 'bad"model'},
+            {"agent_model": "bad'model"},
+            {"agent_model": "bad\nmodel"},
+            {"agent_api_key": 7},
+            {"agent_api_key": "x" * 8193},
+            {"agent_api_key": "secret\rheader"},
+            {"agent_api_key": "secret\nheader"},
+            {"agent_api_key": "secret\x00header"},
+            {"agent_api_key": "secret\x1fheader"},
+            {"agent_api_key": "secret\x7fheader"},
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError) as error:
+                core.save_config(values)
+            self.assertNotIn("secret", str(error.exception))
+
+        saved = core.save_config({
+            "agent_mode": "remote",
+            "agent_url": "http://127.0.0.1:8081/v1/",
+            "agent_model": " agent ",
+            "agent_api_key": "x" * 8192,
+        })
+        self.assertEqual(saved["agent_url"], "http://127.0.0.1:8081/v1")
+        self.assertEqual(saved["agent_model"], "agent")
+
+    def test_worker_load_never_emits_any_api_key(self):
+        core.save_config({
+            "mode": "remote",
+            "url": "https://ordinary.example/v1",
+            "model": "ordinary",
+            "api_key": "ordinary-secret",
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent",
+            "agent_api_key": "agent-secret",
+            "voice_key": "voice-secret",
+        })
+        root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(root / "apps") + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(
+            [sys.executable, "-m", "aios.worker"],
+            input='{"action":"load"}\n',
+            text=True,
+            capture_output=True,
+            cwd=root,
+            env=env,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        loaded = json.loads(result.stdout.strip())
+        config = loaded["config"]
+        self.assertFalse({"api_key", "voice_key", "agent_api_key"} & set(config))
+        self.assertTrue(config["has_key"])
+        self.assertTrue(config["has_voice_key"])
+        self.assertTrue(config["has_agent_key"])
+
+    def test_shell_config_copy_excludes_all_api_keys(self):
+        source = (Path(__file__).resolve().parents[1] / "apps" / "shell" / "main.cpp").read_text()
+        self.assertIn(
+            'it.key() != "api_key" && it.key() != "voice_key" && it.key() != "agent_api_key"',
+            source,
+        )
+
+    def test_hand_edited_agent_key_is_rejected_before_request_construction(self):
+        config = core.load_config()
+        config.update({
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent",
+            "agent_api_key": "secret\rInjected: value",
+        })
+        core.write_json(core.config_dir() / "config.json", config)
+
+        with patch("urllib.request.Request") as request_constructor, self.assertRaises(ValueError) as error:
+            core.request("/models", profile="agent")
+        request_constructor.assert_not_called()
+        self.assertNotIn("secret", str(error.exception))
+        self.assertNotIn("Injected", str(error.exception))
+
+        config["agent_url"] = "http://example.com/v1"
+        config["agent_api_key"] = "safe-key"
+        core.write_json(core.config_dir() / "config.json", config)
+        with patch("urllib.request.Request") as request_constructor, self.assertRaisesRegex(
+            ValueError, "Remote endpoints require HTTPS"
+        ):
+            core.request("/models", profile="agent")
+        request_constructor.assert_not_called()
+
+    def test_request_redacts_value_errors_from_request_and_open(self):
+        core.save_config({
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent",
+            "agent_api_key": "agent-secret",
+        })
+        failures = [
+            patch("urllib.request.Request", side_effect=ValueError("Bearer agent-secret")),
+            patch(
+                "urllib.request.build_opener",
+                return_value=Mock(open=Mock(side_effect=ValueError("Invalid header b'Bearer agent-secret'"))),
+            ),
+        ]
+        for failure in failures:
+            with self.subTest(failure=failure), failure, self.assertRaisesRegex(
+                RuntimeError, "^The model request could not be constructed safely\\.$"
+            ) as error:
+                core.request("/models", profile="agent")
+            self.assertNotIn("agent-secret", str(error.exception))
+
+    def test_model_name_profiles(self):
+        self.assertEqual(core.model_name(), "local")
+        core.save_config({"mode": "remote", "url": "https://ordinary.example/v1", "model": "ordinary"})
+        self.assertEqual(core.model_name("current"), "ordinary")
+        with self.assertRaisesRegex(ValueError, "agent"):
+            core.model_name("agent")
+        core.save_config({
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent-model",
+        })
+        self.assertEqual(core.model_name("agent"), "agent-model")
+        core.save_config({"mode": "chatgpt"})
+        with self.assertRaisesRegex(ValueError, "subscription"):
+            core.model_name("current")
+        with self.assertRaises(ValueError):
+            core.model_name("unknown")
+
+    def test_request_profiles_use_only_their_own_endpoint_and_key(self):
+        core.save_config({
+            "mode": "remote",
+            "url": "https://ordinary.example/v1",
+            "model": "ordinary",
+            "api_key": "ordinary-secret",
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent",
+            "agent_api_key": "agent-secret",
+        })
+        opener = Mock()
+        opener.open.return_value = object()
+        with patch("urllib.request.build_opener", return_value=opener):
+            core.request("/models", profile="current")
+            current_request = opener.open.call_args.args[0]
+            self.assertEqual(current_request.full_url, "https://ordinary.example/v1/models")
+            self.assertEqual(current_request.get_header("Authorization"), "Bearer ordinary-secret")
+            core.request("/models", profile="agent")
+            agent_request = opener.open.call_args.args[0]
+            self.assertEqual(agent_request.full_url, "https://agent.example/v1/models")
+            self.assertEqual(agent_request.get_header("Authorization"), "Bearer agent-secret")
+            self.assertNotIn("ordinary-secret", repr(opener.open.call_args))
+        with self.assertRaises(ValueError):
+            core.request("/models", profile="unknown")
+        core.save_config({"agent_mode": "current"})
+        with self.assertRaises(ValueError):
+            core.request("/models", profile="agent")
+
+    def test_ordinary_chat_explicitly_uses_current_model_profile(self):
+        core.save_config({
+            "mode": "remote",
+            "url": "https://ordinary.example/v1",
+            "model": "ordinary-model",
+            "api_key": "ordinary-secret",
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent-model",
+            "agent_api_key": "agent-secret",
+        })
+        payload = io.BytesIO(
+            b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n'
+            b"data: [DONE]\n\n"
+        )
+        with patch("aios.core.request", return_value=payload) as request:
+            self.assertEqual(
+                "".join(core.chat([{"role": "user", "content": "hello"}])),
+                "ok",
+            )
+        self.assertEqual(request.call_args.args[1]["model"], "ordinary-model")
+        self.assertEqual(request.call_args.kwargs["profile"], "current")
+        self.assertNotIn("agent-model", repr(request.call_args))
+
+    def test_cli_configure_agent_flags_and_key_prompt(self):
+        argv = [
+            "aios-llm", "configure",
+            "--agent-mode", "remote",
+            "--agent-url", "https://agent.example/v1",
+            "--agent-model", "agent-model",
+            "--ask-agent-key",
+        ]
+        with patch("sys.argv", argv), patch("aios.cli.getpass.getpass", return_value="agent-secret") as prompt, patch(
+            "aios.cli.save_config"
+        ) as save:
+            self.assertEqual(cli.main(), 0)
+        prompt.assert_called_once_with("Agent API key: ")
+        save.assert_called_once_with({
+            "agent_mode": "remote",
+            "agent_url": "https://agent.example/v1",
+            "agent_model": "agent-model",
+            "agent_api_key": "agent-secret",
+        })
+
     def test_history_roundtrip_and_delete(self):
         messages = [{"role": "user", "content": "hello 世界"}]
         core.save_history(messages)
@@ -116,6 +364,20 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Authentication failed") as error:
                 list(core.chat([{"role": "user", "content": "hi"}]))
             self.assertNotIn("secret-provider", str(error.exception))
+            core.save_config({
+                "agent_mode": "remote",
+                "agent_url": f"http://127.0.0.1:{server.server_port}/v1",
+                "agent_model": "bad-key",
+                "agent_api_key": "agent-secret",
+            })
+            with self.assertRaisesRegex(RuntimeError, "Authentication failed") as agent_error:
+                core.request(
+                    "/chat/completions",
+                    {"model": "bad-key"},
+                    profile="agent",
+                )
+            self.assertNotIn("secret-provider", str(agent_error.exception))
+            self.assertNotIn("agent-secret", str(agent_error.exception))
         finally:
             server.shutdown()
             server.server_close()

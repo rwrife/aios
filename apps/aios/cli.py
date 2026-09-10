@@ -18,6 +18,10 @@ def main():
     configure.add_argument("--model")
     configure.add_argument("--model-path")
     configure.add_argument("--ask-key", action="store_true")
+    configure.add_argument("--agent-mode", choices=("current", "chatgpt", "remote"))
+    configure.add_argument("--agent-url")
+    configure.add_argument("--agent-model")
+    configure.add_argument("--ask-agent-key", action="store_true")
     configure.add_argument("--voice-mode", choices=("local", "remote"))
     for name in ("voice-url", "stt-model", "tts-model", "voice-name", "speech-model-path"):
         configure.add_argument("--" + name)
@@ -46,9 +50,11 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "configure":
-            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path", "subscription_model", "voice_mode", "voice_url", "stt_model", "tts_model", "voice_name", "speech_model_path") and v is not None}
+            values = {k: v for k, v in vars(args).items() if k in ("mode", "url", "model", "model_path", "subscription_model", "agent_mode", "agent_url", "agent_model", "voice_mode", "voice_url", "stt_model", "tts_model", "voice_name", "speech_model_path") and v is not None}
             if args.ask_key:
                 values["api_key"] = getpass.getpass("API key: ")
+            if args.ask_agent_key:
+                values["agent_api_key"] = getpass.getpass("Agent API key: ")
             if args.ask_voice_key:
                 values["voice_key"] = getpass.getpass("Voice API key: ")
             save_config(values)
