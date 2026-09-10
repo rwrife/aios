@@ -71,7 +71,7 @@ Window {
     RowLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
         ColumnLayout {
-            Layout.preferredWidth: 170; Layout.fillHeight: true; spacing: 6
+            Layout.preferredWidth: 170; Layout.minimumWidth: 170; Layout.fillHeight: true; spacing: 6
             WindowTitle {
                 objectName: "settingsWindowTitle"
                 theme: settings.theme

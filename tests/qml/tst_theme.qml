@@ -29,6 +29,20 @@ TestCase {
         }
     }
     Component { id: settingsComponent; SettingsWindow {} }
+    function test_setup_action_keeps_full_label_data() {
+        return [{tag: "default", width: 820}, {tag: "minimum", width: 540}]
+    }
+    function test_setup_action_keeps_full_label(data) {
+        var window = settingsComponent.createObject(test, {
+            backend: backend, theme: palette, width: data.width, height: 620
+        })
+        window.show()
+        var setup = findChild(window, "launchSetup")
+        waitForRendering(setup)
+        compare(setup.contentItem.truncated, false)
+        verify(setup.width >= 170)
+        window.destroy()
+    }
     function test_pick_color_updates_existing_window() {
         var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
         verify(window !== null)
