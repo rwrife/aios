@@ -18,7 +18,7 @@ Window {
     width: Math.min(820, Screen.width - 32); height: Math.min(620, Screen.height - 48)
     minimumWidth: 540; minimumHeight: 400
     x: (Screen.width-width)/2; y: (Screen.height-height)/2
-    color: theme.panel
+    color: "transparent"
     function stopCameraPreview() {
         if (activeCamera) activeCamera.stop()
         cameraSession.camera = null
@@ -60,6 +60,13 @@ Window {
     }
     onVisibleChanged: { if (!visible) stopCameraPreview(); else { models.reload(); if (pages.currentIndex === 7) accountsPage.refresh(); } }
     onClosing: stopCameraPreview()
+    Rectangle {
+        objectName: "settingsWindowSurface"
+        anchors.fill: parent
+        color: theme.panel
+        radius: theme.windowRadius
+        border.color: theme.line
+    }
     // Add a section here and its page to the StackLayout below.
     readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
     component Action: Button {
@@ -69,7 +76,7 @@ Window {
         background: Rectangle { color: control.hovered || control.down ? theme.horizon : theme.input; radius: 6; border.color: control.activeFocus ? theme.accent : theme.line }
     }
     component Note: Text {
-        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap
+        color: theme.muted; font.pixelSize: 14; wrapMode: Text.Wrap; textFormat: Text.PlainText
         Layout.fillWidth: true
     }
     component InfoRow: RowLayout {
@@ -92,7 +99,14 @@ Window {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
         ColumnLayout {
             Layout.preferredWidth: 170; Layout.fillHeight: true; spacing: 6
-            Text { text: "Settings"; color: theme.ink; font.pixelSize: 23; Layout.bottomMargin: 24 }
+            WindowTitle {
+                objectName: "settingsWindowTitle"
+                theme: settings.theme
+                text: "Settings"
+                Layout.preferredHeight: 44
+                Layout.fillWidth: true
+                Layout.bottomMargin: 16
+            }
             Repeater {
                 model: settings.sections
                 Button {
@@ -114,16 +128,18 @@ Window {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 20
             RowLayout {
                 Layout.fillWidth: true
+                Layout.preferredHeight: 44
                 Item {
-                    Layout.fillWidth: true; implicitHeight: 36
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: settings.sections[pages.currentIndex]; color: theme.ink; font.pixelSize: 22 }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    WindowTitle { anchors.fill: parent; theme: settings.theme; text: settings.sections[pages.currentIndex] }
                     MouseArea { anchors.fill: parent; onPressed: settings.startSystemMove() }
                 }
-                Button {
-                    id: closeButton; implicitWidth: 36; implicitHeight: 36
-                    Accessible.name: "Close settings"
-                    contentItem: Text { text: "\u00d7"; color: theme.muted; font.pixelSize: 22; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    background: Rectangle { radius: 6; color: closeButton.hovered ? theme.input : "transparent"; border.width: closeButton.activeFocus ? 1 : 0; border.color: theme.accent }
+                WindowControlButton {
+                    objectName: "settingsCloseButton"
+                    theme: settings.theme
+                    symbol: "\u00d7"
+                    tip: "Close settings"
                     onClicked: settings.close()
                 }
             }

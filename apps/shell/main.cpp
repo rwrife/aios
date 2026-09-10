@@ -38,6 +38,8 @@
 #include <unistd.h>
 #endif
 
+static constexpr int ToolHostGracefulWaitMs = 15000;
+
 static void tieToDesktop(QProcess &process) {
 #ifdef Q_OS_LINUX
     const auto parent = getpid();
@@ -148,7 +150,7 @@ public:
             m_busy = true; m_status = "Transcribing…"; emit changed(); run({{"action", "transcribe"}, {"path", path}});
         });
         tieToDesktop(local);
-        tieToDesktop(browser);
+        tieToDesktop(tools);
         readiness.setInterval(500);
         connect(&readiness, &QTimer::timeout, this, [this] {
             if (checkingReady) return;
@@ -189,7 +191,7 @@ public:
     }
     ~Backend() {
         voice.cancel();
-        browser.terminate(); if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
+        tools.terminate(); if (!tools.waitForFinished(ToolHostGracefulWaitMs)) { tools.kill(); tools.waitForFinished(1000); }
         for (auto p : findChildren<QProcess *>(QString(), Qt::FindDirectChildrenOnly)) {
             p->disconnect(this); p->kill(); p->waitForFinished(1000);
         }
@@ -252,9 +254,9 @@ public:
             active->deleteLater(); active = nullptr;
         }
         m_loginUrl.clear(); m_loginCode.clear();
-        if (browser.state() != QProcess::NotRunning) {
-            browser.terminate();
-            if (!browser.waitForFinished(5000)) { browser.kill(); browser.waitForFinished(1000); }
+        if (tools.state() != QProcess::NotRunning) {
+            tools.terminate();
+            if (!tools.waitForFinished(ToolHostGracefulWaitMs)) { tools.kill(); tools.waitForFinished(1000); }
         }
         m_busy = false; m_status = "Stopped"; persist(); emit changed();
     }
@@ -399,8 +401,8 @@ private:
     bool m_configuring = false;
     QProcess *active = nullptr;
     QProcess local;
-    QProcess browser;
-    QTemporaryDir browserDirectory;
+    QProcess tools;
+    QTemporaryDir toolDirectory;
     QNetworkAccessManager network;
     QTimer readiness;
     bool checkingReady = false;
@@ -479,16 +481,16 @@ private:
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         if (env.value("AIOS_PYTHONPATH").isEmpty()) env.insert("PYTHONPATH", "/usr/local/share/aios");
         else env.insert("PYTHONPATH", env.value("AIOS_PYTHONPATH"));
-        if (action == "chat" && browserDirectory.isValid()) {
-            const auto socket = browserDirectory.path() + "/browser.sock";
-            if (browser.state() == QProcess::NotRunning) {
-                browser.setProcessEnvironment(env);
-                browser.setStandardOutputFile(QProcess::nullDevice());
-                browser.setStandardErrorFile(QProcess::nullDevice());
+        if (action == "chat" && toolDirectory.isValid()) {
+            const auto socket = toolDirectory.path() + "/tools.sock";
+            if (tools.state() == QProcess::NotRunning) {
+                tools.setProcessEnvironment(env);
+                tools.setStandardOutputFile(QProcess::nullDevice());
+                tools.setStandardErrorFile(QProcess::nullDevice());
                 QFile::remove(socket);
-                browser.start("python3", {"-m", "aios.browser", socket});
+                tools.start("python3", {"-m", "aios.toolhost", socket});
             }
-            request.insert("browser_socket", socket);
+            request.insert("tool_socket", socket);
         }
         p->setProcessEnvironment(env);
         connect(p, &QObject::destroyed, [buffer] { delete buffer; });
@@ -525,7 +527,10 @@ private:
                     m_config["mode"] = "local"; m_config["model_path"] = value.value("path").toString();
                     startLocal(); emit configured();
                 }
-                else if (type == "error") { m_status = value.value("text").toString(); }
+                else if (type == "error") {
+                    if (action == "configure") { pendingConfig.clear(); m_configuring = false; }
+                    m_status = value.value("text").toString();
+                }
                 else if (type == "attached") {
                     attachmentNames.append(value.value("name").toString()); attachmentText.append(value.value("text").toString()); m_status.clear();
                 } else if (type == "transcribed") {
@@ -538,20 +543,20 @@ private:
                 }
                 else if (type == "saved" && action == "configure") {
                     const bool modelChanged = pendingConfig.value("mode", m_config.value("mode")) != m_config.value("mode") || pendingConfig.value("model_path", m_config.value("model_path")) != m_config.value("model_path");
-                    for (auto it = pendingConfig.begin(); it != pendingConfig.end(); ++it) if (it.key() != "api_key" && it.key() != "voice_key") m_config[it.key()] = it.value();
+                    for (auto it = pendingConfig.begin(); it != pendingConfig.end(); ++it) if (it.key() != "api_key" && it.key() != "voice_key" && it.key() != "agent_api_key") m_config[it.key()] = it.value();
                     pendingConfig.clear(); m_status = "Saved"; if (modelChanged) startLocal(); emit configured();
                 }
                 emit changed();
             }
         });
         connect(p, &QProcess::errorOccurred, this, [this,p,action](QProcess::ProcessError) {
-            if (action == "configure") m_configuring = false;
+            if (action == "configure") { pendingConfig.clear(); m_configuring = false; }
             m_status = "The AIOS backend could not start.";
             if (active == p) { active = nullptr; m_busy = false; } emit changed();
         });
         connect(p, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this, [this,p,action,request](int, QProcess::ExitStatus) {
             if (action == "subscription") { m_loginUrl.clear(); m_loginCode.clear(); }
-            if (action == "configure") { m_configuring = false; emit changed(); }
+            if (action == "configure") { pendingConfig.clear(); m_configuring = false; emit changed(); }
             if (action == "transcribe") QFile::remove(request.value("path").toString());
             if (active == p) { active = nullptr; m_busy = false; emit changed(); } p->deleteLater();
         });

@@ -27,5 +27,6 @@ QtObject {
     readonly property color accent: paletteIndex === 0 ? "#bde4e6" : Qt.hsla(hue, saturation, 0.81, 1)
     readonly property color line: paletteIndex === 0 ? "#4c6574" : Qt.hsla(hue, saturation, 0.38, 1)
     readonly property color wave: paletteIndex === 0 ? "#a7c7d5" : Qt.hsla(hue, saturation, 0.74, 1)
+    readonly property real windowRadius: 16
     function waveAlpha(alpha) { return Qt.rgba(wave.r, wave.g, wave.b, alpha) }
 }

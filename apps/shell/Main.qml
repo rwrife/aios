@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 import QtQuick.Window
 
 Window {
@@ -196,7 +197,11 @@ Window {
             tip: backendApi.volumeAvailable ? (backendApi.muted ? "Volume muted" : "Volume · " + backendApi.volume + "%") : "Volume"
             implicitWidth: 44
             onClicked: volumePopup.open()
-            contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+            contentItem: SpeakerIcon {
+                muted: backendApi.muted
+                volume: backendApi.volume
+                glyphObjectName: "volumeButtonGlyph"
+            }
         }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
@@ -209,60 +214,83 @@ Window {
     component QuietButton: Button {
         id: control
         property string tip: text
+        property bool outlined: false
         Accessible.name: tip
+        hoverEnabled: true
         implicitWidth: Math.max(44, implicitContentWidth + 24); implicitHeight: 44
         contentItem: Text { text: control.text; color: control.enabled ? theme.ink : theme.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 16 }
-        background: Rectangle { radius: 8; color: control.down || control.hovered ? theme.input : "transparent"; border.width: control.activeFocus ? 2 : 0; border.color: theme.accent }
+        background: Rectangle {
+            radius: 8
+            color: control.down || control.hovered ? theme.input : "transparent"
+            border.width: control.activeFocus ? 2 : control.outlined ? 1 : 0
+            border.color: control.activeFocus ? theme.accent : theme.line
+        }
         ToolTip.visible: hovered || activeFocus; ToolTip.text: tip; ToolTip.delay: activeFocus ? 0 : 700
     }
     component SpeakerIcon: Item {
         id: speakerIcon
         property bool muted: false
         property real volume: 50
-        implicitWidth: 20
-        implicitHeight: 20
-        Canvas {
-            id: speakerCanvas
-            anchors.fill: parent
-            onPaint: {
-                var c = getContext("2d")
-                c.reset()
-                c.strokeStyle = theme.ink
-                c.lineWidth = 1.5
-                c.lineCap = "round"
-                c.lineJoin = "round"
-                c.beginPath()
-                c.moveTo(2.5, 8)
-                c.lineTo(6.5, 8)
-                c.lineTo(11, 4.5)
-                c.lineTo(11, 15.5)
-                c.lineTo(6.5, 12)
-                c.lineTo(2.5, 12)
-                c.closePath()
-                c.stroke()
-                if (speakerIcon.muted || speakerIcon.volume <= 0) {
-                    c.beginPath()
-                    c.moveTo(14, 7)
-                    c.lineTo(19, 13)
-                    c.moveTo(19, 7)
-                    c.lineTo(14, 13)
-                    c.stroke()
-                    return
-                }
-                c.beginPath()
-                c.arc(11, 10, 4, -Math.PI / 3, Math.PI / 3)
-                c.stroke()
-                if (speakerIcon.volume > 50) {
-                    c.beginPath()
-                    c.arc(11, 10, 7, -Math.PI / 3, Math.PI / 3)
-                    c.stroke()
-                }
+        property string glyphObjectName
+        implicitWidth: 22
+        implicitHeight: 22
+        Shape {
+            objectName: speakerIcon.glyphObjectName
+            anchors.centerIn: parent
+            width: 22
+            height: 22
+            ShapePath {
+                strokeColor: theme.ink
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                joinStyle: ShapePath.RoundJoin
+                startX: 1.5
+                startY: 9
+                PathLine { x: 6.5; y: 9 }
+                PathLine { x: 12; y: 4.5 }
+                PathLine { x: 12; y: 17.5 }
+                PathLine { x: 6.5; y: 13 }
+                PathLine { x: 1.5; y: 13 }
+                PathLine { x: 1.5; y: 9 }
+            }
+            ShapePath {
+                strokeColor: speakerIcon.muted || speakerIcon.volume <= 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 15
+                startY: 7.5
+                PathLine { x: 21; y: 14.5 }
+            }
+            ShapePath {
+                strokeColor: speakerIcon.muted || speakerIcon.volume <= 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 21
+                startY: 7.5
+                PathLine { x: 15; y: 14.5 }
+            }
+            ShapePath {
+                strokeColor: !speakerIcon.muted && speakerIcon.volume > 0 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 14.25
+                startY: 7.1
+                PathArc { x: 14.25; y: 14.9; radiusX: 4.5; radiusY: 4.5; direction: PathArc.Clockwise }
+            }
+            ShapePath {
+                strokeColor: !speakerIcon.muted && speakerIcon.volume > 50 ? theme.ink : "transparent"
+                strokeWidth: 1.7
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                startX: 16
+                startY: 4.1
+                PathArc { x: 16; y: 17.9; radiusX: 8; radiusY: 8; direction: PathArc.Clockwise }
             }
         }
-        onMutedChanged: speakerCanvas.requestPaint()
-        onVolumeChanged: speakerCanvas.requestPaint()
-        onWidthChanged: speakerCanvas.requestPaint()
-        onHeightChanged: speakerCanvas.requestPaint()
     }
     component Field: TextField {
         color: theme.ink; placeholderTextColor: theme.muted; selectByMouse: true
@@ -279,15 +307,22 @@ Window {
         id: volumePopup
         objectName: "volumePopup"
         parent: Overlay.overlay
-        width: 88
-        height: 236
-        padding: 10
+        width: 76
+        height: 276
+        padding: 8
         modal: false
         dim: false
         focus: true
         popupType: Popup.Item
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         property bool syncingVolume: false
+        function setVolumeImmediately(value) {
+            volumeCommit.stop()
+            syncingVolume = true
+            volumeSlider.value = Math.max(0, Math.min(100, value))
+            syncingVolume = false
+            backendApi.setVolume(Math.round(volumeSlider.value))
+        }
         function positionAboveButton() {
             var point = volumeButton.mapToItem(parent, 0, 0)
             x = Math.max(8, Math.min(parent.width - width - 8, point.x + (volumeButton.width - width) / 2))
@@ -303,11 +338,91 @@ Window {
         }
         background: Rectangle {
             color: theme.panel
-            radius: 16
+            radius: theme.windowRadius
             border.color: theme.line
         }
         contentItem: ColumnLayout {
-            spacing: 8
+            spacing: 4
+            QuietButton {
+                id: volumeUpButton
+                objectName: "volumeUpButton"
+                text: "+"
+                tip: "Increase volume"
+                enabled: backendApi.volumeAvailable
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: volumePopup.setVolumeImmediately(volumeSlider.value + 5)
+                contentItem: Text {
+                    text: "+"
+                    color: volumeUpButton.enabled ? theme.ink : theme.muted
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Slider {
+                id: volumeSlider
+                objectName: "volumeSlider"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 120
+                orientation: Qt.Vertical
+                from: 0
+                to: 100
+                stepSize: 1
+                topPadding: 10
+                bottomPadding: 10
+                leftPadding: 0
+                rightPadding: 0
+                enabled: backendApi.volumeAvailable
+                Accessible.name: "Speaker volume"
+                onValueChanged: {
+                    if (volumePopup.opened && !volumePopup.syncingVolume)
+                        volumeCommit.restart()
+                }
+                background: Rectangle {
+                    x: volumeSlider.leftPadding + (volumeSlider.availableWidth - width) / 2
+                    y: volumeSlider.topPadding
+                    implicitWidth: 4
+                    implicitHeight: 100
+                    width: 4
+                    height: volumeSlider.availableHeight
+                    radius: 2
+                    color: theme.line
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: parent.height * volumeSlider.value / 100
+                        radius: parent.radius
+                        color: volumeSlider.enabled ? theme.accent : theme.muted
+                    }
+                }
+                handle: Rectangle {
+                    x: volumeSlider.leftPadding + (volumeSlider.availableWidth - width) / 2
+                    y: volumeSlider.topPadding + volumeSlider.visualPosition * (volumeSlider.availableHeight - height)
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: volumeSlider.enabled ? theme.ink : theme.muted
+                    border.width: 2
+                    border.color: theme.panel
+                }
+            }
+            QuietButton {
+                id: volumeDownButton
+                objectName: "volumeDownButton"
+                text: "-"
+                tip: "Decrease volume"
+                enabled: backendApi.volumeAvailable
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: volumePopup.setVolumeImmediately(volumeSlider.value - 5)
+                contentItem: Text {
+                    text: "\u2212"
+                    color: volumeDownButton.enabled ? theme.ink : theme.muted
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
             QuietButton {
                 id: muteButton
                 objectName: "muteButton"
@@ -315,29 +430,11 @@ Window {
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: backendApi.setMuted(!backendApi.muted)
-                contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
-            }
-            Slider {
-                id: volumeSlider
-                objectName: "volumeSlider"
-                Layout.alignment: Qt.AlignHCenter
-                Layout.fillHeight: true
-                orientation: Qt.Vertical
-                from: 0
-                to: 100
-                stepSize: 1
-                enabled: backendApi.volumeAvailable
-                Accessible.name: "Speaker volume"
-                onValueChanged: {
-                    if (volumePopup.opened && !volumePopup.syncingVolume)
-                        volumeCommit.restart()
+                contentItem: SpeakerIcon {
+                    muted: backendApi.muted
+                    volume: backendApi.volume
+                    glyphObjectName: "muteButtonGlyph"
                 }
-            }
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                text: backendApi.volumeAvailable ? Math.round(volumeSlider.value) + "%" : "—"
-                color: backendApi.volumeAvailable ? theme.ink : theme.muted
-                font.pixelSize: 12
             }
         }
         Connections {
@@ -378,7 +475,7 @@ Window {
         }
         background: Rectangle {
             color: theme.panel
-            radius: 24
+            radius: theme.windowRadius
             border.color: Qt.rgba(theme.line.r, theme.line.g, theme.line.b, 0.55)
         }
         contentItem: ColumnLayout {
@@ -406,11 +503,13 @@ Window {
                 Layout.fillWidth: true
                 spacing: 12
                 PowerAction {
+                    objectName: "restartAction"
                     text: "Restart"
                     symbol: "restart"
                     onClicked: { powerDialog.close(); backendApi.power("reboot") }
                 }
                 PowerAction {
+                    objectName: "shutdownAction"
                     text: "Shut down"
                     symbol: "power"
                     onClicked: { powerDialog.close(); backendApi.power("poweroff") }
@@ -429,6 +528,7 @@ Window {
         id: action
         property string symbol
         Layout.fillWidth: true
+        Layout.preferredWidth: 1
         implicitHeight: 108
         hoverEnabled: true
         Accessible.name: text
@@ -436,19 +536,24 @@ Window {
             spacing: 12
             Canvas {
                 id: powerActionIcon
+                objectName: action.symbol + "ActionIcon"
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: 28
-                Layout.preferredHeight: 28
+                Layout.preferredWidth: 34
+                Layout.preferredHeight: 34
+                readonly property real strokeWidth: 2.5
                 onPaint: {
                     var c = getContext("2d"); c.reset()
-                    c.strokeStyle = theme.accent; c.lineWidth = 1.8; c.lineCap = "round"; c.lineJoin = "round"
+                    c.strokeStyle = theme.accent; c.lineWidth = strokeWidth; c.lineCap = "round"; c.lineJoin = "round"
                     c.beginPath()
                     if (action.symbol === "power") {
-                        c.arc(14, 15, 9, -Math.PI / 3, Math.PI * 4 / 3)
-                        c.stroke(); c.beginPath(); c.moveTo(14, 3); c.lineTo(14, 13)
+                        c.arc(17, 18, 11, -Math.PI / 3, Math.PI * 4 / 3)
+                        c.stroke(); c.beginPath(); c.moveTo(17, 3); c.lineTo(17, 15)
                     } else {
-                        c.arc(14, 14, 9, -Math.PI / 2, Math.PI)
-                        c.stroke(); c.beginPath(); c.moveTo(3, 9); c.lineTo(5, 15); c.lineTo(11, 13)
+                        c.save(); c.translate(width, 0); c.scale(-1, 1)
+                        c.arc(17, 17, 11, -Math.PI / 2, Math.PI)
+                        c.stroke(); c.beginPath(); c.moveTo(4, 10); c.lineTo(6, 18); c.lineTo(13, 15)
+                        c.stroke(); c.restore()
+                        return
                     }
                     c.stroke()
                 }
