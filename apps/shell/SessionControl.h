@@ -40,7 +40,10 @@ public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
         path = qEnvironmentVariable("AIOS_SESSION_SOCKET");
         connect(&photoCapture, &ProfilePhoto::captured, this, &SessionControl::photoCaptured);
-        connect(&photoCapture, &ProfilePhoto::failed, this, [this] { m_error = "Camera unavailable. You can create a profile without a photo."; emit changed(); });
+        connect(&photoCapture, &ProfilePhoto::failed, this, [this](const QString &message) {
+            m_error = message + " You can create a profile without a photo.";
+            emit changed();
+        });
         timer.setInterval(500);
         connect(&timer, &QTimer::timeout, this, [this] {
             if (pendingEnrollment) return;
@@ -96,7 +99,7 @@ public:
         if (m_secureInput && personalAvailable()) {
             recognitionRoot()->cancelRecognition();
             emit cameraReleaseRequested();
-            QTimer::singleShot(500, this, [this] {
+            QTimer::singleShot(1000, this, [this] {
                 if (m_secureInput && personalAvailable()) photoCapture.take();
             });
         }

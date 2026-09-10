@@ -19,6 +19,7 @@ Window {
     color: theme.panel
     function stopCameraPreview() {
         camera.stop()
+        cameraSession.camera = null
         if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
             profileControl.setCameraPreviewActive(false)
     }
@@ -146,9 +147,10 @@ Window {
                         }
                         Rectangle {
                             objectName: "cameraPreview"
-                            Layout.fillWidth: true
+                            Layout.preferredWidth: parent.width * 0.75
                             Layout.preferredHeight: width * 9 / 16
                             Layout.minimumHeight: 100
+                            Layout.alignment: Qt.AlignHCenter
                             color: theme.night; radius: 8
                             VideoOutput { id: viewfinder; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
                             Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
@@ -161,6 +163,7 @@ Window {
                                 if (camera.active) settings.stopCameraPreview()
                                 else {
                                     settings.configureCamera(camera.cameraDevice)
+                                    cameraSession.camera = camera
                                     if (settings.profileControl &&
                                             typeof settings.profileControl.setCameraPreviewActive === "function")
                                         settings.profileControl.setCameraPreviewActive(true)
@@ -181,7 +184,9 @@ Window {
                             id: recognitionDevice; objectName: "recognitionDevice"
                             Layout.fillWidth: true
                             placeholderText: "/dev/v4l/by-id/...-video-index0"
-                            text: backend.config.camera_device || ""
+                            text: backend.config.camera_device ||
+                                (typeof backend.defaultRecognitionCamera === "function"
+                                    ? backend.defaultRecognitionCamera() : "")
                             enabled: !backend.configuring
                             maximumLength: 512
                         }
@@ -191,16 +196,22 @@ Window {
                                 objectName: "recognitionToggle"
                                 text: backend.config.camera_recognition === true
                                     ? "Disable facial recognition" : "Enable facial recognition"
-                                enabled: !backend.configuring &&
-                                    (backend.config.camera_recognition === true || recognitionDevice.text.trim().length > 0)
+                                enabled: !backend.configuring
                                 onClicked: {
                                     const enabling = backend.config.camera_recognition !== true
+                                    const device = recognitionDevice.text.trim()
+                                    if (enabling && device.length === 0) {
+                                        settings.recognitionNotice =
+                                            "No stable local camera path was found. Reconnect the camera and try again."
+                                        return
+                                    }
+                                    settings.recognitionNotice = ""
                                     if (!enabling && settings.profileControl &&
                                             typeof settings.profileControl.setRecognitionEnabled === "function")
                                         settings.profileControl.setRecognitionEnabled(false)
                                     backend.configure({
                                         camera_recognition: enabling,
-                                        camera_device: enabling ? recognitionDevice.text.trim()
+                                        camera_device: enabling ? device
                                             : (backend.config.camera_device || "")
                                     })
                                 }
@@ -214,6 +225,12 @@ Window {
                                 onClicked: backend.configure({camera_device: recognitionDevice.text.trim()})
                             }
                         }
+                        Note {
+                            objectName: "recognitionNotice"
+                            text: settings.recognitionNotice
+                            visible: text.length > 0
+                            font.pixelSize: 12
+                        }
                         Action {
                             objectName: "purgeRecognition"
                             text: "Purge facial recognition data\u2026"
@@ -222,12 +239,6 @@ Window {
                         }
                         Note {
                             text: "Purging permanently deletes every enrolled face template. It does not delete accounts, profile photos, or PINs."
-                            font.pixelSize: 12
-                        }
-                        Note {
-                            objectName: "recognitionNotice"
-                            text: settings.recognitionNotice
-                            visible: text.length > 0
                             font.pixelSize: 12
                         }
                     }
@@ -326,7 +337,7 @@ Window {
         id: camera
         cameraDevice: devices.defaultVideoInput
     }
-    CaptureSession { camera: camera; videoOutput: viewfinder }
+    CaptureSession { id: cameraSession; camera: camera; videoOutput: viewfinder }
     Dialog {
         id: purgeRecognitionDialog
         objectName: "purgeRecognitionDialog"
@@ -359,9 +370,20 @@ Window {
     Connections {
         target: backend
         function onConfigured() {
+            if (pages.currentIndex === 2)
+                settings.recognitionNotice = backend.config.camera_recognition === true
+                    ? "Facial recognition enabled." : "Facial recognition disabled."
             if (settings.profileControl)
                 settings.profileControl.recognitionConfigurationChanged(
                     backend.config.camera_recognition === true)
+        }
+    }
+    Connections {
+        target: devices
+        function onVideoInputsChanged() {
+            if (!(backend.config.camera_device || "") && !recognitionDevice.activeFocus &&
+                    typeof backend.defaultRecognitionCamera === "function")
+                recognitionDevice.text = backend.defaultRecognitionCamera()
         }
     }
     Connections {

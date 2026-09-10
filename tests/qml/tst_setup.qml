@@ -20,6 +20,7 @@ TestCase {
         signal unlocked()
         signal photoCaptured(string preview, string rgb)
         signal cameraReleaseRequested()
+        function setCameraPreviewActive(active) {}
         function setSecureInput(active) {}
         function enrollProfile(name, pin, consent, photo) {}
         function enroll(name, pin, consent) {}
@@ -112,6 +113,7 @@ TestCase {
         wait(50)
         var preview = findChild(wizard, "cameraPreview")
         verify(Math.abs(preview.width / preview.height - 16 / 9) < 0.02)
+        verify(Math.abs(preview.width / preview.parent.width - 0.75) < 0.02)
     }
     function test_close_does_not_cancel_unrelated_work() {
         backend.busy = true

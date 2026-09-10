@@ -27,6 +27,9 @@ TestCase {
             cpu: "Test CPU · 2 logical CPUs", memory: "4.0 GiB"
         })
         signal configured()
+        function defaultRecognitionCamera() {
+            return "/dev/v4l/by-id/test-video-index0"
+        }
         function configure(values) {
             var updated = Object.assign({}, config, values)
             config = updated; configured()
@@ -125,13 +128,14 @@ TestCase {
         wait(100)
         var preview = findChild(window, "cameraPreview")
         verify(Math.abs(preview.width / preview.height - 16 / 9) < 0.02)
+        verify(Math.abs(preview.width / preview.parent.width - 0.75) < 0.02)
         window.destroy()
     }
     function test_facial_recognition_has_separate_toggle_and_purge_controls() {
         backend.config = ({
             theme_color: "blue", reduced_motion: true,
             camera_recognition: false,
-            camera_device: "/dev/v4l/by-id/test-video-index0"
+            camera_device: ""
         })
         profileControl.purges = 0
         profileControl.setRecognitionEnabled(false)
@@ -148,8 +152,11 @@ TestCase {
         wait(50)
         var status = findChild(window, "recognitionStatus")
         var toggle = findChild(window, "recognitionToggle")
+        compare(findChild(window, "recognitionDevice").text,
+                "/dev/v4l/by-id/test-video-index0")
         verify(status.text.indexOf("Off.") === 0)
         compare(toggle.text, "Enable facial recognition")
+        verify(toggle.enabled)
         mouseClick(toggle)
         tryCompare(backend.config, "camera_recognition", true)
         tryCompare(toggle, "text", "Disable facial recognition")

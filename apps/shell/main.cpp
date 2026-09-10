@@ -26,6 +26,7 @@
 #include <QThread>
 #include "BuildInfo.h"
 #include "voice.h"
+#include "CameraDevice.h"
 #include "SessionControl.h"
 #include "DisplayBridge.h"
 #ifdef AIOS_EMBEDDED_DISPLAY
@@ -341,6 +342,9 @@ public:
         pendingConfig = values;
         emit changed();
         run({{"action", "configure"}, {"config", QJsonObject::fromVariantMap(values)}});
+    }
+    Q_INVOKABLE QString defaultRecognitionCamera() const {
+        return CameraDevice::stablePath();
     }
     Q_INVOKABLE void subscriptionAction(const QString &operation, bool device = false) {
         if (m_busy || m_configuring || (operation != "login" && operation != "logout" && operation != "status")) return;

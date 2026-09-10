@@ -36,16 +36,22 @@ Window {
         const format = previewFormat(device)
         if (format) camera.cameraFormat = format
     }
-    function moveTo(value) {
+    function stopCameraPreview() {
         camera.stop()
+        cameraSession.camera = null
+        if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
+            profileControl.setCameraPreviewActive(false)
+    }
+    function moveTo(value) {
+        stopCameraPreview()
         cancelOperation()
         step = value
     }
     onVisibleChanged: {
         if (visible) step = 0
-        else { camera.stop(); cancelOperation() }
+        else { stopCameraPreview(); cancelOperation() }
     }
-    onClosing: { camera.stop(); cancelOperation(); backend.dismissSetup() }
+    onClosing: { stopCameraPreview(); cancelOperation(); backend.dismissSetup() }
     Connections {
         target: backend
         function onChanged() { if (!backend.busy) wizard.ownsOperation = false }
@@ -53,7 +59,7 @@ Window {
     Connections {
         target: wizard.profileControl
         ignoreUnknownSignals: true
-        function onCameraReleaseRequested() { camera.stop() }
+        function onCameraReleaseRequested() { wizard.stopCameraPreview() }
     }
     Shortcut { sequence: "Escape"; onActivated: wizard.close() }
     component Note: Text {
@@ -128,12 +134,13 @@ Window {
                     ComboBox {
                         Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
                         enabled: devices.videoInputs.length > 0
-                        onActivated: { camera.stop(); wizard.configureCamera(devices.videoInputs[currentIndex]) }
+                        onActivated: { wizard.stopCameraPreview(); wizard.configureCamera(devices.videoInputs[currentIndex]) }
                     }
                     Rectangle {
                         objectName: "cameraPreview"
-                        Layout.fillWidth: true
+                        Layout.preferredWidth: parent.width * 0.75
                         Layout.preferredHeight: width * 9 / 16
+                        Layout.alignment: Qt.AlignHCenter
                         color: theme.night; radius: 8
                         VideoOutput { id: preview; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
                         Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
@@ -143,9 +150,13 @@ Window {
                         text: camera.active ? "Stop camera check" : "Start camera check"
                         enabled: devices.videoInputs.length > 0
                         onClicked: {
-                            if (camera.active) camera.stop()
+                            if (camera.active) wizard.stopCameraPreview()
                             else {
                                 wizard.configureCamera(camera.cameraDevice)
+                                cameraSession.camera = camera
+                                if (wizard.profileControl &&
+                                        typeof wizard.profileControl.setCameraPreviewActive === "function")
+                                    wizard.profileControl.setCameraPreviewActive(true)
                                 camera.start()
                             }
                         }
@@ -192,6 +203,6 @@ Window {
         id: camera
         cameraDevice: devices.defaultVideoInput
     }
-    CaptureSession { camera: camera; videoOutput: preview }
+    CaptureSession { id: cameraSession; camera: camera; videoOutput: preview }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
 }
