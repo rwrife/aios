@@ -1,9 +1,11 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QStringDecoder>
 #include <QVariantMap>
 
+#include "../window_geometry.h"
 #include <cerrno>
 #include <climits>
 #include <cstdio>
@@ -136,6 +138,15 @@ int main(int argc, char *argv[])
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (window == nullptr)
         return fail();
+
+    whenWindowFrameReady(window, [window] {
+        const auto available = window->screen()->availableGeometry();
+        const auto frame = window->frameMargins();
+        window->setMinimumSize(initialWindowSize(window->minimumSize(), available, frame));
+        window->resize(initialWindowSize(window->size(), available, frame));
+        window->setFramePosition(available.center() - QPoint(window->frameGeometry().width() / 2,
+                                                            window->frameGeometry().height() / 2));
+    });
 
     const int descriptor = ready.release();
     if (descriptor >= 0) {

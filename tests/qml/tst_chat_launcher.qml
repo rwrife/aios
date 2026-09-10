@@ -350,6 +350,12 @@ TestCase {
         verify(second.visibility !== Window.Minimized)
     }
 
+    function test_default_chat_size_fits_screen() {
+        var chat = createDesktop().openChat()
+        verify(chat.width <= Math.floor(chat.screen.desktopAvailableWidth * 0.7))
+        verify(chat.height <= Math.floor(chat.screen.desktopAvailableHeight * 0.7))
+    }
+
     function test_profile_stays_top_center_when_resized_data() {
         return [
             {tag: "compact", width: 480, height: 480},

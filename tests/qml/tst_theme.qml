@@ -61,6 +61,17 @@ TestCase {
     function test_setup_action_keeps_full_label_data() {
         return [{tag: "default", width: 820}, {tag: "minimum", width: 540}]
     }
+    function test_default_size_fits_screen() {
+        var window = createTemporaryObject(settingsComponent, test, {
+            backend: backend, theme: palette
+        })
+        window.show()
+        verify(window.width <= Math.floor(window.screen.desktopAvailableWidth * 0.7))
+        verify(window.height <= Math.floor(window.screen.desktopAvailableHeight * 0.7))
+        verify(window.minimumWidth <= window.width)
+        verify(window.minimumHeight <= window.height)
+        window.close()
+    }
     function test_setup_action_keeps_full_label(data) {
         var window = settingsComponent.createObject(test, {
             backend: backend, theme: palette, width: data.width, height: 620

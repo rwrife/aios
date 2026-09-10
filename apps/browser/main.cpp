@@ -6,6 +6,7 @@
 #include <QColor>
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -23,7 +24,9 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QScreen>
 #include <QSet>
+#include <QShowEvent>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -38,6 +41,9 @@
 #include <QWebEngineSettings>
 #include <QWebEngineView>
 #include <QWidget>
+#include <QWindow>
+
+#include "../window_geometry.h"
 
 #include <functional>
 
@@ -184,8 +190,13 @@ public:
           m_palette(paletteFor(themeName))
     {
         setWindowTitle("AIOS Browser");
-        setMinimumSize(640, 480);
-        resize(1100, 760);
+        setWindowFlag(Qt::CustomizeWindowHint);
+        setWindowFlag(Qt::WindowMinimizeButtonHint, false);
+        if (auto target = QGuiApplication::screenAt(QCursor::pos()))
+            setScreen(target);
+        const auto available = screen()->availableGeometry();
+        setMinimumSize(initialWindowSize(QSize(640, 480), available));
+        resize(initialWindowSize(QSize(1100, 760), available));
 
         auto frame = new QWidget(this);
         frame->setObjectName("browserFrame");
@@ -293,6 +304,23 @@ public:
         m_view->setUrl(url);
     }
 
+protected:
+    void showEvent(QShowEvent *event) override
+    {
+        QMainWindow::showEvent(event);
+        if (m_initialGeometryApplied)
+            return;
+        m_initialGeometryApplied = true;
+        whenWindowFrameReady(windowHandle(), [this] {
+            const auto available = screen()->availableGeometry();
+            const auto frame = windowHandle()->frameMargins();
+            setMinimumSize(initialWindowSize(minimumSize(), available, frame));
+            resize(initialWindowSize(size(), available, frame));
+            move(available.center() - QPoint(frameGeometry().width() / 2,
+                                            frameGeometry().height() / 2));
+        });
+    }
+
 private:
     QString m_socketPath;
     QString m_sessionId;
@@ -308,6 +336,7 @@ private:
     QPushButton *m_stop = nullptr;
     QProgressBar *m_progress = nullptr;
     bool m_opened = false;
+    bool m_initialGeometryApplied = false;
     bool m_loading = false;
     int m_generation = 0;
     QPointer<QLocalSocket> m_pending;

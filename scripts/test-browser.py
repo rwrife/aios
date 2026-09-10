@@ -31,8 +31,10 @@ try:
     browser.act({'action':'switch','tab':'main'})
     page=browser.act({'action':'navigate','url':url})
     assert not any(c['label']=='Bottom control' for c in page['controls'])
-    for _ in range(5):
+    for _ in range(30):
         page=browser.act({'action':'scroll','direction':'down'})
+        if any(c['label']=='Bottom control' for c in page['controls']):
+            break
     assert 'Bottom marker' in page['text'],page
     assert any(c['label']=='Bottom control' for c in page['controls'])
     try:

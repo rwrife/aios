@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import QtQuick.Dialogs
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: chat
@@ -14,8 +15,9 @@ Window {
     title: "AIOS Chat"
     visible: true
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
-    width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
-    x: (Screen.width - width)/2; y: (Screen.height - height)/2
+    width: WindowSizing.extent(740, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(650, Screen.height, Screen.desktopAvailableHeight)
+    x: Screen.virtualX + (Screen.width - width)/2; y: Screen.virtualY + (Screen.height - height)/2
     color: "transparent"
     signal minimized()
     signal removed()

@@ -8,7 +8,7 @@
 
   <theme>
     <name>AIOS</name>
-    <titleLayout>LIC</titleLayout>
+    <titleLayout>LC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
@@ -77,9 +77,13 @@
     <application class="AIOS-Terminal">
       <decor>yes</decor>
       <position force="no"><x>center</x><y>center</y></position>
+      <!-- Openbox applies percentages once at map time and honors xterm's
+           resize increments. The headroom keeps the decorated frame within
+           75% of the workarea while leaving later user resizes unrestricted. -->
+      <size><width>69%</width><height>60%</height></size>
       <focus>yes</focus>
     </application>
-    <application class="aios-browser">
+    <application name="aios-browser" class="AIOS Browser">
       <position force="no"><x>center</x><y>center</y></position>
       <focus>yes</focus>
     </application>

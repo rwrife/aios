@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
 import QtMultimedia
+import "WindowSizing.js" as WindowSizing
 
 Window {
     id: settings
@@ -12,9 +13,11 @@ Window {
     signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
-    width: Math.min(820, Screen.width - 32); height: Math.min(620, Screen.height - 48)
-    minimumWidth: 540; minimumHeight: 400
-    x: (Screen.width-width)/2; y: (Screen.height-height)/2
+    width: WindowSizing.extent(820, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(620, Screen.height, Screen.desktopAvailableHeight)
+    minimumWidth: WindowSizing.extent(540, Screen.width, Screen.desktopAvailableWidth)
+    minimumHeight: WindowSizing.extent(400, Screen.height, Screen.desktopAvailableHeight)
+    x: Screen.virtualX + (Screen.width-width)/2; y: Screen.virtualY + (Screen.height-height)/2
     color: "transparent"
     onVisibleChanged: { if (!visible) camera.stop(); else { models.reload(); if (pages.currentIndex === 7) accountsPage.refresh(); } }
     onClosing: camera.stop()

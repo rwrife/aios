@@ -63,6 +63,12 @@ TestCase {
         compare(findChild(wizard, "closeSetup").background.radius, 8)
     }
     function cleanup() { wizard.close(); wizard.destroy() }
+    function test_default_size_fits_screen() {
+        verify(wizard.width <= Math.floor(wizard.screen.desktopAvailableWidth * 0.7))
+        verify(wizard.height <= Math.floor(wizard.screen.desktopAvailableHeight * 0.7))
+        verify(wizard.minimumWidth <= wizard.width)
+        verify(wizard.minimumHeight <= wizard.height)
+    }
     function test_skip_every_step_without_side_effects() {
         mouseClick(findChild(wizard, "setupNext"))
         for (var i = 1; i < 5; ++i) {

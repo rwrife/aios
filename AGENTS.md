@@ -36,6 +36,15 @@ repository.
 - Frameless AIOS windows must render `WindowBorder.qml` as their topmost,
   input-transparent child.
 - Decorated windows use the AIOS Openbox theme and its one-pixel border.
+- Match `Theme.windowRadius` (16 px) on both the surface and outline. Native
+  browser and terminal frames receive the same radius through Picom.
+- Keep initial application windows below 75% of each screen dimension.
+  Target 70% of the active screen's available width and height, accounting
+  for native decorations and terminal cell increments. Clamp minimum sizes
+  on small screens too, but allow users to resize windows after opening them.
+  The fullscreen desktop and privacy shield are exempt.
+- Only show minimize controls when the shell provides a way to restore that
+  window. Chats have a restore path; the browser does not.
 - Window controls are quiet until hover or keyboard focus. Focus must remain
   visible with a one-pixel `accent` outline.
 - Provide accessible names for icon-only controls and tooltips after a short

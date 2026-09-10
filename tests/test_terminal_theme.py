@@ -29,10 +29,20 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn('-bw 1', launcher)
         self.assertIn('-class AIOS-Terminal', launcher)
 
-    def test_compositor_targets_only_terminal_surface(self):
+    def test_compositor_rounds_only_native_browser_and_terminal(self):
         config = (ROOT / "distro/alpine/overlay/etc/xdg/picom.conf").read_text()
-        self.assertIn("92:class_g = 'AIOS-Terminal'", config)
         self.assertIn('backend = "xrender"', config)
+        terminal_rule = re.search(
+            r'\{\s*match = "class_g = \'AIOS-Terminal\'";(.*?)\}', config, re.S)
+        browser_rule = re.search(
+            r'\{\s*match = "class_i = \'aios-browser\'";(.*?)\}', config, re.S)
+        self.assertIsNotNone(terminal_rule)
+        self.assertIsNotNone(browser_rule)
+        self.assertIn("opacity = 0.92;", terminal_rule.group(1))
+        self.assertIn("corner-radius = 16;", terminal_rule.group(1))
+        self.assertNotIn("opacity", browser_rule.group(1))
+        self.assertIn("corner-radius = 16;", browser_rule.group(1))
+        self.assertEqual(config.count("corner-radius = 16;"), 2)
         self.assertIn('picom', (ROOT / "distro/alpine/apks/world.x11").read_text().splitlines())
 
     def test_openbox_chrome_uses_aios_window_colors(self):
@@ -44,9 +54,21 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
         self.assertIn("border.width: 1", theme)
         self.assertIn("<keepBorder>yes</keepBorder>", openbox)
-        self.assertIn("<titleLayout>LIC</titleLayout>", openbox)
+        self.assertIn("<titleLayout>LC</titleLayout>", openbox)
         self.assertIn('<application class="AIOS-Terminal">', openbox)
         self.assertIn("<decor>yes</decor>", openbox)
+        terminal_rule = re.search(
+            r'<application class="AIOS-Terminal">(.*?)</application>',
+            openbox, re.S)
+        browser_rule = re.search(
+            r'<application name="aios-browser" class="AIOS Browser">'
+            r'(.*?)</application>',
+            openbox, re.S)
+        self.assertIsNotNone(terminal_rule)
+        self.assertIsNotNone(browser_rule)
+        self.assertIn("<width>69%</width>", terminal_rule.group(1))
+        self.assertIn("<height>60%</height>", terminal_rule.group(1))
+        self.assertNotIn("<size>", browser_rule.group(1))
 
     def test_desktop_uses_gstreamer_and_lazily_creates_media_player(self):
         world = (ROOT / "distro/alpine/apks/world.ai").read_text().splitlines()

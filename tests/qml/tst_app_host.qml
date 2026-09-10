@@ -65,6 +65,17 @@ TestCase {
         compare(host.displayValue, "15")
     }
 
+    function test_default_size_is_bounded_but_user_resize_is_not() {
+        verify(host.width <= Math.floor(host.screen.desktopAvailableWidth * 0.7))
+        verify(host.height <= Math.floor(host.screen.desktopAvailableHeight * 0.7))
+        var width = host.width + 100
+        var height = host.height + 100
+        host.width = width
+        host.height = height
+        compare(host.width, width)
+        compare(host.height, height)
+    }
+
     function test_chained_arithmetic() {
         host.press("2")
         host.press("+")
