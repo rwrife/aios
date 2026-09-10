@@ -6,7 +6,7 @@ There are three related pieces:
 - **Agent Skills** are installed instructions and metadata that describe how to
   handle a class of requests. A skill can narrow which tools are available.
 - **Built-in tools** are AIOS-owned functions. The current registry includes
-  `browser` and `application`.
+  `browser`, `application`, and `os_settings`.
 - **MCP tools** come from explicitly configured local Model Context Protocol
   servers. AIOS validates and renames them before advertising them to a model.
 
@@ -14,6 +14,76 @@ Model text is never interpreted as a command. Only a completed structured call
 to a tool advertised for that turn can reach the per-chat tool host.
 
 ## Agent Skills
+
+### OS control
+
+The image ships `os-control` for settings and sign-in requests. It deliberately
+does not narrow `allowed-tools`, so advertised local MCP extensions remain
+available. The built-in `os_settings` tool works without MCP configuration.
+
+| Request | Structured call | Result |
+| --- | --- | --- |
+| Inspect settings | `{"action":"read"}` | Theme, reduced motion, supported theme keys, audio availability and volume/mute when available |
+| Set volume | `{"action":"set","setting":"volume","value":35}` | Applies 0–100 percent to the default output and reads it back |
+| Mute | `{"action":"set","setting":"muted","value":true}` | Changes default output mute independently of volume |
+| Set Ocean theme | `{"action":"set","setting":"theme_color","value":"blue"}` | Saves configuration and updates live shell appearance |
+| Reduce motion | `{"action":"set","setting":"reduced_motion","value":true}` | Saves configuration and updates the shell |
+| Open network settings | `{"action":"open","section":"network"}` | Reports whether the native panel launched; also supports `sound` and `display` |
+| Start sign-in | `{"action":"authenticate"}` | Opens this chat's native profile picker; reports `awaiting_user` or `unavailable` |
+| Check sign-in | `{"action":"authentication_status"}` | Reports completion after the native UI emits its successful unlock event |
+
+The tool host uses a bounded local desktop socket created inside its chat's
+private temporary directory. The shell supplies the path through
+`AIOS_DESKTOP_CONTROL_SOCKET`. The bridge only accepts fixed appearance,
+panel-opening, and sign-in operations; it exposes no PIN fields, tokens,
+identity-broker requests, shell commands, or arbitrary configuration writes.
+Volume uses the same PulseAudio-compatible service as the shell. Appearance
+uses the existing configuration writer and native chrome integration. Audio
+changes follow the audio service's persistence policy; theme and reduced
+motion persist in AIOS configuration. A bridge failure after saving appearance
+can leave the saved preference changed without updating the live shell; report
+the failure and read state before retrying.
+
+Authentication status records a native sign-in completion in this chat; it is
+not a capability token. Protected services continue to enforce their own
+authorization. The model never supplies the PIN. While the user is choosing a
+profile or entering a PIN, return control to them rather than polling. A
+cancelled picker may remain `awaiting_user`; that never means authentication
+succeeded. Identity changes and privacy loss clear completion status.
+
+For a separate local MCP client, the same implementation is available as
+`python3 -m aios.os_settings`. Configure it with an explicit tool allowlist:
+
+```json
+{
+  "servers": {
+    "os": {
+      "command": "python3",
+      "args": ["-m", "aios.os_settings"],
+      "tools": ["os_settings"]
+    }
+  }
+}
+```
+
+AIOS advertises this optional tool as `mcp_os_os_settings`. The module must be
+on the server's Python path (installed at `/usr/local/share/aios`). Audio needs
+access to the user's audio runtime. Appearance, native panels and authentication
+also require `AIOS_DESKTOP_CONTROL_SOCKET` to point to the live chat bridge;
+external clients must explicitly supply that environment value and, if needed,
+`PYTHONPATH` and `XDG_RUNTIME_DIR` in the server's `env`. Do not persist temporary
+chat socket paths as permanent installation defaults. Prefer the built-in tool
+inside AIOS, which receives the live socket automatically. MCP initialization
+and the tool description include the read/change/check and native sign-in rules.
+
+Extend OS control through named settings/actions or allowlisted local MCP
+operations. Each extension should advertise exact inputs, return bounded
+non-secret results and actual completion state, and reuse existing service
+authorization. Opening a panel alone is not automation of every control inside
+it. Unsupported settings must be reported rather than emulated through model
+prose or arbitrary command execution.
+
+### Discovery
 
 AIOS searches these directories in order:
 

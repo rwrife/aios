@@ -21,6 +21,7 @@
 #include <QUuid>
 #include <QTemporaryDir>
 #include <QSettings>
+#include <QLocalServer>
 #include <QSysInfo>
 #include <QThread>
 #include "BuildInfo.h"
@@ -181,6 +182,7 @@ public:
                 readiness.stop();
                 if (code != 0 && m_config.value("mode") == "local") { m_status = "Local model stopped. Check model compatibility and available memory."; emit changed(); }
             });
+        startDesktopControls();
         if (owner) {
             sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             m_config = owner->config();
@@ -200,6 +202,10 @@ public:
         auto session = new Backend(this); ++openSessions; emit changed();
         connect(session, &QObject::destroyed, this, [this] { --openSessions; emit changed(); });
         return session;
+    }
+    Q_INVOKABLE void setAuthenticationState(const QString &state) {
+        if (state == "authenticated" || state == "unavailable" || state == "awaiting_user")
+            authenticationState = state;
     }
     Q_INVOKABLE void closeSession() { if (owner) { stop(); deleteLater(); } }
     Q_INVOKABLE void attach(const QUrl &url) {
@@ -391,7 +397,65 @@ signals:
     void configured();
     void transcribed(const QString &text);
     void volumeChanged();
+    void authenticationRequested();
 private:
+    QLocalServer desktopControls;
+    QString authenticationState = "unavailable";
+    void startDesktopControls() {
+        if (!toolDirectory.isValid()) return;
+        desktopControls.setSocketOptions(QLocalServer::UserAccessOption);
+        connect(&desktopControls, &QLocalServer::newConnection, this, [this] {
+            while (desktopControls.hasPendingConnections()) {
+                auto socket = desktopControls.nextPendingConnection();
+                socket->setParent(this);
+                socket->setReadBufferSize(4097);
+                auto buffer = new QByteArray;
+                connect(socket, &QObject::destroyed, [buffer] { delete buffer; });
+                connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+                QTimer::singleShot(2000, socket, [socket] { socket->abort(); socket->deleteLater(); });
+                connect(socket, &QLocalSocket::readyRead, this, [this, socket, buffer] {
+                    buffer->append(socket->readAll());
+                    if (buffer->size() > 4096) { socket->abort(); return; }
+                    if (!buffer->contains('\n')) return;
+                    const auto request = QJsonDocument::fromJson(buffer->left(buffer->indexOf('\n'))).object();
+                    const auto action = request.value("action").toString();
+                    QJsonObject reply{{"error", "Unsupported desktop request."}};
+                    if (action == "ping" && request.size() == 1) {
+                        reply = {{"result", QJsonObject{{"available", true}}}};
+                    } else if (action == "appearance" && request.size() == 3) {
+                        const auto setting = request.value("setting").toString();
+                        const auto value = request.value("value");
+                        const QStringList colors{"blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate"};
+                        if ((setting == "theme_color" && value.isString() && colors.contains(value.toString())) ||
+                            (setting == "reduced_motion" && value.isBool())) {
+                            auto target = owner ? owner : this;
+                            target->m_config[setting] = value.toVariant();
+                            emit target->changed();
+                            emit target->configured();
+                            reply = {{"result", QJsonObject{{"applied", true}}}};
+                        }
+                    } else if (action == "open" && request.size() == 2) {
+                        const auto section = request.value("section").toString();
+                        QString program;
+                        QStringList args;
+                        if (section == "sound") program = "pavucontrol";
+                        else if (section == "display") program = "arandr";
+                        else if (section == "network") { program = "aios-terminal"; args = {"-title", "AIOS Network & Wi-Fi", "-e", "nmtui"}; }
+                        if (!program.isEmpty()) reply = {{"result", QJsonObject{{"opened", QProcess::startDetached(program, args)}}}};
+                    } else if (action == "authenticate" && request.size() == 1) {
+                        authenticationState = "unavailable";
+                        emit authenticationRequested();
+                        reply = {{"result", QJsonObject{{"status", authenticationState}}}};
+                    } else if (action == "authentication_status" && request.size() == 1) {
+                        reply = {{"result", QJsonObject{{"status", authenticationState}}}};
+                    }
+                    socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+                    socket->disconnectFromServer();
+                });
+            }
+        });
+        desktopControls.listen(toolDirectory.path() + "/desktop.sock");
+    }
     Backend *owner = nullptr;
     QString sessionId;
     int openSessions = 0;
@@ -490,6 +554,7 @@ private:
             const auto socket = toolDirectory.path() + "/tools.sock";
             if (tools.state() == QProcess::NotRunning) {
                 env.insert("AIOS_BROWSER_SESSION", sessionId);
+                if (desktopControls.isListening()) env.insert("AIOS_DESKTOP_CONTROL_SOCKET", desktopControls.fullServerName());
                 env.insert("AIOS_BROWSER_THEME", m_config.value("theme_color", "blue").toString());
                 tools.setProcessEnvironment(env);
                 tools.setStandardOutputFile(QProcess::nullDevice());

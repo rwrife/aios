@@ -1,5 +1,29 @@
 # Agent Instructions
 
+## Agent control of the OS
+
+- Treat internal skills and local MCP as the agent's OS control interface.
+  Ordinary user requests to change settings authorize applying those changes,
+  not merely describing which UI buttons to press.
+- Keep `apps/skills/os-control/SKILL.md`, the `os_settings` tool schema and
+  `docs/agentic-tools.md` aligned when adding OS capabilities. Prefer structured
+  operations backed by existing OS services. Include readback, valid values,
+  persistence semantics and unavailable/error results for each new setting.
+- The built-in tool controls volume, mute, theme and reduced motion, opens
+  sound/display/network panels, and starts native authentication. Extend this
+  surface or explicitly allowlisted local MCP tools for other OS features;
+  never claim an unimplemented operation is available.
+- Authentication belongs to the native profile/PIN UI and identity broker.
+  An agent may initiate it and observe a bounded completion status, but must
+  not collect secrets, synthesize identity evidence, write authenticated state,
+  or bypass capability checks. Recognition suggestions are not authentication.
+- Preserve per-chat scope for sign-in and protected operations. A successful
+  sign-in status is informational, not a reusable authorization capability.
+- Browser restrictions below apply to browser automation. They do not prohibit
+  trusted OS adapters from calling fixed native programs internally. Do not
+  expose arbitrary command execution or generic identity-broker passthrough
+  as a shortcut for extending OS control.
+
 ## Running AIOS
 
 - On Windows, run AIOS by launching the built image in QEMU. Use
