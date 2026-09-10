@@ -315,6 +315,7 @@ private:
     quint64 m_operation = 0;
     quint64 m_snapshotOperation = 0;
     quint64 m_navigationOperation = 0;
+    QUrl m_expectedHistoryUrl;
     bool m_snapshotInFlight = false;
     bool m_actionInFlight = false;
     bool m_navigationStarted = false;
@@ -653,12 +654,17 @@ private:
                 return;
             }
             m_navigationOperation = m_operation;
-            if (action == "back")
+            if (action == "back") {
+                m_expectedHistoryUrl = m_view->history()->backItem().url();
                 m_view->back();
-            else if (action == "forward")
+                pollHistoryNavigation(m_operation);
+            } else if (action == "forward") {
+                m_expectedHistoryUrl = m_view->history()->forwardItem().url();
                 m_view->forward();
-            else
+                pollHistoryNavigation(m_operation);
+            } else {
                 m_view->reload();
+            }
         } else if (action == "stop") {
             m_view->stop();
             beginPending(socket);
@@ -686,6 +692,7 @@ private:
         m_actionInFlight = false;
         m_navigationOperation = 0;
         m_navigationStarted = false;
+        m_expectedHistoryUrl = {};
         m_operationTimer.start();
     }
 
@@ -700,6 +707,7 @@ private:
         m_actionInFlight = false;
         m_navigationOperation = 0;
         m_navigationStarted = false;
+        m_expectedHistoryUrl = {};
         m_operationTimer.stop();
         respond(socket, QJsonObject{{"error", message}});
     }
@@ -781,13 +789,33 @@ private:
                 respond(socket, QJsonObject{{"error", "Browser snapshot failed. Reopen the page."}});
                 return;
             }
+            const QUrl actualUrl(value.toObject().value("url").toString());
+            if (!m_expectedHistoryUrl.isEmpty() && actualUrl != m_expectedHistoryUrl) {
+                m_snapshotInFlight = false;
+                pollHistoryNavigation(operation);
+                return;
+            }
             if (m_navigationOperation == operation
-                    && !allowedUrl(QUrl(value.toObject().value("url").toString()))) {
+                    && !allowedUrl(actualUrl)) {
                 m_snapshotInFlight = false;
                 return;
             }
             m_navigationStarted = false;
+            m_expectedHistoryUrl = {};
             respond(socket, value);
+        });
+    }
+
+    void pollHistoryNavigation(quint64 operation)
+    {
+        QTimer::singleShot(100, this, [this, operation] {
+            if (!m_pending || operation != m_operation)
+                return;
+            if (m_loading || m_snapshotInFlight) {
+                pollHistoryNavigation(operation);
+                return;
+            }
+            snapshotPending();
         });
     }
 
