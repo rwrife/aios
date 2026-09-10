@@ -451,13 +451,18 @@ private:
                 m_navigationStarted = true;
         });
         connect(m_view, &QWebEngineView::loadProgress, m_progress, &QProgressBar::setValue);
-        connect(m_view, &QWebEngineView::loadFinished, this, [this](bool) {
+        connect(m_view, &QWebEngineView::loadFinished, this, [this](bool ok) {
             m_loading = false;
             m_stop->setEnabled(false);
             m_progress->hide();
             updateNavigation();
-            if (m_pending && !m_actionInFlight
-                    && m_navigationOperation == m_operation && m_navigationStarted)
+            const bool pendingNavigation = m_pending && !m_actionInFlight
+                && m_navigationOperation == m_operation && m_navigationStarted;
+            if (pendingNavigation && !ok) {
+                failPending("Browser navigation failed. Check the address and network connection.");
+                return;
+            }
+            if (pendingNavigation)
                 snapshotPending();
         });
         connect(m_page, &RestrictedPage::blocked, this, [this](const QString &message) {

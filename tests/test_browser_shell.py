@@ -25,6 +25,7 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('QLocalServer::UserAccessOption', source)
         self.assertIn('QWebEngineScript::ApplicationWorld', source)
         self.assertIn('QWebEngineView::loadStarted', source)
+        self.assertIn('pendingNavigation && !ok', source)
         self.assertIn('NoPersistentCookies', source)
         self.assertIn('permission.deny()', source)
         self.assertIn('javaScriptPrompt', source)

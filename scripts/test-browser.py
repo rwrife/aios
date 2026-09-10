@@ -35,6 +35,12 @@ try:
         page=browser.act({'action':'scroll','direction':'down'})
     assert 'Bottom marker' in page['text'],page
     assert any(c['label']=='Bottom control' for c in page['controls'])
+    try:
+        browser.act({'action':'navigate','url':'http://127.0.0.1:1/'})
+    except RuntimeError as error:
+        assert 'navigation failed' in str(error).lower(),error
+    else:
+        raise AssertionError('Failed navigation was reported as successful')
     print('PASS: themed WebEngine browser open, read, type, click, navigation and viewport scrolling',flush=True)
 finally:
     browser.close(); server.shutdown()
