@@ -303,10 +303,100 @@ synthesis as well as summary generation.
   per-chat authorization, and unavailable/error results. No raw audio stream or
   generic helper invocation becomes an agent tool.
 
+## WSL audio enablement for local development
+
+Make working Windows ↔ WSLg ↔ AIOS audio an explicit prerequisite for live
+voice testing. The default local path uses WSL2 with WSLg's PulseAudio bridge
+for both microphone input and speaker/headphone output. Do not require USB
+passthrough for normal Windows audio devices. USB audio passthrough is a separate
+hardware test, not the baseline developer setup.
+
+Current launchers already provide part of this path: `scripts/run.ps1` forwards
+`AIOS_QEMU_AUDIO` to `scripts/run-qemu-live.sh`, which defaults to PulseAudio and
+an `intel-hda`/`hda-duplex` guest device. `scripts/preview-chat.sh` mounts WSLg and
+sets `PULSE_SERVER=unix:/mnt/wslg/PulseServer` in its Alpine container. These are
+configuration hooks, not evidence that physical microphone or speaker audio
+currently works. The preview currently starts only `--chat`; add a desktop preview
+option for testing the wake coordinator and orb without rebuilding an ISO.
+
+Implement `scripts/wsl-audio.ps1` with a companion `scripts/test-wsl-audio.sh`
+and a reproducible `docs/qa/wsl-audio.md` runbook. These are proposed new files.
+The wrapper selects the WSL distribution and exposes bounded Check, Playback,
+Record, and RoundTrip modes. Check is read-only and never records; recording
+modes visibly indicate capture and stop automatically after at most ten seconds.
+Use task-specific temporary files, remove recordings on success/failure/cancel,
+and retain only non-content diagnostics by default. Report each layer as
+passed/failed/not tested with an actionable cause, never just “audio available.”
+
+1. **Windows and WSL preflight.** Record Windows, WSL/WSLg and distro versions.
+   Confirm the selected distro uses WSL2, WSLg is available, Windows can play
+   audio, and the intended Windows input/output devices are selected and unmuted.
+   Check microphone privacy controls, including desktop-app microphone access.
+   Distinguish permission denial, missing hardware and a silent/muted source.
+   Document WSL update/restart recovery where needed; never restart all WSL
+   distributions or terminate other development sessions automatically.
+2. **WSL audio transport.** Inspect the inherited `PULSE_SERVER`, verify its
+   endpoint and query the server, sinks and sources with PulseAudio client tools.
+   Preserve a valid supplied endpoint; use `unix:/mnt/wslg/PulseServer` only as a
+   checked WSLg fallback. Install/document the selected distro's PulseAudio client
+   utilities and required Qt multimedia plugins, not a competing audio daemon.
+   Do not replace WSLg's server, expose unauthenticated TCP audio, or assume that
+   absence of `/dev/snd` means the WSLg bridge is broken.
+3. **Physical input and output separately.** Play a short known WAV through WSL
+   and confirm it is audible at the selected Windows output. Record a known
+   spoken phrase from the actual microphone, check duration/sample count and
+   non-silent signal, then play it back. Detect/label monitor sources so loopback
+   is not mistaken for microphone input. An enumerated source or successful
+   socket connection alone is not a pass. Record human audibility/intelligibility
+   checks separately from automated signal checks. Test 48 kHz source conversion
+   into AIOS's 16 kHz mono input format.
+4. **Fast AIOS preview.** Run the same bounded playback/capture checks inside
+   the preview container using its existing WSLg mount. Verify socket access,
+   server environment, PulseAudio client libraries, Qt/GStreamer audio plugins,
+   and available STT/TTS binaries/weights independently. Fix preview dependency
+   checks so an existing `cmake` binary cannot mask missing audio dependencies.
+   Make selected local models available read-only and keep test data separate
+   from normal chats. Validate microphone-button dictation and local Read aloud
+   first, then wake-to-draft and automatic spoken replies as they land. This is
+   the fast edit/test loop; it is not a substitute for the guest-image check.
+5. **QEMU guest path.** Verify the installed Linux QEMU actually includes the
+   `pa` backend, preserve the WSLg server environment from PowerShell through
+   WSL, and keep both capture and playback enabled on the duplex device. Add
+   bounded launcher preflight and a dry-run test for audio arguments/environment;
+   fail clearly for a requested but unavailable backend. Keep audio-disabled
+   headless tests possible. Add a forwarded task-specific VM name option instead
+   of the current fixed `-name AIOS`. In Alpine, verify HDA/ALSA device detection,
+   the guest PulseAudio source/sink, Qt capture, and output playback. Keep the
+   guest's audio server distinct from the host WSLg server: QEMU bridges them.
+6. **End-to-end local round trip.** In both preview and real guest, speak a known
+   phrase, review its local transcript, send it to a local chat model, and hear
+   the concise local synthesized response. Repeat offline after model setup,
+   with two chats, mute/unmute, Stop speaking, microphone cancel, device changes,
+   and a WSL restart followed by an explicit relaunch. Record where failure
+   occurs: Windows device/permission, WSLg bridge, container access, QEMU backend,
+   guest audio service, Qt, STT, or TTS.
+
+Completion requires physical microphone capture and audible output through WSL,
+the AIOS preview, and the real Alpine guest. Baseline checks can use today's
+manual dictation and Read aloud; repeat the round trip with wake detection and
+automatic replies in release validation. A loopback fixture only proves the
+software path. Keep synthetic tests headless and repeatable, and mark real-device
+tests explicitly when no physical device or human audibility check is available.
+Measure host, preview and guest latency separately so slow QEMU emulation is not
+misdiagnosed as model or WSLg failure. Start with wired/built-in devices and record
+Bluetooth routing and headset profile limitations separately.
+
+The runbook must include exact validated setup/check commands, package versions,
+selected device/source/sink identifiers, test duration, stage results and known
+recovery steps, without retaining raw recordings or private transcripts. Changes
+to host preferences or environment must be scoped and documented with restore
+steps. This planning PR does not configure WSL or claim an audio test has passed.
+
 ## Delivery sequence
 
 | Milestone | Deliverables | Completion gate |
 | --- | --- | --- |
+| 0. WSL audio foundation | Windows/WSLg preflight, bounded audio diagnostics and runbook, preview dependency/desktop-mode fixes, QEMU duplex checks and unique VM titles | Physical input and audible local output work in WSL, preview and Alpine guest using existing manual voice features; failures identify the broken layer |
 | 1. Feasibility and baseline | Real Alpine build spike; keyword/VAD and TTS candidates; licensed model catalog; baseline STT/TTS hardware measurements | Chosen phrase, voices, musl build, redistribution terms, memory and accuracy meet recorded targets; otherwise document blocker and keep feature disabled |
 | 2. Shared capture | Coordinator, normalization, bounded ring buffer, helper protocol, cancellation generations; migrate manual capture | Deterministic tests prove single ownership, bounded memory, cleanup, and no manual-recording regression |
 | 3. Wake to draft | State machine, VAD, target routing, versioned transcription result, error handling | Wake through draft succeeds offline; two-chat isolation and late-result rejection pass |
@@ -314,7 +404,9 @@ synthesis as well as summary generation.
 | 5. Settings and model upgrades | Opt-in UI, orb feedback, playback/privacy suspension, structured OS controls, independent STT/TTS providers, catalog downloads and migration | Basic offline round trip, optional upgraded voice, cancellation, readback, keyboard and palette checks pass |
 | 6. Release validation | Pinned runtime/model packaging, local ISO, hardware tests, QA evidence and docs | Functional, privacy, speech-output and performance gates below pass; publish measured limitations |
 
-Keep milestones 2–5 as a batch for expensive image/VM validation while running
+Complete milestone 0 before live model benchmarking; headless development can
+proceed independently. Reuse the WSL preview for fast audio checks. Keep
+milestones 2–5 as a batch for expensive image/VM validation while running
 fast targeted tests during development. Initially enable wake support only in
 the validated anonymous desktop scope. Identity/private-desktop support requires
 the ownership lease and routing work described above plus its own isolation gate.
@@ -345,6 +437,9 @@ microphones; record Bluetooth headset results separately if available. Check
 48 kHz devices, unplug/replug, default-device changes, input mute, no microphone,
 sleep/resume, offline recognition, remote-service errors, and missing weights.
 Do not equate a synthetic-input pass with working host microphone passthrough.
+Use the WSL audio runbook above to establish and record the physical host path
+before diagnosing STT/TTS model failures. Re-run its layer checks after changes
+to launchers, container audio dependencies, WSLg, or guest audio packaging.
 
 Record screenshots of armed, capturing, transcribing, review, and unavailable
 states with Ocean and one generated palette, including reduced motion and
@@ -407,6 +502,9 @@ Primary engine references reviewed September 10, 2026:
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp): existing transcription engine and upstream VAD documentation.
 - [Piper engine](https://github.com/OHF-Voice/piper1-gpl) and [voice model documentation](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md): optional local neural synthesis and per-voice licensing review.
 - [Kokoro model card](https://huggingface.co/hexgrad/Kokoro-82M): candidate higher-quality local speech model; validate the selected deployment runtime separately.
+- [WSLg architecture](https://github.com/microsoft/wslg): Windows microphone/speaker integration through the WSLg PulseAudio server.
+- [WSLg container guidance](https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md): connecting containerized applications to WSLg services.
+- [QEMU audio options](https://www.qemu.org/docs/master/system/qemu-manpage.html): PulseAudio backend configuration; check available options against the locally installed version.
 
 Milestone 1 must settle the production keyword/VAD/TTS engines and exact model
 licenses, the final phrase and pronunciation, target hardware, model delivery
