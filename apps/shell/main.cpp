@@ -16,6 +16,7 @@
 #include <QFont>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QRegularExpression>
 #include <QUuid>
 #include <QTemporaryDir>
 #include <QSettings>
@@ -59,6 +60,9 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantMap subscription READ subscription NOTIFY changed)
     Q_PROPERTY(QString loginUrl READ loginUrl NOTIFY changed)
     Q_PROPERTY(QString loginCode READ loginCode NOTIFY changed)
+    Q_PROPERTY(int volume READ volume NOTIFY volumeChanged)
+    Q_PROPERTY(bool muted READ muted NOTIFY volumeChanged)
+    Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY volumeChanged)
 public:
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
@@ -73,6 +77,9 @@ public:
     QVariantMap subscription() const { return m_subscription; }
     QString loginUrl() const { return m_loginUrl; }
     QString loginCode() const { return m_loginCode; }
+    int volume() const { return m_volume; }
+    bool muted() const { return m_muted; }
+    bool volumeAvailable() const { return m_volumeAvailable; }
     explicit Backend(Backend *shared = nullptr) : QObject(shared), owner(shared), voice(this) {
         connect(&voice, &Voice::changed, this, &Backend::changed);
         connect(&voice, &Voice::error, this, [this](const QString &text) { m_status = text; emit changed(); });
@@ -193,6 +200,61 @@ public:
     Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
     Q_INVOKABLE void copy(const QString &text) { QGuiApplication::clipboard()->setText(text); }
     Q_INVOKABLE void terminal() { QProcess::startDetached("aios-terminal", {}); }
+    Q_INVOKABLE void refreshVolume() {
+        if (m_volumeRefreshing) {
+            m_volumeRefreshPending = true;
+            return;
+        }
+        m_volumeRefreshing = true;
+        auto process = new QProcess(this);
+        connect(process, &QProcess::errorOccurred, this, [this,process](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart) return;
+            process->deleteLater();
+            setVolumeAvailable(false);
+            finishVolumeRefresh();
+        });
+        connect(process, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
+            [this,process](int code, QProcess::ExitStatus) {
+                const QString output = QString::fromUtf8(process->readAllStandardOutput());
+                process->deleteLater();
+                const auto match = QRegularExpression(R"((\d+)%))").match(output);
+                if (code != 0 || !match.hasMatch()) {
+                    setVolumeAvailable(false);
+                    finishVolumeRefresh();
+                    return;
+                }
+                const int currentVolume = qBound(0, match.captured(1).toInt(), 100);
+                auto muteProcess = new QProcess(this);
+                connect(muteProcess, &QProcess::errorOccurred, this, [this,muteProcess](QProcess::ProcessError error) {
+                    if (error != QProcess::FailedToStart) return;
+                    muteProcess->deleteLater();
+                    setVolumeAvailable(false);
+                    finishVolumeRefresh();
+                });
+                connect(muteProcess, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
+                    [this,muteProcess,currentVolume](int muteCode, QProcess::ExitStatus) {
+                        const QString muteOutput = QString::fromUtf8(muteProcess->readAllStandardOutput());
+                        muteProcess->deleteLater();
+                        const auto muteMatch = QRegularExpression(
+                            R"(Mute:\s*(yes|no))", QRegularExpression::CaseInsensitiveOption).match(muteOutput);
+                        if (muteCode != 0 || !muteMatch.hasMatch()) {
+                            setVolumeAvailable(false);
+                            finishVolumeRefresh();
+                            return;
+                        }
+                        setVolumeState(currentVolume, muteMatch.captured(1).compare("yes", Qt::CaseInsensitive) == 0);
+                        finishVolumeRefresh();
+                    });
+                muteProcess->start("pactl", {"get-sink-mute", "@DEFAULT_SINK@"});
+            });
+        process->start("pactl", {"get-sink-volume", "@DEFAULT_SINK@"});
+    }
+    Q_INVOKABLE void setVolume(int volume) {
+        runVolumeCommand({"set-sink-volume", "@DEFAULT_SINK@", QString::number(qBound(0, volume, 100)) + "%"});
+    }
+    Q_INVOKABLE void setMuted(bool muted) {
+        runVolumeCommand({"set-sink-mute", "@DEFAULT_SINK@", muted ? "1" : "0"});
+    }
     Q_INVOKABLE void openSystemSettings(const QString &section) {
         QString program;
         QStringList args;
@@ -257,6 +319,7 @@ signals:
     void changed();
     void configured();
     void transcribed(const QString &text);
+    void volumeChanged();
 private:
     Backend *owner = nullptr;
     QString sessionId;
@@ -276,6 +339,51 @@ private:
     QNetworkAccessManager network;
     QTimer readiness;
     bool checkingReady = false;
+    int m_volume = 50;
+    bool m_muted = false;
+    bool m_volumeAvailable = false;
+    bool m_volumeRefreshing = false;
+    bool m_volumeRefreshPending = false;
+    void setVolumeAvailable(bool available) {
+        if (m_volumeAvailable == available) return;
+        m_volumeAvailable = available;
+        emit volumeChanged();
+    }
+    void setVolumeState(int volume, bool muted) {
+        const bool stateChanged = m_volume != volume || m_muted != muted || !m_volumeAvailable;
+        m_volume = volume;
+        m_muted = muted;
+        m_volumeAvailable = true;
+        if (stateChanged) emit volumeChanged();
+    }
+    void finishVolumeRefresh() {
+        m_volumeRefreshing = false;
+        if (!m_volumeRefreshPending) return;
+        m_volumeRefreshPending = false;
+        QTimer::singleShot(0, this, &Backend::refreshVolume);
+    }
+    void runVolumeCommand(const QStringList &arguments) {
+        auto process = new QProcess(this);
+        connect(process, &QProcess::errorOccurred, this, [this,process](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart) return;
+            process->deleteLater();
+            setVolumeAvailable(false);
+            m_status = "Could not adjust speaker volume. Open Sound settings to check the audio service.";
+            emit changed();
+        });
+        connect(process, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
+            [this,process](int code, QProcess::ExitStatus) {
+                process->deleteLater();
+                if (code != 0) {
+                    setVolumeAvailable(false);
+                    m_status = "Could not adjust speaker volume. Open Sound settings to check the audio service.";
+                    emit changed();
+                    return;
+                }
+                refreshVolume();
+            });
+        process->start("pactl", arguments);
+    }
     void persist() {
         if (sessionId.isEmpty() || m_messages.isEmpty()) return;
         const QString dir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/aios/conversations";
