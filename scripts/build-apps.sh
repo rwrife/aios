@@ -13,7 +13,12 @@ case "${AIOS_IDENTITY_BUILD:-0}" in
   1) embedded_display=ON ;;
   *) echo 'AIOS_IDENTITY_BUILD must be 0 or 1' >&2; exit 1 ;;
 esac
-cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DAIOS_EMBEDDED_DISPLAY="$embedded_display"
+AIOS_COMMIT="${AIOS_COMMIT:-$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+AIOS_BUILD_NUMBER="${AIOS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-$(date -u +%Y%m%d.%H%M)}}"
+cmake -S "$ROOT/apps/shell" -B "$BUILD/shell" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DAIOS_EMBEDDED_DISPLAY="$embedded_display" \
+  -DAIOS_COMMIT="$AIOS_COMMIT" -DAIOS_BUILD_NUMBER="$AIOS_BUILD_NUMBER"
 cmake --build "$BUILD/shell" -j "${JOBS:-4}"
 DESTDIR="$DEST" cmake --install "$BUILD/shell"
 cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"
