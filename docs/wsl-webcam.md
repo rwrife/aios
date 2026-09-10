@@ -1,5 +1,10 @@
 # Webcam development in WSL
 
+For the dedicated, working Logitech Brio 101, see the
+[control and validation record](qa/brio-camera.md) and the
+[occasional recognition implementation plan](plans/brio-occasional-recognition.md).
+The Dell failure notes below remain useful troubleshooting history.
+
 This is the reusable troubleshooting guide (TSG). Agents can load the repository
 skill at [`.agents/skills/wsl-webcam/SKILL.md`](../.agents/skills/wsl-webcam/SKILL.md).
 Use [`scripts/wsl-webcam.ps1`](../scripts/wsl-webcam.ps1) for the repeatable Windows
