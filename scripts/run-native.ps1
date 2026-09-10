@@ -37,9 +37,9 @@ try {
     $IsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
     $dry = $DryRun -or $env:DRY_RUN -eq '1'
     $diskPath = [IO.Path]::GetFullPath((Get-Setting 'AIOS_VM_DISK' "$rootDir/.tmp-aios-live.qcow2"))
-    $diskSize = Get-Setting 'AIOS_VM_DISK_SIZE' '32G'
-    $memory = Get-Setting 'AIOS_VM_MEM_MB' '4096'
-    $cpuCount = Get-Setting 'AIOS_VM_CPUS' '2'
+    $diskSize = Get-Setting 'AIOS_VM_DISK_SIZE' '64G'
+    $memory = Get-Setting 'AIOS_VM_MEM_MB' '16384'
+    $cpuCount = Get-Setting 'AIOS_VM_CPUS' '4'
     $audioBackend = Get-Setting 'AIOS_QEMU_AUDIO' 'dsound'
     $accelerator = Get-Setting 'AIOS_QEMU_ACCEL' 'tcg'
     $qemu = 'qemu-system-x86_64.exe'

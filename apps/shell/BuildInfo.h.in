@@ -1,0 +1,5 @@
+#pragma once
+
+#define AIOS_VERSION "@PROJECT_VERSION@"
+#define AIOS_COMMIT "@AIOS_COMMIT@"
+#define AIOS_BUILD_NUMBER "@AIOS_BUILD_NUMBER@"

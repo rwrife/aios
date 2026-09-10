@@ -8,11 +8,25 @@ The chat desktop is under active development. See
 [`docs/specs/chat-desktop.md`](docs/specs/chat-desktop.md) for the current target
 and [`docs/architecture.md`](docs/architecture.md) for implementation decisions.
 See `docs/qa/implementation-status.md` for executed checks and remaining release gates.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup on Windows,
+Linux, and macOS.
 
 ## Try the development image
 
-Build on Linux with Docker: `bash scripts/build.sh`. On Windows, build inside
-WSL with a working Linux Docker daemon, or copy an existing x86_64 ISO to Windows.
+Build on Linux with Docker:
+
+```sh
+bash scripts/build.sh
+```
+
+On Windows, use PowerShell with WSL2 and a working Linux Docker daemon:
+
+```powershell
+.\scripts\build.ps1
+# Choose a different WSL distribution:
+.\scripts\build.ps1 -Distro Debian
+```
+
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`.
 
@@ -63,8 +77,10 @@ startup. Chat, settings, and other guest apps stay inside that VM. Use this flow
 for interactive OS previews; `preview-chat.sh` is only an isolated UI development
 tool. Camera passthrough setup is documented in [the webcam guide](docs/wsl-webcam.md#camera-inside-the-windowed-vm).
 They provide NAT networking (outbound internet through the host, with guest DHCP),
-Intel HD Audio speakers and microphone, 4 GiB RAM, two CPUs, and a persistent
-32 GiB sparse disk at `.tmp-aios-live.qcow2`. Existing disks are reused unchanged.
+Intel HD Audio speakers and microphone, 16 GiB RAM, four CPUs, and a persistent
+64 GiB sparse disk at `.tmp-aios-live.qcow2`. The larger memory allocation also
+gives the RAM-backed live filesystem enough room for every curated model download.
+Existing disks are reused unchanged.
 Networking needs no bridge or administrator privileges; the guest sees wired
 Ethernet even when the host uses Wi-Fi. Inbound connections are not forwarded.
 Linux uses PulseAudio (including PipeWire's PulseAudio compatibility service);
@@ -115,8 +131,9 @@ tool bootstrap but is not a reliable browser agent; critical setup controls call
 deterministic backend actions instead of relying on the model. Settings and setup offer
 [three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
-The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
-and a 32 GiB disposable disk; larger models need more memory and storage.
+The current CPU inference build targets x86_64 with AVX2. The VM launchers
+default to 16 GiB RAM, four CPUs, and a 64 GiB disposable disk so every curated
+model can be tried from the RAM-backed live environment.
 Secure Boot and physical hardware have not yet been validated.
 
 CLI examples:

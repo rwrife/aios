@@ -5,8 +5,9 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from aios import core
 
 
@@ -61,10 +62,17 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(config["mode"], "remote")
             self.assertEqual(config["model_path"], "")
 
-    def test_background_motion_is_opt_in_and_saved_choice_wins(self):
-        self.assertTrue(core.load_config()["reduced_motion"])
+    def test_background_motion_default_uses_system_capacity_and_saved_choice_wins(self):
+        gib = 1024 ** 3
+        with patch.object(core.os, "cpu_count", return_value=2), patch.object(core, "total_memory_bytes", return_value=4 * gib):
+            self.assertFalse(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=1), patch.object(core, "total_memory_bytes", return_value=4 * gib):
+            self.assertTrue(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=2), patch.object(core, "total_memory_bytes", return_value=4 * gib - 1):
+            self.assertTrue(core.load_config()["reduced_motion"])
         core.save_config({"reduced_motion": False})
-        self.assertFalse(core.load_config()["reduced_motion"])
+        with patch.object(core.os, "cpu_count", return_value=1), patch.object(core, "total_memory_bytes", return_value=0):
+            self.assertFalse(core.load_config()["reduced_motion"])
 
     def test_camera_recognition_is_opt_in_and_requires_stable_local_device(self):
         self.assertFalse(core.load_config()["camera_recognition"])
@@ -126,6 +134,16 @@ class CoreTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_local_request_waits_for_model_server_startup(self):
+        response = io.BytesIO(b'{"ready":true}')
+        opener = Mock()
+        opener.open.side_effect = [urllib.error.URLError(ConnectionRefusedError()), response]
+        with patch("urllib.request.build_opener", return_value=opener), \
+                patch("aios.core.time.sleep") as sleep:
+            self.assertIs(core.request("/health", timeout=5), response)
+        self.assertEqual(opener.open.call_count, 2)
+        sleep.assert_called_once_with(core.LOCAL_CONNECT_RETRY_DELAY)
 
     def test_missing_model_rejected(self):
         with self.assertRaises(ValueError):
