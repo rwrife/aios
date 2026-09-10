@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 from .principals import current as current_principal
 
-BUNDLED_MODEL = Path("/usr/local/share/aios/models/smollm2-135m.gguf")
+BUNDLED_MODEL = Path("/usr/local/share/aios/models/qwen3-0.6b.gguf")
 THEME_COLORS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
 SAFE_AGENT_KEY_ERROR = "Choose a valid agent API key."
 SAFE_AGENT_KEY_CONFIG_ERROR = "The agent API key configuration is invalid."

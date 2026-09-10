@@ -16,6 +16,28 @@ WSL with a working Linux Docker daemon, or copy an existing x86_64 ISO to Window
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`.
 
+## Download and flash a bootable ISO
+
+The [Build bootable ISO workflow](https://github.com/rwrife/aios/actions/workflows/build-iso.yml)
+builds the pinned Alpine image, verifies its checksum and hybrid USB metadata,
+then boots it offline with both BIOS and UEFI firmware before publishing it.
+Manual workflow runs provide a 30-day Actions artifact. Pushing a `v*` tag also
+creates or updates a GitHub Release with the ISO, `SHA256SUMS`, package manifest
+and pinned build inputs.
+
+The x86_64 ISO is a hybrid image that can be written directly to a thumb drive.
+Verify its checksum first, then use a raw-image writer such as Rufus or
+balenaEtcher on Windows, or `dd` on Linux:
+
+```sh
+sha256sum -c SHA256SUMS
+sudo dd if=alpine-aios-*-x86_64.iso of=/dev/sdX bs=4M status=progress conv=fsync
+```
+
+Replace `/dev/sdX` with the whole USB device, not a partition. This erases that
+device. Boot the result on a 64-bit x86 machine in BIOS or UEFI mode. Secure Boot
+must currently be disabled; physical hardware compatibility is not yet certified.
+
 Launch with QEMU installed on the host:
 
 ```sh
@@ -80,8 +102,8 @@ including device-code login from outside a VM, model selection, and usage status
 
 The softly animated blob at the bottom center restores the most recently
 minimized chat, or opens a new chat window and conversation when none are
-minimized. SmolLM2 135M is bundled and starts automatically for offline chat on
-first boot. Use the ellipsis menu
+minimized. Qwen3 0.6B Q4_K_M is bundled and starts automatically in
+non-thinking mode for offline chat on first boot. Use the ellipsis menu
 to switch back to the starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
@@ -93,9 +115,10 @@ a capable configured model to build or reuse a cached offline app. Agent tasks
 can stay on the current model or be explicitly routed to ChatGPT or a separate
 remote service. See [agentic tools](docs/agentic-tools.md). Chromium remains
 available as one built-in tool, without a desktop browser icon; see
-[browser tools](docs/browser.md). The starter model has limited reasoning
-ability and is not a reliable tool agent. Settings and setup offer
-[three downloadable Qwen3 models](docs/local-models.md) with tool capabilities,
+[browser tools](docs/browser.md). The starter supports simple tool bootstrap but
+is not a reliable tool agent; critical setup controls call deterministic backend
+actions instead of relying on the model. Settings and setup offer
+[three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
 The current CPU inference build targets x86_64 with AVX2. Start with 4 GiB RAM
 and a 32 GiB disposable disk; larger models need more memory and storage.

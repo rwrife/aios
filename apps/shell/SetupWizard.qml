@@ -65,7 +65,7 @@ Window {
                     visible: wizard.step === 0; Layout.fillWidth: true; spacing: 16
                     Note { text: "Make AIOS yours"; color: theme.ink; font.pixelSize: 22 }
                     Note { text: "Connect to the internet, connect an account, check your camera, and prepare local AI models. You can skip any step or close setup at any time." }
-                    Note { text: "The bundled starter model works offline. No account or camera is required to use the desktop." }
+                    Note { text: "The bundled Qwen3 starter works offline. No account or camera is required to use the desktop." }
                     Note { text: "Return any time from Settings → Run setup wizard. Completed changes are kept; leaving a step cancels its unfinished sign-in or download." }
                     Note { visible: backend.config.live === true; text: "You are in a live session. Setup choices are temporary and will be lost after reboot." }
                 }
@@ -123,7 +123,7 @@ Window {
                 ColumnLayout {
                     visible: wizard.step === 4; Layout.fillWidth: true; spacing: 16
                     Note { text: "Local models keep chat and speech on this computer. Downloads need internet access and free disk space." }
-                    Note { text: backend.config.model_path ? "A local chat model is configured. You can keep it and continue." : "Prepare the starter model to chat offline." }
+                    Note { text: backend.config.model_path ? "A local chat model is configured. You can keep it and continue." : "Prepare the Qwen3 starter to chat offline." }
                     LocalModels {
                         Layout.fillWidth: true; backend: wizard.backend; theme: wizard.theme
                         buttonName: "setupModel"
@@ -134,7 +134,7 @@ Window {
                         onClicked: { backend.setupVoice(); wizard.ownsOperation = true }
                     }
                     Note { text: backend.config.speech_model_path ? "A local speech model is configured." : "Speech is optional. You can type instead."; font.pixelSize: 12 }
-                    Note { text: "Import larger GGUF models or configure a remote provider later in Settings → AI models." }
+                    Note { text: "Choose a stronger curated Qwen3 model, import another GGUF, or configure a remote provider later in Settings → AI models." }
                 }
                 ColumnLayout {
                     visible: wizard.step === 5; Layout.fillWidth: true; spacing: 16

@@ -26,7 +26,7 @@ def handle(request):
         emit("saved")
     elif action == "setup-local":
         from .local_models import install, list_models
-        destination = install(request.get("model_id", "smollm2-135m"),
+        destination = install(request.get("model_id", "qwen3-0.6b"),
                               lambda text: emit("progress", text=text))
         emit("installed", path=str(destination), local_models=list_models())
     elif action == "local-models":

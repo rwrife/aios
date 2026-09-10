@@ -14,8 +14,8 @@ photo, and can separately connect a ChatGPT service account.
 Camera checks are opt-in previews only: this build has no supported biometric
 enrollment service, so face login is explicitly unavailable even with a camera.
 The existing experimental recognition adapters are not an enrollment flow.
-The starter model reuses the bundled copy or downloads 101 MiB when missing;
-the [local model catalog](local-models.md) also offers three tool-capable Qwen3
+The Qwen3 0.6B starter reuses the bundled copy or downloads 462 MiB when missing;
+the [local model catalog](local-models.md) also offers three stronger Qwen3
 sizes with RAM and free-disk checks. Optional local speech downloads 75 MiB. Nothing downloads merely by opening or
 advancing through the wizard. Network setup opens the existing connection tool.
 

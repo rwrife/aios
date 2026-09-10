@@ -8,7 +8,7 @@ from . import core
 
 GIB = 1024 ** 3
 DISK_RESERVE = 512 * 1024 ** 2
-DEFAULT_MODEL = "smollm2-135m"
+DEFAULT_MODEL = "qwen3-0.6b"
 
 
 def catalog():
