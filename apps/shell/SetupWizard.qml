@@ -17,6 +17,8 @@ Window {
     color: theme.panel
     property int step: 0
     property bool ownsOperation: false
+    property var selectedCameraDevice: devices.defaultVideoInput
+    readonly property var activeCamera: cameraLoader.item
     readonly property var steps: ["Welcome", "Internet", "Account", "Camera", "Models", "Ready"]
     function cancelOperation() {
         if (ownsOperation && backend.busy) backend.stop()
@@ -32,13 +34,17 @@ Window {
         return formats.length ? formats[0] : undefined
     }
     function configureCamera(device) {
-        camera.cameraDevice = device
-        const format = previewFormat(device)
-        if (format) camera.cameraFormat = format
+        selectedCameraDevice = device
+        if (activeCamera) {
+            activeCamera.cameraDevice = device
+            const format = previewFormat(device)
+            if (format) activeCamera.cameraFormat = format
+        }
     }
     function stopCameraPreview() {
-        camera.stop()
+        if (activeCamera) activeCamera.stop()
         cameraSession.camera = null
+        cameraLoader.active = false
         if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
             profileControl.setCameraPreviewActive(false)
     }
@@ -143,26 +149,30 @@ Window {
                         Layout.alignment: Qt.AlignHCenter
                         color: theme.night; radius: 8
                         VideoOutput { id: preview; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
-                        Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
+                        Text { anchors.centerIn: parent; visible: !wizard.activeCamera || !wizard.activeCamera.active; text: "Camera off"; color: theme.muted }
                     }
                     Action {
                         objectName: "setupCamera"
-                        text: camera.active ? "Stop camera check" : "Start camera check"
+                        text: wizard.activeCamera && wizard.activeCamera.active ? "Stop camera check" : "Start camera check"
                         enabled: devices.videoInputs.length > 0
                         onClicked: {
-                            if (camera.active) wizard.stopCameraPreview()
+                            if (wizard.activeCamera && wizard.activeCamera.active) wizard.stopCameraPreview()
                             else {
-                                wizard.configureCamera(camera.cameraDevice)
                                 if (wizard.profileControl &&
                                         typeof wizard.profileControl.setCameraPreviewActive === "function" &&
                                         wizard.profileControl.setCameraPreviewActive(true) === false)
                                     return
-                                cameraSession.camera = camera
-                                camera.start()
+                                cameraLoader.active = true
+                                wizard.configureCamera(wizard.selectedCameraDevice)
+                                cameraSession.camera = wizard.activeCamera
+                                wizard.activeCamera.start()
                             }
                         }
                     }
-                    Note { text: camera.errorString; visible: camera.error !== Camera.NoError }
+                    Note {
+                        text: wizard.activeCamera ? wizard.activeCamera.errorString : ""
+                        visible: wizard.activeCamera && wizard.activeCamera.error !== Camera.NoError
+                    }
                     Note { text: "The camera starts only when you ask. Nothing is saved or uploaded. Leaving this step turns it off."; font.pixelSize: 12 }
                 }
                 ColumnLayout {
@@ -200,10 +210,11 @@ Window {
         }
     }
     MediaDevices { id: devices }
-    Camera {
-        id: camera
-        cameraDevice: devices.defaultVideoInput
+    Loader {
+        id: cameraLoader
+        active: false
+        sourceComponent: Camera { cameraDevice: wizard.selectedCameraDevice }
     }
-    CaptureSession { id: cameraSession; camera: camera; videoOutput: preview }
+    CaptureSession { id: cameraSession; videoOutput: preview }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
 }

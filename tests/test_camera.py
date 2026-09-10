@@ -39,6 +39,8 @@ class CameraTests(unittest.TestCase):
                 self.assertIn('360', source)
                 self.assertIn('parent.width * 0.75', source)
                 self.assertIn('width * 9 / 16', source)
+                self.assertIn('cameraLoader.active = false', source)
+                self.assertIn('sourceComponent: Camera', source)
                 self.assertNotIn('VideoFrameFormat', source)
         photo = (ROOT / 'apps/shell/ProfilePhoto.h').read_text()
         self.assertIn('"video4linux2"', photo)

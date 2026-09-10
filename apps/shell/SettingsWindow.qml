@@ -10,6 +10,8 @@ Window {
     required property var theme
     property var profileControl: null
     property string recognitionNotice: ""
+    property var selectedCameraDevice: devices.defaultVideoInput
+    readonly property var activeCamera: cameraLoader.item
     signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -18,8 +20,9 @@ Window {
     x: (Screen.width-width)/2; y: (Screen.height-height)/2
     color: theme.panel
     function stopCameraPreview() {
-        camera.stop()
+        if (activeCamera) activeCamera.stop()
         cameraSession.camera = null
+        cameraLoader.active = false
         if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
             profileControl.setCameraPreviewActive(false)
     }
@@ -33,9 +36,12 @@ Window {
         return formats.length ? formats[0] : undefined
     }
     function configureCamera(device) {
-        camera.cameraDevice = device
-        const format = previewFormat(device)
-        if (format) camera.cameraFormat = format
+        selectedCameraDevice = device
+        if (activeCamera) {
+            activeCamera.cameraDevice = device
+            const format = previewFormat(device)
+            if (format) activeCamera.cameraFormat = format
+        }
     }
     function recognitionStatusText() {
         if (backend.config.camera_recognition !== true)
@@ -153,22 +159,27 @@ Window {
                             Layout.alignment: Qt.AlignHCenter
                             color: theme.night; radius: 8
                             VideoOutput { id: viewfinder; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
-                            Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
+                            Text { anchors.centerIn: parent; visible: !settings.activeCamera || !settings.activeCamera.active; text: "Camera off"; color: theme.muted }
                         }
-                        Note { text: camera.errorString; visible: camera.error !== Camera.NoError; font.pixelSize: 12 }
+                        Note {
+                            text: settings.activeCamera ? settings.activeCamera.errorString : ""
+                            visible: settings.activeCamera && settings.activeCamera.error !== Camera.NoError
+                            font.pixelSize: 12
+                        }
                         Action {
-                            text: camera.active ? "Stop preview" : "Start preview"
+                            text: settings.activeCamera && settings.activeCamera.active ? "Stop preview" : "Start preview"
                             enabled: devices.videoInputs.length > 0
                             onClicked: {
-                                if (camera.active) settings.stopCameraPreview()
+                                if (settings.activeCamera && settings.activeCamera.active) settings.stopCameraPreview()
                                 else {
-                                    settings.configureCamera(camera.cameraDevice)
                                     if (settings.profileControl &&
                                             typeof settings.profileControl.setCameraPreviewActive === "function" &&
                                             settings.profileControl.setCameraPreviewActive(true) === false)
                                         return
-                                    cameraSession.camera = camera
-                                    camera.start()
+                                    cameraLoader.active = true
+                                    settings.configureCamera(settings.selectedCameraDevice)
+                                    cameraSession.camera = settings.activeCamera
+                                    settings.activeCamera.start()
                                 }
                             }
                         }
@@ -338,7 +349,12 @@ Window {
         id: camera
         cameraDevice: devices.defaultVideoInput
     }
-    CaptureSession { id: cameraSession; camera: camera; videoOutput: viewfinder }
+    Loader {
+        id: cameraLoader
+        active: false
+        sourceComponent: Camera { cameraDevice: settings.selectedCameraDevice }
+    }
+    CaptureSession { id: cameraSession; videoOutput: viewfinder }
     Dialog {
         id: purgeRecognitionDialog
         objectName: "purgeRecognitionDialog"
