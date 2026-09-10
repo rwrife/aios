@@ -625,6 +625,7 @@ class ApplicationStore:
                 return False
         read_fd, write_fd = os.pipe()
         process = None
+        owns_process = False
         try:
             if manifest["runtime"] == "native":
                 command = [os.fspath(self.native_host)]
@@ -654,45 +655,55 @@ class ApplicationStore:
                 pass_fds=(write_fd,),
                 env=environment,
             )
+            owns_process = True
+            os.close(write_fd)
+            write_fd = -1
+
+            ready = False
+            try:
+                selector = selectors.DefaultSelector()
+                try:
+                    selector.register(read_fd, selectors.EVENT_READ)
+                    deadline = time.monotonic() + self.launch_timeout
+                    received = b""
+                    while time.monotonic() < deadline:
+                        events = selector.select(max(0, deadline - time.monotonic()))
+                        if not events:
+                            break
+                        chunk = os.read(read_fd, 64)
+                        if not chunk:
+                            break
+                        received += chunk
+                        if received == b"ready\n":
+                            ready = True
+                            break
+                        if not b"ready\n".startswith(received):
+                            break
+                finally:
+                    selector.close()
+            finally:
+                os.close(read_fd)
+                read_fd = -1
+            if not ready:
+                return False
+            threading.Thread(target=process.wait, name="aios-app-reaper", daemon=True).start()
+            owns_process = False
+            return True
         except Exception:
-            if process is not None:
-                self._terminate_child(process)
-            os.close(read_fd)
             return False
         finally:
-            os.close(write_fd)
-
-        ready = False
-        try:
-            selector = selectors.DefaultSelector()
-            try:
-                selector.register(read_fd, selectors.EVENT_READ)
-                deadline = time.monotonic() + self.launch_timeout
-                received = b""
-                while time.monotonic() < deadline:
-                    events = selector.select(max(0, deadline - time.monotonic()))
-                    if not events:
-                        break
-                    chunk = os.read(read_fd, 64)
-                    if not chunk:
-                        break
-                    received += chunk
-                    if received == b"ready\n":
-                        ready = True
-                        break
-                    if not b"ready\n".startswith(received):
-                        break
-            finally:
-                selector.close()
-                os.close(read_fd)
-        except Exception:
-            self._terminate_child(process)
-            return False
-        if not ready:
-            self._terminate_child(process)
-            return False
-        threading.Thread(target=process.wait, name="aios-app-reaper", daemon=True).start()
-        return True
+            if write_fd >= 0:
+                try:
+                    os.close(write_fd)
+                except OSError:
+                    pass
+            if read_fd >= 0:
+                try:
+                    os.close(read_fd)
+                except OSError:
+                    pass
+            if owns_process and process is not None:
+                self._terminate_child(process)
 
     @staticmethod
     def _terminate_child(process: subprocess.Popen[Any]) -> None:

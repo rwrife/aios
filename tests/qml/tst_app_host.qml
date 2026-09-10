@@ -107,6 +107,13 @@ TestCase {
         }
     }
 
+    function test_unsafe_integer_operand_enters_error() {
+        pressDigits("9007199254740993")
+        host.press("−")
+        compare(host.displayValue, "Error")
+        compare(host.errorState, true)
+    }
+
     function test_divide_by_zero_and_digit_reset() {
         host.press("8")
         host.press("÷")

@@ -901,6 +901,58 @@ class ApplicationStoreTests(unittest.TestCase):
                 ])
                 proc.wait.assert_called()
 
+    def test_default_launcher_cancellation_and_reaper_failure_terminate_child(self):
+        class Selector:
+            def __init__(self, error=None):
+                self.error = error
+
+            def register(self, *_args, **_kwargs):
+                return None
+
+            def select(self, *_args, **_kwargs):
+                if self.error is not None:
+                    raise self.error
+                return [object()]
+
+            def close(self):
+                return None
+
+        for mode in ("cancelled", "reaper"):
+            with self.subTest(mode=mode):
+                root = Path(self.tmp.name) / mode
+                store = ApplicationStore(root=root, launch_timeout=0.1)
+                created = store.create({"title": f"Web {mode}", "request": f"Launch {mode}"})
+                store.write({"id": created["id"], "html": "<!doctype html><p>stop</p>"})
+                store.publish({"id": created["id"], "summary": "Stop", "keywords": ["stop"]})
+
+                proc = mock.Mock()
+                proc.pid = 9876
+                proc.poll.return_value = None
+                proc.wait.return_value = 0
+                selector = Selector(SystemExit(143) if mode == "cancelled" else None)
+                thread = mock.Mock()
+                if mode == "reaper":
+                    thread.start.side_effect = RuntimeError("thread unavailable")
+
+                with mock.patch.object(applications.os, "name", "posix", create=True), \
+                    mock.patch.object(applications.subprocess, "Popen", return_value=proc), \
+                    mock.patch.object(applications.selectors, "DefaultSelector", return_value=selector), \
+                    mock.patch.object(applications.threading, "Thread", return_value=thread), \
+                    mock.patch.object(applications.os, "killpg", create=True) as killpg, \
+                    mock.patch.object(applications.os, "read", return_value=b"ready\n"):
+                    if mode == "cancelled":
+                        with self.assertRaisesRegex(SystemExit, "143"):
+                            store.launch({"id": created["id"]})
+                    else:
+                        result = store.launch({"id": created["id"]})
+                        self.assertFalse(result["launched"])
+
+                self.assertEqual(killpg.mock_calls, [
+                    mock.call(proc.pid, signal.SIGTERM),
+                    mock.call(proc.pid, signal.SIGKILL),
+                ])
+                proc.wait.assert_called()
+
     @unittest.skipUnless(os.name == "posix", "verified fd launch requires POSIX")
     def test_verified_native_launcher_ready_exit_and_timeout(self):
         cases = {

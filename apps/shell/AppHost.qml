@@ -67,6 +67,15 @@ Window {
         return true
     }
 
+    function parseOperand() {
+        var value = Number(displayValue)
+        if (!isFinite(value) || Math.abs(value) > 9007199254740991) {
+            showError()
+            return null
+        }
+        return value
+    }
+
     function applyPending(operand) {
         var result = storedValue
         if (pendingOperator === "+")
@@ -122,7 +131,9 @@ Window {
             formatNumber(storedValue)
             return
         }
-        var operand = Number(displayValue)
+        var operand = parseOperand()
+        if (operand === null)
+            return
         if (pendingOperator !== "" && !replaceDisplay) {
             if (!applyPending(operand))
                 return
@@ -137,7 +148,8 @@ Window {
     function calculate() {
         if (errorState || pendingOperator === "" || replaceDisplay)
             return
-        if (!applyPending(Number(displayValue)))
+        var operand = parseOperand()
+        if (operand === null || !applyPending(operand))
             return
         pendingOperator = ""
         replaceDisplay = true
