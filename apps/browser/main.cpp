@@ -460,7 +460,7 @@ private:
             if (!m_pending || m_actionInFlight || m_navigationOperation != m_operation)
                 return;
             if (info.status() == QWebEngineLoadingInfo::LoadStartedStatus) {
-                if (allowedUrl(info.url()))
+                if (allowedUrl(info.url()) || allowedUrl(m_page->requestedUrl()))
                     m_navigationStarted = true;
                 return;
             }
