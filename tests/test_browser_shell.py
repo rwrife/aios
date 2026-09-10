@@ -10,10 +10,12 @@ class BrowserShellTests(unittest.TestCase):
         cmake = (ROOT / 'apps/shell/CMakeLists.txt').read_text(encoding='utf-8')
         runtime = (ROOT / 'distro/alpine/apks/world.ai').read_text(encoding='utf-8').splitlines()
         development = (ROOT / 'distro/alpine/apks/world.devel').read_text(encoding='utf-8').splitlines()
+        profile = (ROOT / 'distro/alpine/profiles/mkimg.aios.sh').read_text(encoding='utf-8')
         self.assertIn('WebEngineWidgets', cmake)
         self.assertIn('aios-browser', cmake)
         self.assertIn('qt6-qtwebengine', runtime)
         self.assertIn('qt6-qtwebengine-dev', development)
+        self.assertIn('rootflags=size=85%', profile)
         self.assertNotIn('chromium-chromedriver', runtime)
 
     def test_browser_exposes_only_bounded_local_actions(self):
