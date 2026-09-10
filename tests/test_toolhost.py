@@ -232,7 +232,7 @@ class ToolHostTests(unittest.TestCase):
         definitions = host.definitions()
 
         names = [item["function"]["name"] for item in definitions["tools"]]
-        self.assertEqual(names, ["browser", "application", "mcp_alpha_tool"])
+        self.assertEqual(names, ["browser", "application", "os_settings", "mcp_alpha_tool"])
         self.assertEqual(definitions["warnings"], ["MCP retained warning."])
 
         parameters = BROWSER_TOOL["function"]["parameters"]
@@ -333,7 +333,7 @@ class ToolHostTests(unittest.TestCase):
         result = host.definitions()
         names = [item["function"]["name"] for item in result["tools"]]
 
-        self.assertEqual(names[:3], ["browser", "application", "mcp_first"])
+        self.assertEqual(names[:4], ["browser", "application", "os_settings", "mcp_first"])
         self.assertEqual(len(names), MAX_TOOLS)
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(result["warnings"][0], "MCP original warning.")
@@ -352,7 +352,7 @@ class ToolHostTests(unittest.TestCase):
         self.assertLessEqual(len(encoded), RESPONSE_LIMIT)
         self.assertEqual(names[:2], ["browser", "application"])
         self.assertIn(SAFE_MCP_BUDGET_WARNING, result["warnings"])
-        self.assertLess(len(names), len(large_definitions) + 2)
+        self.assertLess(len(names), len(large_definitions) + 3)
 
         omitted = next(name for name in [item["function"]["name"] for item in large_definitions] if name not in names)
         kept = next(name for name in names if name.startswith("mcp_big_"))

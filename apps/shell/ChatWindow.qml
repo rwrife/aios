@@ -12,6 +12,7 @@ Window {
     required property var theme
     property var profileControl: null
     property bool ownsProfileControl: false
+    property bool osAuthenticationCompleted: false
     title: "AIOS Chat"
     visible: true
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
@@ -32,6 +33,33 @@ Window {
         Qt.callLater(chat.destroy)
     }
     Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
+    Connections {
+        target: chat.session
+        function onAuthenticationRequested() {
+            if (!chat.profileControl) return
+            chat.osAuthenticationCompleted = false
+            chat.session.setAuthenticationState("awaiting_user")
+            chat.showNormal(); chat.raise(); chat.requestActivate()
+            userProfile.openPicker()
+        }
+    }
+    Connections {
+        target: chat.profileControl
+        function onUnlocked() {
+            chat.osAuthenticationCompleted = true
+            chat.session.setAuthenticationState("authenticated")
+        }
+        function onPrivacyLost() {
+            chat.osAuthenticationCompleted = false
+            chat.session.setAuthenticationState("unavailable")
+        }
+        function onChanged() {
+            if (chat.osAuthenticationCompleted && chat.profileControl && chat.profileControl.greetingOnly && !chat.profileControl.profile.id) {
+                chat.osAuthenticationCompleted = false
+                chat.session.setAuthenticationState("unavailable")
+            }
+        }
+    }
     function submit() {
         if (session.busy || session.recording) return;
         if (!composer.text.trim() && !session.attachments.length) return;
