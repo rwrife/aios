@@ -169,6 +169,12 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("function press(key)", source)
         self.assertIn("function reset()", source)
 
+    def test_calculator_button_clicks_do_not_steal_focus(self):
+        source = self.read("apps/shell/AppHost.qml")
+        button_section = source[source.index("component CalcButton: Button {"):source.index("FocusScope {")]
+        self.assertNotIn("keyboardFocus.forceActiveFocus()", button_section)
+        self.assertIn("Component.onCompleted: keyboardFocus.forceActiveFocus()", source)
+
     def test_cmake_builds_resources_and_installs_host(self):
         source = self.read("apps/shell/CMakeLists.txt")
         self.assertIn("qt_add_executable(aios-app-host app_host.cpp)", source)

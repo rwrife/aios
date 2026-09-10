@@ -12,7 +12,7 @@ TestCase {
     Component {
         id: hostComponent
         AppHost {
-            visible: false
+            visible: true
             appTitle: "Test Calculator"
         }
     }
@@ -22,7 +22,38 @@ TestCase {
     function init() {
         host = createTemporaryObject(hostComponent, test)
         verify(host !== null)
+        tryCompare(host, "visible", true)
+        host.requestActivate()
+        waitForRendering(host.contentItem)
+        wait(50)
         host.reset()
+    }
+
+    function cleanup() {
+        if (host) {
+            host.close()
+            host.destroy()
+            host = null
+        }
+    }
+
+    function pressDigits(digits) {
+        for (var i = 0; i < digits.length; ++i)
+            host.press(digits.charAt(i))
+    }
+
+    function findButton(item, keyValue) {
+        if (!item)
+            return null
+        if (item.keyValue === keyValue)
+            return item
+        var children = item.children || []
+        for (var i = 0; i < children.length; ++i) {
+            var found = findButton(children[i], keyValue)
+            if (found)
+                return found
+        }
+        return null
     }
 
     function test_addition() {
@@ -57,6 +88,23 @@ TestCase {
         compare(host.displayValue, "1.75")
     }
 
+    function test_large_integer_results_are_formatted_exactly() {
+        var cases = [
+            {lhs: "12345678", operator: "×", rhs: "9", expected: "111111102"},
+            {lhs: "123456789", operator: "÷", rhs: "3", expected: "41152263"},
+            {lhs: "10000002", operator: "×", rhs: "9", expected: "90000018"}
+        ]
+        for (var i = 0; i < cases.length; ++i) {
+            var testCase = cases[i]
+            host.reset()
+            pressDigits(testCase.lhs)
+            host.press(testCase.operator)
+            pressDigits(testCase.rhs)
+            host.press("=")
+            compare(host.displayValue, testCase.expected)
+        }
+    }
+
     function test_divide_by_zero_and_digit_reset() {
         host.press("8")
         host.press("÷")
@@ -65,6 +113,19 @@ TestCase {
         compare(host.displayValue, "Error")
         host.press("7")
         compare(host.displayValue, "7")
+    }
+
+    function test_huge_multiplication_enters_error_and_resets_cleanly() {
+        host.displayValue = "1e308"
+        host.storedValue = 1e308
+        host.pendingOperator = "×"
+        host.replaceDisplay = false
+        host.calculate()
+        compare(host.displayValue, "Error")
+        compare(host.errorState, true)
+        host.press("7")
+        compare(host.displayValue, "7")
+        compare(host.errorState, false)
     }
 
     function test_clear_and_backspace() {
@@ -96,6 +157,47 @@ TestCase {
         compare(host.displayValue, "0")
         verify(host.handleKey(Qt.Key_4, "4"))
         verify(host.handleKey(Qt.Key_Backspace, ""))
+        compare(host.displayValue, "0")
+    }
+
+    function test_toggle_sign_preserves_fresh_entry_after_equals_and_operator() {
+        host.press("5")
+        host.press("+")
+        host.press("2")
+        host.press("=")
+        compare(host.displayValue, "7")
+        host.press("±")
+        compare(host.displayValue, "-7")
+        host.press("3")
+        compare(host.displayValue, "-3")
+
+        host.reset()
+        host.press("8")
+        host.press("+")
+        host.press("±")
+        compare(host.displayValue, "-0")
+        host.press("4")
+        compare(host.displayValue, "-4")
+        host.press("=")
+        compare(host.displayValue, "4")
+    }
+
+    function test_clicked_button_keeps_focus_and_real_key_events_still_work() {
+        var button = findButton(host.contentItem, "7")
+        verify(button !== null)
+        host.requestActivate()
+        wait(50)
+        mouseClick(button)
+        tryCompare(button, "activeFocus", true)
+        compare(host.displayValue, "7")
+        keyClick(Qt.Key_Plus)
+        keyClick(Qt.Key_3)
+        keyClick(Qt.Key_Return)
+        compare(host.displayValue, "10")
+        keyClick(Qt.Key_Escape)
+        compare(host.displayValue, "0")
+        keyClick(Qt.Key_4)
+        keyClick(Qt.Key_Backspace)
         compare(host.displayValue, "0")
     }
 }

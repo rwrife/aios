@@ -113,6 +113,10 @@ def _normalize_text(value: str) -> str:
 
 
 def _normalize_title(value: str) -> str:
+    for character in value:
+        codepoint = ord(character)
+        if codepoint <= 0x1F or codepoint == 0x7F:
+            raise ValueError("Enter a title without control characters.")
     title = _normalize_text(value)
     if not (1 <= len(title) <= MAX_TITLE_LENGTH):
         raise ValueError("Enter a title between 1 and 100 characters.")

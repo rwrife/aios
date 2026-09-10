@@ -18,6 +18,7 @@ Window {
     property real storedValue: 0
     property string pendingOperator: ""
     property bool replaceDisplay: true
+    property bool pendingNegativeEntry: false
     property bool errorState: false
 
     function reset() {
@@ -25,6 +26,7 @@ Window {
         storedValue = 0
         pendingOperator = ""
         replaceDisplay = true
+        pendingNegativeEntry = false
         errorState = false
     }
 
@@ -33,6 +35,7 @@ Window {
         storedValue = 0
         pendingOperator = ""
         replaceDisplay = true
+        pendingNegativeEntry = false
         errorState = true
     }
 
@@ -41,8 +44,17 @@ Window {
             showError()
             return false
         }
-        var rounded = Math.round(value * 1000000000000) / 1000000000000
-        displayValue = rounded === 0 ? "0" : String(rounded)
+        var normalized = Number(value.toPrecision(12))
+        if (!isFinite(normalized)) {
+            showError()
+            return false
+        }
+        var formatted = String(normalized)
+        if (formatted === "Infinity" || formatted === "-Infinity" || formatted === "NaN") {
+            showError()
+            return false
+        }
+        displayValue = normalized === 0 ? "0" : formatted
         return true
     }
 
@@ -70,9 +82,10 @@ Window {
     function inputDigit(digit) {
         if (errorState)
             reset()
-        if (replaceDisplay || displayValue === "0") {
-            displayValue = digit
+        if (replaceDisplay || displayValue === "0" || displayValue === "-0") {
+            displayValue = pendingNegativeEntry ? "-" + digit : digit
             replaceDisplay = false
+            pendingNegativeEntry = false
             return
         }
         if (displayValue.length < 16)
@@ -83,8 +96,9 @@ Window {
         if (errorState)
             reset()
         if (replaceDisplay) {
-            displayValue = "0."
+            displayValue = pendingNegativeEntry ? "-0." : "0."
             replaceDisplay = false
+            pendingNegativeEntry = false
         } else if (displayValue.indexOf(".") < 0) {
             displayValue += "."
         }
@@ -102,6 +116,7 @@ Window {
         }
         pendingOperator = operator
         replaceDisplay = true
+        pendingNegativeEntry = false
     }
 
     function calculate() {
@@ -111,6 +126,7 @@ Window {
             return
         pendingOperator = ""
         replaceDisplay = true
+        pendingNegativeEntry = false
     }
 
     function backspace() {
@@ -132,11 +148,24 @@ Window {
     function toggleSign() {
         if (errorState)
             return
+        if (replaceDisplay) {
+            if (pendingOperator !== "") {
+                pendingNegativeEntry = !pendingNegativeEntry
+                displayValue = pendingNegativeEntry ? "-0" : "0"
+                return
+            }
+            if (displayValue === "0")
+                return
+            displayValue = displayValue.charAt(0) === "-"
+                ? displayValue.slice(1) : "-" + displayValue
+            pendingNegativeEntry = displayValue.charAt(0) === "-"
+            return
+        }
         if (displayValue === "0")
             return
         displayValue = displayValue.charAt(0) === "-"
             ? displayValue.slice(1) : "-" + displayValue
-        replaceDisplay = false
+        pendingNegativeEntry = false
     }
 
     function press(key) {
@@ -213,7 +242,6 @@ Window {
         }
         onClicked: {
             calculator.press(keyValue)
-            keyboardFocus.forceActiveFocus()
         }
     }
 
@@ -221,6 +249,7 @@ Window {
         id: keyboardFocus
         anchors.fill: parent
         focus: true
+        Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
             event.accepted = calculator.handleKey(event.key, event.text)
         }

@@ -2,6 +2,7 @@ import json
 import contextlib
 import io
 import os
+import selectors
 import shutil
 import signal
 import stat
@@ -299,6 +300,13 @@ class ApplicationStoreTests(unittest.TestCase):
             store.publish({"id": created["id"], "summary": "Good", "keywords": ["x"] * 21})
         with self.assertRaises(ValueError):
             store.publish({"id": created["id"], "summary": "Good", "keywords": ["alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi"]})
+
+    def test_title_rejects_c0_and_del_characters(self):
+        store = self._store()
+        for title in ("Hello\nWorld", "Hello\tWorld", "Hello\x1fWorld", "Hello\x7fWorld"):
+            with self.subTest(title=repr(title)):
+                with self.assertRaises(ValueError):
+                    store.create({"title": title, "request": "Make a title-safe page"})
 
     def test_digest_mismatch_blocks_launch(self):
         launched = []
@@ -966,6 +974,79 @@ class ApplicationStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.launch({"id": created["id"]})
         self.assertFalse(capture.exists())
+
+    @unittest.skipUnless(os.name == "posix", "compiled native host validation requires POSIX")
+    def test_compiled_native_host_binary_ready_protocol_and_validation(self):
+        binary = os.environ.get("AIOS_APP_HOST_TEST_BINARY")
+        if not binary:
+            self.skipTest("AIOS_APP_HOST_TEST_BINARY not set")
+        host = Path(binary)
+        self.assertTrue(host.is_file(), binary)
+        secret = "native-host-secret-value"
+
+        def run_host(*, template="calculator", title="Calculator"):
+            read_fd, write_fd = os.pipe()
+            env = os.environ.copy()
+            env.update({
+                "AIOS_APP_TEMPLATE": template,
+                "AIOS_APP_TITLE": title,
+                "AIOS_APP_READY_FD": str(write_fd),
+                "AIOS_TEST_SECRET": secret,
+                "QT_QPA_PLATFORM": "offscreen",
+                "QT_QUICK_BACKEND": "software",
+            })
+            process = None
+            try:
+                process = subprocess.Popen(
+                    [str(host)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    close_fds=True,
+                    pass_fds=(write_fd,),
+                    env=env,
+                )
+            finally:
+                os.close(write_fd)
+
+            ready = b""
+            selector = selectors.DefaultSelector()
+            try:
+                selector.register(read_fd, selectors.EVENT_READ)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    events = selector.select(max(0, deadline - time.monotonic()))
+                    if not events:
+                        break
+                    chunk = os.read(read_fd, 64)
+                    if not chunk:
+                        break
+                    ready += chunk
+            finally:
+                selector.close()
+                os.close(read_fd)
+
+            if process.poll() is None:
+                process.terminate()
+            stdout, stderr = process.communicate(timeout=5)
+            return process.returncode, ready, stdout, stderr
+
+        returncode, ready, stdout, stderr = run_host()
+        self.assertEqual(ready, b"ready\n")
+        self.assertEqual(stdout, b"")
+        self.assertNotIn(secret, (stdout + stderr).decode("utf-8", errors="replace"))
+
+        for kwargs in (
+            {"template": "unsupported"},
+            {"title": "Bad\x7fTitle"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                returncode, ready, stdout, stderr = run_host(**kwargs)
+                self.assertNotEqual(returncode, 0)
+                self.assertEqual(ready, b"")
+                self.assertEqual(stdout, b"")
+                self.assertIn(b"startup failed", stderr)
+                self.assertNotIn(secret, (stdout + stderr).decode("utf-8", errors="replace"))
 
     def test_atomic_temp_cleanup(self):
         store = self._store()
