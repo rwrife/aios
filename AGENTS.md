@@ -16,3 +16,4 @@
 
 - The build process is quite slow, as is validating in a running VM, so please try to batch smaller changes together and validate them in a batch to speed up the dev lifecycle.
 - Do not use GitHub for building ISO images, run locally in WSL or QEMU and validate there whenever possible.
+- Take screenshots and validate that the UX is consistent and as expected.
