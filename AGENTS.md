@@ -38,6 +38,8 @@ repository.
 - Decorated windows use the AIOS Openbox theme and its one-pixel border.
 - Match `Theme.windowRadius` (16 px) on both the surface and outline. Native
   browser and terminal frames receive the same radius through Picom.
+- Use Picom's GLX renderer for native rounded frames: it redraws the border
+  along the antialiased curve. XRender clipping alone leaves corner gaps.
 - Keep initial application windows below 75% of each screen dimension.
   Target 70% of the active screen's available width and height, accounting
   for native decorations and terminal cell increments. Clamp minimum sizes
