@@ -196,7 +196,11 @@ Window {
             tip: backendApi.volumeAvailable ? (backendApi.muted ? "Volume muted" : "Volume · " + backendApi.volume + "%") : "Volume"
             implicitWidth: 44
             onClicked: volumePopup.open()
-            contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+            contentItem: SpeakerIcon {
+                muted: backendApi.muted
+                volume: backendApi.volume
+                glyphObjectName: "volumeButtonGlyph"
+            }
         }
         QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
@@ -209,60 +213,68 @@ Window {
     component QuietButton: Button {
         id: control
         property string tip: text
+        property bool outlined: false
         Accessible.name: tip
         implicitWidth: Math.max(44, implicitContentWidth + 24); implicitHeight: 44
         contentItem: Text { text: control.text; color: control.enabled ? theme.ink : theme.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 16 }
-        background: Rectangle { radius: 8; color: control.down || control.hovered ? theme.input : "transparent"; border.width: control.activeFocus ? 2 : 0; border.color: theme.accent }
+        background: Rectangle {
+            radius: 8
+            color: control.down || control.hovered ? theme.input : "transparent"
+            border.width: control.activeFocus ? 2 : control.outlined ? 1 : 0
+            border.color: control.activeFocus ? theme.accent : theme.line
+        }
         ToolTip.visible: hovered || activeFocus; ToolTip.text: tip; ToolTip.delay: activeFocus ? 0 : 700
     }
     component SpeakerIcon: Item {
         id: speakerIcon
         property bool muted: false
         property real volume: 50
-        implicitWidth: 20
-        implicitHeight: 20
+        property string glyphObjectName
+        implicitWidth: 22
+        implicitHeight: 22
         Canvas {
             id: speakerCanvas
-            anchors.fill: parent
+            objectName: speakerIcon.glyphObjectName
+            anchors.centerIn: parent
+            width: 22
+            height: 22
             onPaint: {
                 var c = getContext("2d")
                 c.reset()
                 c.strokeStyle = theme.ink
-                c.lineWidth = 1.5
+                c.lineWidth = 1.7
                 c.lineCap = "round"
                 c.lineJoin = "round"
                 c.beginPath()
-                c.moveTo(2.5, 8)
-                c.lineTo(6.5, 8)
-                c.lineTo(11, 4.5)
-                c.lineTo(11, 15.5)
-                c.lineTo(6.5, 12)
-                c.lineTo(2.5, 12)
+                c.moveTo(1.5, 9)
+                c.lineTo(6.5, 9)
+                c.lineTo(12, 4.5)
+                c.lineTo(12, 17.5)
+                c.lineTo(6.5, 13)
+                c.lineTo(1.5, 13)
                 c.closePath()
                 c.stroke()
                 if (speakerIcon.muted || speakerIcon.volume <= 0) {
                     c.beginPath()
-                    c.moveTo(14, 7)
-                    c.lineTo(19, 13)
-                    c.moveTo(19, 7)
-                    c.lineTo(14, 13)
+                    c.moveTo(15, 7.5)
+                    c.lineTo(21, 14.5)
+                    c.moveTo(21, 7.5)
+                    c.lineTo(15, 14.5)
                     c.stroke()
                     return
                 }
                 c.beginPath()
-                c.arc(11, 10, 4, -Math.PI / 3, Math.PI / 3)
+                c.arc(12, 11, 4.5, -Math.PI / 3, Math.PI / 3)
                 c.stroke()
                 if (speakerIcon.volume > 50) {
                     c.beginPath()
-                    c.arc(11, 10, 7, -Math.PI / 3, Math.PI / 3)
+                    c.arc(12, 11, 8, -Math.PI / 3, Math.PI / 3)
                     c.stroke()
                 }
             }
         }
         onMutedChanged: speakerCanvas.requestPaint()
         onVolumeChanged: speakerCanvas.requestPaint()
-        onWidthChanged: speakerCanvas.requestPaint()
-        onHeightChanged: speakerCanvas.requestPaint()
     }
     component Field: TextField {
         color: theme.ink; placeholderTextColor: theme.muted; selectByMouse: true
@@ -279,15 +291,22 @@ Window {
         id: volumePopup
         objectName: "volumePopup"
         parent: Overlay.overlay
-        width: 88
-        height: 236
-        padding: 10
+        width: 76
+        height: 276
+        padding: 8
         modal: false
         dim: false
         focus: true
         popupType: Popup.Item
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         property bool syncingVolume: false
+        function setVolumeImmediately(value) {
+            volumeCommit.stop()
+            syncingVolume = true
+            volumeSlider.value = Math.max(0, Math.min(100, value))
+            syncingVolume = false
+            backendApi.setVolume(Math.round(volumeSlider.value))
+        }
         function positionAboveButton() {
             var point = volumeButton.mapToItem(parent, 0, 0)
             x = Math.max(8, Math.min(parent.width - width - 8, point.x + (volumeButton.width - width) / 2))
@@ -303,41 +322,102 @@ Window {
         }
         background: Rectangle {
             color: theme.panel
-            radius: 16
+            radius: theme.windowRadius
             border.color: theme.line
         }
         contentItem: ColumnLayout {
-            spacing: 8
+            spacing: 4
             QuietButton {
-                id: muteButton
-                objectName: "muteButton"
-                tip: backendApi.muted ? "Unmute speaker" : "Mute speaker"
+                id: volumeUpButton
+                objectName: "volumeUpButton"
+                text: "+"
+                tip: "Increase volume"
+                outlined: true
                 enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
-                onClicked: backendApi.setMuted(!backendApi.muted)
-                contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
+                onClicked: volumePopup.setVolumeImmediately(volumeSlider.value + 5)
+                contentItem: Text {
+                    text: "+"
+                    color: volumeUpButton.enabled ? theme.ink : theme.muted
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
             Slider {
                 id: volumeSlider
                 objectName: "volumeSlider"
                 Layout.alignment: Qt.AlignHCenter
-                Layout.fillHeight: true
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 120
                 orientation: Qt.Vertical
                 from: 0
                 to: 100
                 stepSize: 1
+                topPadding: 10
+                bottomPadding: 10
+                leftPadding: 0
+                rightPadding: 0
                 enabled: backendApi.volumeAvailable
                 Accessible.name: "Speaker volume"
                 onValueChanged: {
                     if (volumePopup.opened && !volumePopup.syncingVolume)
                         volumeCommit.restart()
                 }
+                background: Rectangle {
+                    x: volumeSlider.leftPadding + (volumeSlider.availableWidth - width) / 2
+                    y: volumeSlider.topPadding
+                    implicitWidth: 4
+                    implicitHeight: 100
+                    width: 4
+                    height: volumeSlider.availableHeight
+                    radius: 2
+                    color: theme.line
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: parent.height * volumeSlider.value / 100
+                        radius: parent.radius
+                        color: volumeSlider.enabled ? theme.accent : theme.muted
+                    }
+                }
+                handle: Rectangle {
+                    x: volumeSlider.leftPadding + (volumeSlider.availableWidth - width) / 2
+                    y: volumeSlider.topPadding + volumeSlider.visualPosition * (volumeSlider.availableHeight - height)
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    radius: 11
+                    color: volumeSlider.enabled ? theme.ink : theme.muted
+                    border.width: 2
+                    border.color: theme.panel
+                }
             }
-            Text {
+            QuietButton {
+                id: volumeDownButton
+                objectName: "volumeDownButton"
+                text: "-"
+                tip: "Decrease volume"
+                outlined: true
+                enabled: backendApi.volumeAvailable
                 Layout.alignment: Qt.AlignHCenter
-                text: backendApi.volumeAvailable ? Math.round(volumeSlider.value) + "%" : "—"
-                color: backendApi.volumeAvailable ? theme.ink : theme.muted
-                font.pixelSize: 12
+                onClicked: volumePopup.setVolumeImmediately(volumeSlider.value - 5)
+                contentItem: Text {
+                    text: "\u2212"
+                    color: volumeDownButton.enabled ? theme.ink : theme.muted
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            QuietButton {
+                id: muteButton
+                objectName: "muteButton"
+                tip: backendApi.muted ? "Unmute speaker" : "Mute speaker"
+                outlined: true
+                enabled: backendApi.volumeAvailable
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: backendApi.setMuted(!backendApi.muted)
+                contentItem: SpeakerIcon { muted: backendApi.muted; volume: backendApi.volume }
             }
         }
         Connections {
@@ -378,7 +458,7 @@ Window {
         }
         background: Rectangle {
             color: theme.panel
-            radius: 24
+            radius: theme.windowRadius
             border.color: Qt.rgba(theme.line.r, theme.line.g, theme.line.b, 0.55)
         }
         contentItem: ColumnLayout {
