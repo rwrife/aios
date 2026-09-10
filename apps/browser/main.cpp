@@ -638,13 +638,12 @@ private:
             raise();
             activateWindow();
             beginPending(socket);
+            if (m_view->url() == url) {
+                snapshotPending();
+                return;
+            }
             m_navigationOperation = m_operation;
-            const quint64 operation = m_operation;
             m_view->setUrl(url);
-            QTimer::singleShot(250, this, [this, operation] {
-                if (m_pending && operation == m_operation && !m_loading)
-                    snapshotPending();
-            });
             return;
         }
         if (!m_opened) {
@@ -656,18 +655,20 @@ private:
             snapshotPending();
         } else if (action == "back" || action == "forward" || action == "reload") {
             beginPending(socket);
+            const bool canNavigate = action == "reload"
+                || (action == "back" && m_view->history()->canGoBack())
+                || (action == "forward" && m_view->history()->canGoForward());
+            if (!canNavigate) {
+                snapshotPending();
+                return;
+            }
             m_navigationOperation = m_operation;
-            const quint64 operation = m_operation;
             if (action == "back")
                 m_view->back();
             else if (action == "forward")
                 m_view->forward();
             else
                 m_view->reload();
-            QTimer::singleShot(250, this, [this, operation] {
-                if (m_pending && operation == m_operation && !m_loading)
-                    snapshotPending();
-            });
         } else if (action == "stop") {
             m_view->stop();
             beginPending(socket);
