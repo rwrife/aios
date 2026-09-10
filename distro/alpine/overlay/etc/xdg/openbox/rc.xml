@@ -9,7 +9,7 @@
   <theme>
     <name>AIOS</name>
     <titleLayout>LC</titleLayout>
-    <keepBorder>no</keepBorder>
+    <keepBorder>yes</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
       <name>DejaVu Sans</name><size>16</size><weight>Normal</weight><slant>Normal</slant>
@@ -75,6 +75,10 @@
       <focus>yes</focus>
     </application>
     <application class="AIOS-Terminal">
+      <position force="no"><x>center</x><y>center</y></position>
+      <focus>yes</focus>
+    </application>
+    <application class="aios-browser">
       <position force="no"><x>center</x><y>center</y></position>
       <focus>yes</focus>
     </application>

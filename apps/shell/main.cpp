@@ -482,7 +482,11 @@ private:
                 browser.setStandardOutputFile(QProcess::nullDevice());
                 browser.setStandardErrorFile(QProcess::nullDevice());
                 QFile::remove(socket);
-                browser.start("python3", {"-m", "aios.browser", socket});
+                browser.start("aios-browser", {
+                    "--socket", socket,
+                    "--session", sessionId,
+                    "--theme", m_config.value("theme_color", "blue").toString()
+                });
             }
             request.insert("browser_socket", socket);
         }

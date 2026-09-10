@@ -1,9 +1,12 @@
 import io
 import json
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 from aios import agent
-from aios.browser import Browser, web_url
+from aios.browser import Browser, discover, web_url
 
 
 def stream(delta, finish='stop'):
@@ -19,8 +22,22 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual(web_url('http://localhost:8000/?q=test#section'), 'http://localhost:8000/?q=test#section')
         browser = Browser()
         with self.assertRaises(ValueError): browser.act({'action': 'snapshot'})
-        self.assertIsNone(browser.driver)
+        self.assertIsNone(browser.process)
         self.assertEqual(browser.act({'action': 'close'}), {'closed': True})
+
+    def test_local_browser_discovery_requires_private_registration(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            directory = Path(runtime) / 'aios' / 'browsers'
+            directory.mkdir(parents=True)
+            public = directory / 'public.json'
+            public.write_text(json.dumps({'version': 1, 'session': 'public',
+                'socket': '/tmp/public.sock', 'actions': ['snapshot']}))
+            private = directory / 'private.json'
+            private.write_text(json.dumps({'version': 1, 'session': 'private',
+                'socket': '/tmp/private.sock', 'actions': ['snapshot']}))
+            os.chmod(public, 0o644)
+            os.chmod(private, 0o600)
+            self.assertEqual([entry['session'] for entry in discover(runtime)], ['private'])
 
     @patch('aios.agent.core.load_config', return_value={'mode': 'remote', 'model': 'test'})
     def test_fragmented_tool_call_then_grounded_response(self, _):

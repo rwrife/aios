@@ -168,6 +168,23 @@ real browser checks above were run successfully as the ordinary user in AIOS.
 A real tool-capable local/remote model matrix, broader websites, frames/canvas
 applications and hardware performance remain release validation work.
 
+## Themed WebEngine browser checkpoint
+
+The standalone Chromium/ChromeDriver window was replaced by an AIOS-native
+`QWebEngineView` browser. Its compact bar exposes address, Back, Refresh and
+Stop; the selected desktop palette drives its controls and a one-pixel
+wave-colored contour frames the window. Frameless Chat and Settings windows
+use the same contour, while decorated windows retain it through Openbox.
+
+The existing per-chat JSON socket contract remains the automation boundary.
+The WebEngine implementation uses an off-the-record profile, fixed
+application-owned scripts in an isolated JavaScript world, bounded semantic
+snapshots and generation-scoped element IDs. It denies popups, permissions,
+downloads, file selection, certificate exceptions, clipboard access,
+fullscreen and non-HTTP(S) main-frame navigation. Same-user local skills and
+MCP servers can discover active private sockets through owner-only descriptors
+under `$XDG_RUNTIME_DIR/aios/browsers`.
+
 The real SmolLM2 starter model also returned a normal greeting through the new
 agent transport with browser tool schemas and Jinja enabled. This verifies plain
 chat compatibility, not reliable browser planning by that small model.

@@ -41,6 +41,8 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("window.active.title.bg.color: #172633", theme)
         self.assertIn("window.active.label.text.color: #f1f5f6", theme)
         self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
+        self.assertIn("border.width: 1", theme)
+        self.assertIn("<keepBorder>yes</keepBorder>", openbox)
 
     def test_desktop_launch_paths_use_the_themed_launcher(self):
         main = (ROOT / "apps/shell/main.cpp").read_text()

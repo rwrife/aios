@@ -13,5 +13,4 @@ pulseaudio-utils
 alsa-utils
 espeak-ng
 poppler-utils
-chromium
-chromium-chromedriver
+qt6-qtwebengine

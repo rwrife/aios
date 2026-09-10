@@ -125,8 +125,10 @@ remote endpoint. The composer keeps attachments and Voice understated. Voice
 lights up while recording, and transcription fills the draft before sending.
 Remote speech and on-device speech are supported; see
 [`voice and sessions`](docs/voice-and-sessions.md). Live sessions are ephemeral.
-Chromium is available through chat with a tool-capable model, without a desktop
-browser icon. See [browser tools](docs/browser.md). The starter supports simple
+The themed AIOS WebEngine browser is available through chat with a tool-capable
+model, without a desktop browser icon. It exposes only an address bar, Back,
+Refresh and Stop, plus a bounded local socket for agent or MCP control. See
+[browser tools](docs/browser.md). The starter supports simple
 tool bootstrap but is not a reliable browser agent; critical setup controls call
 deterministic backend actions instead of relying on the model. Settings and setup offer
 [three stronger Qwen3 models](docs/local-models.md) with tool capabilities,

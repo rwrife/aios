@@ -204,4 +204,5 @@ Window {
     }
     Camera { id: camera; cameraDevice: devices.defaultVideoInput }
     CaptureSession { camera: camera; videoOutput: viewfinder }
+    WindowBorder { theme: settings.theme }
 }

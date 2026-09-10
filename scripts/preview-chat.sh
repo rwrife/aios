@@ -11,7 +11,7 @@ exec docker run --rm --name aios-chat-windowed \
   -e PULSE_SERVER=unix:/mnt/wslg/PulseServer -e PYTHONPATH=/workspace/apps \
   -w /workspace "${AIOS_PREVIEW_IMAGE:-$IMAGE}" sh -ec '
     if ! command -v cmake >/dev/null; then
-      apk add --no-cache build-base cmake ninja qt6-qtbase-dev qt6-qtdeclarative-dev qt6-qtmultimedia-dev python3 font-dejavu
+      apk add --no-cache build-base cmake ninja qt6-qtbase-dev qt6-qtdeclarative-dev qt6-qtmultimedia-dev qt6-qtwebengine-dev python3 font-dejavu
     fi
     cmake -S apps/shell -B /preview-build -G Ninja -DAIOS_EMBEDDED_DISPLAY=OFF -DAIOS_DISPLAY_TESTS=OFF >/tmp/build.log 2>&1
     cmake --build /preview-build >>/tmp/build.log 2>&1

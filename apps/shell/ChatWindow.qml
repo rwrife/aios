@@ -197,4 +197,5 @@ Window {
         function onChanged() { conversation.syncMessages() }
         function onTranscribed(text) { composer.text += (composer.text ? " " : "") + text; composer.forceActiveFocus() }
     }
+    WindowBorder { theme: chat.theme }
 }
