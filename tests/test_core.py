@@ -76,6 +76,20 @@ class CoreTests(unittest.TestCase):
         with patch.object(core.os, "cpu_count", return_value=1), patch.object(core, "total_memory_bytes", return_value=0):
             self.assertFalse(core.load_config()["reduced_motion"])
 
+    def test_camera_recognition_is_opt_in_and_requires_stable_local_device(self):
+        self.assertFalse(core.load_config()["camera_recognition"])
+        with self.assertRaises(ValueError):
+            core.save_config({"camera_recognition": True, "camera_device": "/dev/video0"})
+        with self.assertRaises(ValueError):
+            core.save_config({"camera_device": "https://camera.example/stream"})
+        path = "/dev/v4l/by-id/usb-046d_Brio_101-video-index0"
+        core.save_config({"camera_recognition": True, "camera_device": path})
+        config = core.load_config()
+        self.assertTrue(config["camera_recognition"])
+        self.assertEqual(config["camera_device"], path)
+        core.save_config({"camera_recognition": False, "camera_device": ""})
+        self.assertFalse(core.load_config()["camera_recognition"])
+
     def test_config_preserves_key_and_rejects_insecure_remote(self):
         core.save_config({"mode": "remote", "url": "https://example.com/v1", "api_key": "private"})
         core.save_config({"model": "test"})

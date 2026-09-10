@@ -80,3 +80,9 @@ repository.
 - Browser release validation must include the real Alpine image with the
   Chromium sandbox enabled, page loading, text input, navigation, scrolling,
   process cleanup, and two concurrent isolated chat sessions.
+
+## Optimize Your Time
+
+- The build process is quite slow, as is validating in a running VM, so please try to batch smaller changes together and validate them in a batch to speed up the dev lifecycle.
+- Do not use GitHub for building ISO images, run locally in WSL or QEMU and validate there whenever possible.
+- Take screenshots and validate that the UX is consistent and as expected, if you are unsure, pause and ask the user if the UX looks correct and supply them the screenshot.

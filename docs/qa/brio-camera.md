@@ -62,26 +62,48 @@ by the recognition plan; the Brio also exposes USB audio interfaces.
 ## Full OS VM handoff
 
 Use the single-window OS launcher, not a container chat preview. Close WSL
-capture consumers, inspect `lsusb`, and grant the development user read/write
-access to the selected USB node only (a temporary ACL is sufficient). For the
-observed bus/device numbers, subject to re-verification:
+capture consumers and pass the camera's current Windows USB/IP bus ID. The
+launcher attaches that exact device when needed, resolves its current Linux
+bus/device address, and grants the WSL user a temporary ACL on only that USB
+node:
 
 ```powershell
-wsl -d Ubuntu -- lsusb
-# Replace user and node with current verified values; root is only for the ACL.
-wsl -d Ubuntu -u root -- setfacl -m u:ryrife:rw /dev/bus/usb/001/002
-$env:AIOS_VM_CAMERA_BUS = '1'
-$env:AIOS_VM_CAMERA_ADDR = '2'
-.\scripts\run.ps1
+.\scripts\run.ps1 -CameraBusId 2-2
 ```
+
+If exactly one stable `/dev/v4l/by-id/*-video-index0` camera is already attached
+to WSL, a normal `.\scripts\run.ps1` launch discovers it automatically. The
+explicit `-CameraBusId` form is preferred after a WSL restart or USB reconnect.
+Re-enumerate with `usbipd list` if the Windows bus ID changed.
 
 The guest owns capture while passed through; WSL and guest must not compete for
 it. Verify guest UVC enumeration, capture as the intended unprivileged service
 user, and ten decoded frames before claiming VM success. Keep apps inside the
-VM window. Remove the two environment variables for a camera-free launch.
+VM window. Launch with no attached stable camera and no camera selectors for a
+camera-free VM.
 
 To deliberately return the dedicated camera to Windows later, detach and unbind
 using the current bus ID; unbind requires Administrator. This is not the normal
 end-of-test cleanup for this dedicated device.
 
 Implementation plan: [occasional face recognition](../plans/brio-occasional-recognition.md).
+
+## Recognition runtime prerequisites
+
+The implementation remains disabled until `/etc/aios/face-models.json` is
+installed with `yunet` and `sface` records accepted by
+`aios.biometrics.verified_model`. Each record must provide an absolute model
+path, SHA-256 checksum, source, license, revision, input and output contract.
+The manifest must also contain a `calibration` object for hardware
+`brio-101` with measured `match_threshold`, `runner_up_margin`,
+`enrollment_consistency`, `minimum_brightness`, `maximum_brightness`,
+`minimum_sharpness`, and optionally `minimum_face_size`.
+The optional identity image includes `py3-opencv` and `py3-cryptography`.
+Default installed images must add those packages explicitly; they are not added
+to the diskless ISO because OpenCV exceeds its package-install filesystem budget.
+
+Do not populate those values from examples or enable background recognition
+until the full-VM capture and held-out calibration gates in the implementation
+plan are complete. Development can point `AIOS_FACE_MODEL_MANIFEST` at a local
+manifest. The shell exchanges only account metadata with the worker; it never
+receives frames or embeddings, and every suggestion still requires the PIN.

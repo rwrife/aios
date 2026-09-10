@@ -99,6 +99,11 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn('<command>aios-terminal</command>', openbox)
         self.assertIn('aios-terminal -title "AIOS Recovery"', session)
 
+    def test_desktop_renderer_supports_camera_video_frames(self):
+        session = (ROOT / "distro/alpine/overlay/usr/local/bin/aios-session").read_text()
+        self.assertNotIn('QT_QUICK_BACKEND', session)
+        self.assertIn('Mesa provides a software OpenGL fallback', session)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,12 @@
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from aios.camera import probe, video_device
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class CameraTests(unittest.TestCase):
@@ -26,3 +30,32 @@ class CameraTests(unittest.TestCase):
         ), self.assertRaisesRegex(RuntimeError, '^Camera probe failed;') as error:
             probe('/dev/video0')
         self.assertNotIn('untrusted', str(error.exception))
+
+    def test_shell_camera_surfaces_prefer_bounded_capture(self):
+        for relative in ('apps/shell/SettingsWindow.qml', 'apps/shell/SetupWizard.qml'):
+            source = (ROOT / relative).read_text()
+            with self.subTest(relative=relative):
+                self.assertIn('640', source)
+                self.assertIn('360', source)
+                self.assertIn('parent.width * 0.75', source)
+                self.assertIn('width * 9 / 16', source)
+                self.assertIn('cameraLoader.active = false', source)
+                self.assertIn('sourceComponent: Camera', source)
+                self.assertNotIn('VideoFrameFormat', source)
+        photo = (ROOT / 'apps/shell/ProfilePhoto.h').read_text()
+        self.assertIn('"video4linux2"', photo)
+        self.assertIn('"mjpeg"', photo)
+        self.assertIn('640 * 360 * 3', photo)
+        self.assertIn('CameraDevice::capturePath()', photo)
+        self.assertIn('QProcess::nullDevice()', photo)
+        self.assertIn('retryTimer.start(250)', photo)
+        self.assertIn('ffmpeg', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())
+
+    def test_windows_launcher_discovers_attached_camera(self):
+        launcher = (ROOT / 'scripts/run.ps1').read_text()
+        self.assertIn("[string]$CameraBusId", launcher)
+        self.assertIn('usbipd.exe', launcher)
+        self.assertIn('/dev/v4l/by-id/*-video-index0', launcher)
+        self.assertIn('setfacl -m "u:${linuxUser}:rw"', launcher)
+        self.assertIn('"AIOS_VM_CAMERA_BUS=$cameraBus"', launcher)
+        self.assertIn('"AIOS_VM_CAMERA_ADDR=$cameraAddr"', launcher)

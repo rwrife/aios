@@ -29,10 +29,10 @@ def verified_model(manifest, name):
 
 
 class FaceEncoder:
-    def __init__(self, manifest, minimum_size=80):
+    def __init__(self, manifest, minimum_size=80, calibration=None):
         import cv2
         self.cv = cv2
-        self.minimum_size = minimum_size
+        self.minimum_size = (calibration or {}).get('minimum_face_size', minimum_size)
         self.detector = cv2.FaceDetectorYN.create(verified_model(manifest, 'yunet'), '', (640, 480))
         self.encoder = cv2.FaceRecognizerSF.create(verified_model(manifest, 'sface'), '')
 

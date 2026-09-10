@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import tempfile
 import shutil
 import time
@@ -65,7 +66,7 @@ def load_config():
                 "agent_mode": "current", "agent_url": "", "agent_model": "", "agent_api_key": "",
                 "voice_mode": "remote", "voice_url": "", "voice_key": "",
                 "stt_model": "whisper-1", "tts_model": "tts-1", "voice_name": "alloy",
-                "speech_model_path": ""}
+                "speech_model_path": "", "camera_recognition": False, "camera_device": ""}
     path = config_dir() / "config.json"
     if path.exists():
         defaults.update(json.loads(path.read_text()))
@@ -129,6 +130,14 @@ def save_config(values):
         raise ValueError("Choose local or remote voice.")
     if config["voice_url"]:
         config["voice_url"] = validate_url(str(config["voice_url"]))
+    if type(config["camera_recognition"]) is not bool:
+        raise ValueError("Camera recognition must be enabled or disabled.")
+    device = config["camera_device"]
+    if not isinstance(device, str) or len(device) > 512 or (
+            device and not re.fullmatch(r'/dev/v4l/by-id/[A-Za-z0-9._:+-]+-video-index[0-9]+', device)):
+        raise ValueError("Choose a stable local camera path under /dev/v4l/by-id.")
+    if config["camera_recognition"] and not device:
+        raise ValueError("Choose a stable local camera before enabling recognition.")
     for key in ("stt_model", "tts_model", "voice_name"):
         if not isinstance(config[key], str) or not config[key].strip() or any(c in config[key] for c in '\r\n"'):
             raise ValueError("Enter a valid voice model and voice name.")
@@ -149,7 +158,8 @@ def save_config(values):
 def defaults_keys():
     return ("mode", "url", "model", "model_path", "api_key", "subscription_model", "reduced_motion", "theme_color",
             "agent_mode", "agent_url", "agent_model", "agent_api_key",
-            "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path")
+            "voice_mode", "voice_url", "voice_key", "stt_model", "tts_model", "voice_name", "speech_model_path",
+            "camera_recognition", "camera_device")
 
 
 def _remote_agent_settings(config):

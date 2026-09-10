@@ -8,6 +8,7 @@ font-dejavu
 qt6-qtmultimedia
 qt6-qtmultimedia-gstreamer
 gst-plugins-good
+ffmpeg
 pulseaudio
 pulseaudio-alsa
 pulseaudio-utils

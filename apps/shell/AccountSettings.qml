@@ -10,7 +10,7 @@ ColumnLayout {
     property string result: ""
     spacing: 12
     function refresh() { if (control && control.greetingOnly) control.listProfiles() }
-    onVisibleChanged: { if (visible) refresh(); else deletion.close(); }
+    onVisibleChanged: { if (visible) refresh(); else { deletion.close(); faceEnrollment.close(); } }
     Component.onCompleted: if (visible) refresh()
     Label { text: "Accounts on this device"; color: accounts.ink; font.pixelSize: 20 }
     Label { text: "Select an account to sign in or delete it. Deletion requires that account’s PIN or password."; color: accounts.ink; wrapMode: Text.Wrap; Layout.fillWidth: true }
@@ -25,6 +25,17 @@ ColumnLayout {
                     Layout.fillWidth: true
                     Label { text: modelData.name; color: accounts.ink; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true }
                     Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.open(); } }
+                    Button {
+                        objectName: "enrollRecognition"; text: "Face recognition…"
+                        enabled: accounts.control && accounts.control.greetingOnly &&
+                                 (accounts.control.recognitionState === "ready" ||
+                                  accounts.control.recognitionState === "manual-only")
+                        onClicked: {
+                            faceEnrollment.accountId = modelData.id
+                            faceEnrollment.accountName = modelData.name
+                            faceEnrollment.open()
+                        }
+                    }
                     Button {
                         objectName: "deleteAccount"; text: "Delete…"
                         enabled: accounts.control && accounts.control.greetingOnly && !accounts.control.busy
@@ -42,6 +53,57 @@ ColumnLayout {
     Label { visible: !accounts.control || !accounts.control.greetingOnly; text: "Protected workspace deletion is not available in this panel."; color: accounts.ink; wrapMode: Text.Wrap; Layout.fillWidth: true }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: accounts.control || unavailable }
     QtObject { id: unavailable; property bool busy: false; property string error: ""; function setSecureInput(active) {} }
+    Dialog {
+        id: faceEnrollment; objectName: "faceEnrollmentDialog"
+        property string accountId: ""
+        property string accountName: ""
+        parent: Overlay.overlay; anchors.centerIn: parent; width: Math.min(440, parent ? parent.width - 32 : 440)
+        title: "Set up face recognition"; modal: true
+        standardButtons: Dialog.Cancel
+        closePolicy: accounts.control && accounts.control.recognitionState === "enrolling"
+            ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onOpened: { accounts.result = ""; accounts.control.setSecureInput(true); recognitionPin.forceActiveFocus(); }
+        onClosed: {
+            recognitionPin.clear(); recognitionConsent.checked = false
+            accountId = ""; accountName = ""
+            if (accounts.control) accounts.control.setSecureInput(false)
+        }
+        contentItem: ColumnLayout {
+            Label {
+                text: "Verify “" + faceEnrollment.accountName + "” with its PIN, then look at the camera. Face matches only suggest this account and never replace the PIN."
+                textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+            TextField {
+                id: recognitionPin; objectName: "recognitionPin"
+                placeholderText: "Account PIN or password"; echoMode: TextInput.Password
+                maximumLength: 128; Layout.fillWidth: true
+                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+            }
+            CheckBox {
+                id: recognitionConsent; objectName: "recognitionConsent"
+                text: "Store encrypted face templates locally for account suggestions"
+            }
+            Button {
+                objectName: "confirmRecognitionEnrollment"; text: "Capture face samples"
+                enabled: accounts.control && accounts.control.recognitionState !== "enrolling" &&
+                         recognitionPin.text.length > 0 && recognitionConsent.checked
+                onClicked: {
+                    accounts.control.enrollRecognition(faceEnrollment.accountId,
+                        recognitionPin.text, recognitionConsent.checked)
+                    recognitionPin.clear()
+                }
+            }
+            Label {
+                visible: accounts.control && accounts.control.recognitionState === "enrolling"
+                text: "Capturing a short local burst…"; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+            Label { text: accounts.control ? accounts.control.error : ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        }
+        Connections {
+            target: faceEnrollment.contentItem.Window.window
+            function onActiveChanged() { if (!faceEnrollment.contentItem.Window.window.active) recognitionPin.clear(); }
+        }
+    }
     Dialog {
         id: deletion; objectName: "deleteAccountDialog"
         property string accountId: ""
@@ -74,6 +136,10 @@ ColumnLayout {
     Connections {
         target: accounts.control; ignoreUnknownSignals: true
         function onAccountDeleted(id) { deletion.close(); accounts.result = "Account deleted."; }
+        function onRecognitionEnrollmentCompleted(id) {
+            faceEnrollment.close()
+            accounts.result = "Face recognition was added. Account access still requires the PIN."
+        }
         function onPrivacyLost() { deletion.close() }
         function onUnlocked() { accounts.refresh() }
     }
