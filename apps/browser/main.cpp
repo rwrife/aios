@@ -29,6 +29,7 @@
 #include <QWebEngineDownloadRequest>
 #include <QWebEngineFullScreenRequest>
 #include <QWebEngineHistory>
+#include <QWebEngineLoadingInfo>
 #include <QWebEnginePage>
 #include <QWebEnginePermission>
 #include <QWebEngineProfile>
@@ -312,8 +313,10 @@ private:
     QTimer m_operationTimer;
     quint64 m_operation = 0;
     quint64 m_snapshotOperation = 0;
+    quint64 m_navigationOperation = 0;
     bool m_snapshotInFlight = false;
     bool m_actionInFlight = false;
+    bool m_navigationStarted = false;
 
     void applyTheme()
     {
@@ -449,8 +452,20 @@ private:
             m_stop->setEnabled(false);
             m_progress->hide();
             updateNavigation();
-            if (m_pending && !m_actionInFlight)
+        });
+        connect(m_page, &QWebEnginePage::loadingChanged, this,
+                [this](const QWebEngineLoadingInfo &info) {
+            if (!m_pending || m_actionInFlight || m_navigationOperation != m_operation)
+                return;
+            if (info.status() == QWebEngineLoadingInfo::LoadStartedStatus) {
+                if (allowedUrl(info.url()))
+                    m_navigationStarted = true;
+                return;
+            }
+            if (m_navigationStarted) {
+                m_navigationStarted = false;
                 snapshotPending();
+            }
         });
         connect(m_page, &RestrictedPage::blocked, this, [this](const QString &message) {
             if (m_pending)
@@ -621,6 +636,7 @@ private:
             raise();
             activateWindow();
             beginPending(socket);
+            m_navigationOperation = m_operation;
             const quint64 operation = m_operation;
             m_view->setUrl(url);
             QTimer::singleShot(250, this, [this, operation] {
@@ -638,6 +654,7 @@ private:
             snapshotPending();
         } else if (action == "back" || action == "forward" || action == "reload") {
             beginPending(socket);
+            m_navigationOperation = m_operation;
             const quint64 operation = m_operation;
             if (action == "back")
                 m_view->back();
@@ -674,6 +691,8 @@ private:
         m_pending = socket;
         m_snapshotInFlight = false;
         m_actionInFlight = false;
+        m_navigationOperation = 0;
+        m_navigationStarted = false;
         m_operationTimer.start();
     }
 
@@ -686,6 +705,8 @@ private:
         ++m_operation;
         m_snapshotInFlight = false;
         m_actionInFlight = false;
+        m_navigationOperation = 0;
+        m_navigationStarted = false;
         m_operationTimer.stop();
         respond(socket, QJsonObject{{"error", message}});
     }
@@ -881,6 +902,8 @@ private:
                 failPending(object.value("error").toString());
                 return;
             }
+            m_navigationOperation = operation;
+            m_navigationStarted = m_loading;
             QTimer::singleShot(250, this, [this, operation] {
                 if (m_pending && operation == m_operation && !m_loading)
                     snapshotPending();
@@ -902,13 +925,13 @@ int main(int argc, char **argv)
     parser.setApplicationDescription("AIOS private themed browser");
     parser.addHelpOption();
     parser.addOption({{"s", "socket"}, "Owner-only control socket path.", "path"});
-    parser.addOption({{"i", "session"}, "Chat session identifier.", "id"});
+    parser.addOption({{"i", "browser-session"}, "Chat session identifier.", "id"});
     parser.addOption({{"t", "theme"}, "AIOS theme key.", "theme", "blue"});
     parser.addOption({{"u", "url"}, "Open a standalone trusted HTTP(S) URL.", "url"});
     parser.process(app);
 
     const QString socketPath = parser.value("socket");
-    QString sessionId = parser.value("session");
+    QString sessionId = parser.value("browser-session");
     const QUrl initialUrl(parser.value("url"));
     if ((socketPath.isEmpty() || sessionId.isEmpty()) && !allowedUrl(initialUrl))
         parser.showHelp(2);

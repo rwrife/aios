@@ -503,7 +503,7 @@ private:
                 QFile::remove(socket);
                 browser.start("aios-browser", {
                     "--socket", socket,
-                    "--session", sessionId,
+                    "--browser-session", sessionId,
                     "--theme", m_config.value("theme_color", "blue").toString()
                 });
             }

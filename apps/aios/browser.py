@@ -107,7 +107,7 @@ class Browser:
         session = 'developer-' + str(os.getpid())
         try:
             self.process = subprocess.Popen([
-                self.executable, '--socket', self.socket, '--session', session,
+                self.executable, '--socket', self.socket, '--browser-session', session,
                 '--theme', self.theme,
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True)
