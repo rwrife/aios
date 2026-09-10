@@ -310,6 +310,7 @@ TestCase {
         verify(profile !== null)
         compare(profile.parent, header)
         verify(header.y < 80)
+        compare(header.height, 44)
         compare(findChild(first, "chatCloseButton").implicitWidth, 36)
         compare(findChild(first, "chatCloseButton").implicitHeight, 36)
         compare(findChild(first, "chatCloseButton").background.radius, 8)

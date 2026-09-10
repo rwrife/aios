@@ -61,6 +61,8 @@ Window {
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
+            Layout.minimumHeight: 44
+            Layout.maximumHeight: 44
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
