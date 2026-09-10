@@ -1,50 +1,63 @@
 {
-  "smollm2-135m": {
-    "name": "SmolLM2 135M Instruct (small starter model)",
-    "url": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q4_K_M.gguf",
-    "sha256": "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d",
-    "bytes": 105454432,
+  "qwen3-0.6b": {
+    "name": "Qwen3 0.6B Q4_K_M",
+    "url": "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF/resolve/60b85c0e3d8fe0f6474f406922a26d12aca4550d/Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+    "sha256": "9acfc1e001311f34b4252001b626f2e466d592a42065f66571bff3790d4e1b14",
+    "bytes": 484220320,
     "license": "Apache-2.0",
-    "source": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct",
-    "quantization": "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF",
-    "note": "A small model for trying local chat. Limited reasoning and coding ability; import a larger model for substantive work.",
-    "ram_gib": 1,
-    "tool_use": false
+    "source": "https://huggingface.co/Qwen/Qwen3-0.6B",
+    "repository": "https://huggingface.co/bartowski/Qwen_Qwen3-0.6B-GGUF",
+    "revision": "60b85c0e3d8fe0f6474f406922a26d12aca4550d",
+    "filename": "Qwen_Qwen3-0.6B-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
+    "note": "Bundled offline default for basic chat and simple tool bootstrap. Critical setup actions use deterministic controls; choose a larger model for browser work.",
+    "ram_gib": 2,
+    "tool_use": true,
+    "bundled": true
   },
   "qwen3-1.7b": {
-    "name": "Qwen3 1.7B",
+    "name": "Qwen3 1.7B Q4_K_M",
     "url": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/dcb19155b962dbb6389f4691a982043a8e651022/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
     "sha256": "72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb",
     "bytes": 1282439584,
     "license": "Apache-2.0",
     "source": "https://huggingface.co/Qwen/Qwen3-1.7B",
-    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF",
+    "repository": "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF",
+    "revision": "dcb19155b962dbb6389f4691a982043a8e651022",
+    "filename": "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
     "ram_gib": 4,
     "tool_use": true,
-    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
+    "note": "Lightweight upgrade for stronger chat and basic tools. Tool reliability varies by task."
   },
   "qwen3-4b": {
-    "name": "Qwen3 4B",
+    "name": "Qwen3 4B Q4_K_M",
     "url": "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/cb76885dc66d50759b207c5a48c4e78dfa00c638/Qwen_Qwen3-4B-Q4_K_M.gguf",
     "sha256": "fbe1d5edd4ce802ae3ae7c7e4ab7d09789d697fdac1fc7929f8df4ca3c41bae3",
     "bytes": 2497280960,
     "license": "Apache-2.0",
     "source": "https://huggingface.co/Qwen/Qwen3-4B",
-    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF",
+    "repository": "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF",
+    "revision": "cb76885dc66d50759b207c5a48c4e78dfa00c638",
+    "filename": "Qwen_Qwen3-4B-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
     "ram_gib": 8,
     "tool_use": true,
-    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
+    "note": "Balanced local choice for stronger chat and browser tools. Tool reliability varies by task."
   },
   "qwen3-8b": {
-    "name": "Qwen3 8B",
+    "name": "Qwen3 8B Q4_K_M",
     "url": "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/0b69f75b7472688e6808490aa2b85efdb81b5ce7/Qwen_Qwen3-8B-Q4_K_M.gguf",
     "sha256": "54fffa050078e984116639c83dfb64b5aa6d4cd474e018b076777c632bbccccd",
     "bytes": 5027784224,
     "license": "Apache-2.0",
     "source": "https://huggingface.co/Qwen/Qwen3-8B",
-    "quantization": "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF",
+    "repository": "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF",
+    "revision": "0b69f75b7472688e6808490aa2b85efdb81b5ce7",
+    "filename": "Qwen_Qwen3-8B-Q4_K_M.gguf",
+    "quantization": "Q4_K_M",
     "ram_gib": 12,
     "tool_use": true,
-    "note": "Tool-capable chat and browser actions. Q4_K_M compression; larger sizes need more memory and run more slowly on CPU. Tool reliability varies by task."
+    "note": "Strongest curated local choice for chat and browser tools. Tool reliability varies by task."
   }
 }

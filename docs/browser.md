@@ -9,7 +9,9 @@ not an operating-system prohibition on launching a binary from the terminal.
 
 The desktop's Chat Completions agent advertises a browser function to the chosen
 local or remote model. Use a model/provider that supports structured tool calls.
-The 135M starter model is for simple chat and is not a reliable browser agent.
+The bundled Qwen3 0.6B starter is for simple chat and tool bootstrap, but is not
+a reliable browser agent. Critical setup controls invoke fixed backend actions
+directly and do not depend on model-generated tool calls.
 The local server enables Jinja tool templates and an 8192-token context. Models
 whose GGUF templates do not support tools may need a different model/template.
 The CLI's plain chat command remains text-only.

@@ -12,20 +12,21 @@ ColumnLayout {
     readonly property var entries: inventory.models || []
     readonly property var selected: entries[choice.currentIndex] || ({})
     spacing: 8
+    function size(bytes) { return bytes < 1073741824 ? Math.ceil(bytes / 1048576) + " MiB" : (bytes / 1073741824).toFixed(1) + " GiB" }
     function gib(bytes) { return (bytes / 1073741824).toFixed(1) + " GiB" }
     onVisibleChanged: if (visible && backend.refreshLocalModels) backend.refreshLocalModels()
     Component.onCompleted: if (backend.refreshLocalModels) backend.refreshLocalModels()
     ComboBox {
         id: choice; objectName: "localModelChoice"
         Layout.fillWidth: true; enabled: !backend.busy && !backend.configuring
-        model: picker.entries.map(function(m) { return m.name + (m.installed ? " · Downloaded" : "") })
+        model: picker.entries.map(function(m) { return m.name + (m.bundled ? " · Starter" : "") + (m.installed ? (m.bundled ? " · Bundled" : " · Downloaded") : "") })
         Accessible.name: "Local chat model"
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.Wrap; color: theme.muted; font.pixelSize: 12
         text: picker.entries.length ? (picker.selected.tool_use ? "Supports tool use" : "Basic chat · limited tool ability")
               + " · " + picker.selected.license + "\n"
-              + picker.gib(picker.selected.bytes) + " download · about " + picker.selected.ram_gib + " GiB total RAM\n"
+              + picker.size(picker.selected.bytes) + " download · about " + picker.selected.ram_gib + " GiB total RAM\n"
               + picker.selected.note : "Loading local models…"
     }
     Text {
