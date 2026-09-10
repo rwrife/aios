@@ -464,8 +464,7 @@ private:
                     m_navigationStarted = true;
                 return;
             }
-            if (m_navigationStarted && allowedUrl(info.url())) {
-                m_navigationStarted = false;
+            if (m_navigationStarted) {
                 snapshotPending();
             }
         });
@@ -791,6 +790,12 @@ private:
                 respond(socket, QJsonObject{{"error", "Browser snapshot failed. Reopen the page."}});
                 return;
             }
+            if (m_navigationOperation == operation
+                    && !allowedUrl(QUrl(value.toObject().value("url").toString()))) {
+                m_snapshotInFlight = false;
+                return;
+            }
+            m_navigationStarted = false;
             respond(socket, value);
         });
     }
