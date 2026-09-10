@@ -21,6 +21,26 @@ Window {
         if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
             profileControl.setCameraPreviewActive(false)
     }
+    function previewFormat(device) {
+        const formats = device.videoFormats || []
+        for (let i = 0; i < formats.length; ++i) {
+            const format = formats[i]
+            if (format.resolution.width === 640 && format.resolution.height === 480 &&
+                    format.pixelFormat === VideoFrameFormat.Format_YUYV)
+                return format
+        }
+        for (let i = 0; i < formats.length; ++i) {
+            const format = formats[i]
+            if (format.resolution.width === 640 && format.resolution.height === 480)
+                return format
+        }
+        return formats.length ? formats[0] : undefined
+    }
+    function configureCamera(device) {
+        camera.cameraDevice = device
+        const format = previewFormat(device)
+        if (format) camera.cameraFormat = format
+    }
     onVisibleChanged: { if (!visible) stopCameraPreview(); else { models.reload(); if (pages.currentIndex === 7) accountsPage.refresh(); } }
     onClosing: stopCameraPreview()
     // Add a section here and its page to the StackLayout below.
@@ -106,7 +126,7 @@ Window {
                     ComboBox {
                         id: cameraChoice; Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
                         enabled: devices.videoInputs.length > 0
-                        onActivated: { settings.stopCameraPreview(); camera.cameraDevice = devices.videoInputs[currentIndex] }
+                        onActivated: { settings.stopCameraPreview(); settings.configureCamera(devices.videoInputs[currentIndex]) }
                     }
                     Rectangle {
                         Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 100; color: theme.night; radius: 8
@@ -120,6 +140,7 @@ Window {
                         onClicked: {
                             if (camera.active) settings.stopCameraPreview()
                             else {
+                                settings.configureCamera(camera.cameraDevice)
                                 if (settings.profileControl &&
                                         typeof settings.profileControl.setCameraPreviewActive === "function")
                                     settings.profileControl.setCameraPreviewActive(true)
@@ -250,7 +271,10 @@ Window {
         }
         Item { Layout.fillHeight: true }
     }
-    Camera { id: camera; cameraDevice: devices.defaultVideoInput }
+    Camera {
+        id: camera
+        cameraDevice: devices.defaultVideoInput
+    }
     CaptureSession { camera: camera; videoOutput: viewfinder }
     Connections {
         target: backend

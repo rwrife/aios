@@ -1,9 +1,12 @@
 #pragma once
 #include <QObject>
 #include <QCamera>
+#include <QCameraDevice>
+#include <QCameraFormat>
 #include <QImageCapture>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
+#include <QVideoFrameFormat>
 #include <QBuffer>
 #include <QTimer>
 #include <QPointer>
@@ -19,7 +22,10 @@ public:
         cancel();
         if (QMediaDevices::defaultVideoInput().isNull()) { emit failed(); return; }
         job = new QObject(this);
-        auto camera = new QCamera(QMediaDevices::defaultVideoInput(), job);
+        const auto device = QMediaDevices::defaultVideoInput();
+        auto camera = new QCamera(device, job);
+        const auto format = preferredFormat(device);
+        if (!format.isNull()) camera->setCameraFormat(format);
         auto session = new QMediaCaptureSession(job);
         auto capture = new QImageCapture(job);
         session->setCamera(camera); session->setImageCapture(capture);
@@ -48,5 +54,17 @@ signals:
     void failed();
 private:
     QPointer<QObject> job;
+    static QCameraFormat preferredFormat(const QCameraDevice &device) {
+        const auto formats = device.videoFormats();
+        for (const auto &format : formats) {
+            if (format.resolution() == QSize(640, 480) &&
+                    format.pixelFormat() == QVideoFrameFormat::Format_YUYV)
+                return format;
+        }
+        for (const auto &format : formats) {
+            if (format.resolution() == QSize(640, 480)) return format;
+        }
+        return formats.isEmpty() ? QCameraFormat() : formats.first();
+    }
     void cancelLater() { if (job) { job->deleteLater(); job = nullptr; } }
 };

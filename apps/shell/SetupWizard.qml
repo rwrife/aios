@@ -22,6 +22,26 @@ Window {
         if (ownsOperation && backend.busy) backend.stop()
         ownsOperation = false
     }
+    function previewFormat(device) {
+        const formats = device.videoFormats || []
+        for (let i = 0; i < formats.length; ++i) {
+            const format = formats[i]
+            if (format.resolution.width === 640 && format.resolution.height === 480 &&
+                    format.pixelFormat === VideoFrameFormat.Format_YUYV)
+                return format
+        }
+        for (let i = 0; i < formats.length; ++i) {
+            const format = formats[i]
+            if (format.resolution.width === 640 && format.resolution.height === 480)
+                return format
+        }
+        return formats.length ? formats[0] : undefined
+    }
+    function configureCamera(device) {
+        camera.cameraDevice = device
+        const format = previewFormat(device)
+        if (format) camera.cameraFormat = format
+    }
     function moveTo(value) {
         camera.stop()
         cancelOperation()
@@ -109,14 +129,25 @@ Window {
                     ComboBox {
                         Layout.fillWidth: true; model: devices.videoInputs; textRole: "description"
                         enabled: devices.videoInputs.length > 0
-                        onActivated: { camera.stop(); camera.cameraDevice = devices.videoInputs[currentIndex] }
+                        onActivated: { camera.stop(); wizard.configureCamera(devices.videoInputs[currentIndex]) }
                     }
                     Rectangle {
                         Layout.fillWidth: true; implicitHeight: 160; color: theme.night; radius: 8
                         VideoOutput { id: preview; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
                         Text { anchors.centerIn: parent; visible: !camera.active; text: "Camera off"; color: theme.muted }
                     }
-                    Action { objectName: "setupCamera"; text: camera.active ? "Stop camera check" : "Start camera check"; enabled: devices.videoInputs.length > 0; onClicked: camera.active ? camera.stop() : camera.start() }
+                    Action {
+                        objectName: "setupCamera"
+                        text: camera.active ? "Stop camera check" : "Start camera check"
+                        enabled: devices.videoInputs.length > 0
+                        onClicked: {
+                            if (camera.active) camera.stop()
+                            else {
+                                wizard.configureCamera(camera.cameraDevice)
+                                camera.start()
+                            }
+                        }
+                    }
                     Note { text: camera.errorString; visible: camera.error !== Camera.NoError }
                     Note { text: "The camera starts only when you ask. Nothing is saved or uploaded. Leaving this step turns it off."; font.pixelSize: 12 }
                 }
@@ -155,7 +186,10 @@ Window {
         }
     }
     MediaDevices { id: devices }
-    Camera { id: camera; cameraDevice: devices.defaultVideoInput }
+    Camera {
+        id: camera
+        cameraDevice: devices.defaultVideoInput
+    }
     CaptureSession { camera: camera; videoOutput: preview }
     EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
 }

@@ -1,8 +1,12 @@
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from aios.camera import probe, video_device
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class CameraTests(unittest.TestCase):
@@ -26,3 +30,12 @@ class CameraTests(unittest.TestCase):
         ), self.assertRaisesRegex(RuntimeError, '^Camera probe failed;') as error:
             probe('/dev/video0')
         self.assertNotIn('untrusted', str(error.exception))
+
+    def test_shell_camera_surfaces_prefer_bounded_uncompressed_capture(self):
+        for relative in ('apps/shell/SettingsWindow.qml', 'apps/shell/SetupWizard.qml',
+                         'apps/shell/ProfilePhoto.h'):
+            source = (ROOT / relative).read_text()
+            with self.subTest(relative=relative):
+                self.assertIn('640', source)
+                self.assertIn('480', source)
+                self.assertIn('Format_YUYV', source)
