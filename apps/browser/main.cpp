@@ -739,7 +739,14 @@ private:
 (() => {
   const generation = %1;
   const inView = r => r.width && r.height && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
-  const visible = e => [...e.getClientRects()].some(inView) && getComputedStyle(e).visibility !== 'hidden';
+  const visible = e => {
+    if (![...e.getClientRects()].some(inView)) return false;
+    for (let node = e; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    }
+    return getComputedStyle(e).pointerEvents !== 'none';
+  };
   const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
   let node, text = '';
   while ((node = walker.nextNode()) && text.length < 6000) {
@@ -832,10 +839,22 @@ private:
   const element = state.elements[%2];
   if (!element || !element.isConnected) return {error:'Use an element ID from the latest snapshot.'};
   const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height || getComputedStyle(element).visibility === 'hidden') return {error:'The selected control is not visible.'};
+  if (!rect.width || !rect.height) return {error:'The selected control is not visible.'};
+  for (let node = element; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)
+      return {error:'The selected control is not visible.'};
+  }
+  if (getComputedStyle(element).pointerEvents === 'none') return {error:'The selected control is not actionable.'};
   if (element.disabled) return {error:'The selected control is disabled.'};
   if ((element.type || '').toLowerCase() === 'file') return {error:'File upload controls are not available to the browser tool.'};
   element.scrollIntoView({block:'center', inline:'nearest'});
+  const updated = element.getBoundingClientRect();
+  const x = Math.max(0, Math.min(innerWidth - 1, updated.left + updated.width / 2));
+  const y = Math.max(0, Math.min(innerHeight - 1, updated.top + updated.height / 2));
+  const topmost = document.elementsFromPoint(x, y).find(node => getComputedStyle(node).pointerEvents !== 'none');
+  if (!topmost || (topmost !== element && !element.contains(topmost)))
+    return {error:'The selected control is covered by another element.'};
 )JS").arg(generation).arg(index);
             if (action == "click") {
                 script = prefix + "  element.click(); return {ok:true};\n})()";
@@ -876,17 +895,25 @@ private:
                 script = prefix + QString(R"JS(
   const key = %1;
   element.focus();
-  const down = new KeyboardEvent('keydown', {key, bubbles:true, cancelable:true});
-  const allowed = element.dispatchEvent(down);
-  if (allowed && key === 'Enter' && element.form) element.form.requestSubmit();
-  if (key === 'Tab') {
+  if (key === 'Enter') {
+    const tag = element.tagName.toLowerCase();
+    const type = (element.type || '').toLowerCase();
+    if (tag === 'a' || tag === 'button' || ['button','submit','checkbox','radio'].includes(type)) {
+      element.click();
+    } else if (element.form) {
+      element.form.requestSubmit();
+    } else {
+      return {error:'Enter is not available for the selected control.'};
+    }
+  } else if (key === 'Tab') {
     const candidates = [...document.querySelectorAll('a,button,input,textarea,select,[tabindex]')]
       .filter(e => !e.disabled && e.tabIndex >= 0 && e.getClientRects().length);
+    if (!candidates.length) return {error:'No next control is available.'};
     const position = candidates.indexOf(element);
     candidates[(position + 1) % candidates.length]?.focus();
+  } else {
+    element.blur();
   }
-  if (key === 'Escape') element.blur();
-  element.dispatchEvent(new KeyboardEvent('keyup', {key, bubbles:true}));
   return {ok:true};
 })()
 )JS").arg(jsString(key));
