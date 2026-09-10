@@ -31,11 +31,16 @@ class CameraTests(unittest.TestCase):
             probe('/dev/video0')
         self.assertNotIn('untrusted', str(error.exception))
 
-    def test_shell_camera_surfaces_prefer_bounded_uncompressed_capture(self):
-        for relative in ('apps/shell/SettingsWindow.qml', 'apps/shell/SetupWizard.qml',
-                         'apps/shell/ProfilePhoto.h'):
+    def test_shell_camera_surfaces_prefer_bounded_capture(self):
+        for relative in ('apps/shell/SettingsWindow.qml', 'apps/shell/SetupWizard.qml'):
             source = (ROOT / relative).read_text()
             with self.subTest(relative=relative):
                 self.assertIn('640', source)
                 self.assertIn('480', source)
-                self.assertIn('Format_YUYV', source)
+                self.assertNotIn('VideoFrameFormat', source)
+        photo = (ROOT / 'apps/shell/ProfilePhoto.h').read_text()
+        self.assertIn('"video4linux2"', photo)
+        self.assertIn('"mjpeg"', photo)
+        self.assertIn('640 * 480 * 3', photo)
+        self.assertIn('QProcess::nullDevice()', photo)
+        self.assertIn('ffmpeg', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())

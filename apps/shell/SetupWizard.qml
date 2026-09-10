@@ -24,13 +24,7 @@ Window {
     }
     function previewFormat(device) {
         const formats = device.videoFormats || []
-        for (let i = 0; i < formats.length; ++i) {
-            const format = formats[i]
-            if (format.resolution.width === 640 && format.resolution.height === 480 &&
-                    format.pixelFormat === VideoFrameFormat.Format_YUYV)
-                return format
-        }
-        for (let i = 0; i < formats.length; ++i) {
+        for (let i = formats.length - 1; i >= 0; --i) {
             const format = formats[i]
             if (format.resolution.width === 640 && format.resolution.height === 480)
                 return format

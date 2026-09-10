@@ -98,6 +98,16 @@ TestCase {
         mouseClick(create)
         tryCompare(findChild(wizard, "profileSubmit"), "visible", true)
     }
+    function test_camera_preview_uses_bounded_format_without_runtime_enums() {
+        var selected = wizard.previewFormat({videoFormats: [
+            {resolution: {width: 640, height: 480}, mode: "raw"},
+            {resolution: {width: 1920, height: 1080}, mode: "large"},
+            {resolution: {width: 640, height: 480}, mode: "compressed"}
+        ]})
+        compare(selected.resolution.width, 640)
+        compare(selected.resolution.height, 480)
+        compare(selected.mode, "compressed")
+    }
     function test_close_does_not_cancel_unrelated_work() {
         backend.busy = true
         wizard.close()

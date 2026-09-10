@@ -1,13 +1,12 @@
 #pragma once
 #include <QObject>
-#include <QCamera>
 #include <QCameraDevice>
-#include <QCameraFormat>
-#include <QImageCapture>
-#include <QMediaCaptureSession>
+#include <QImage>
 #include <QMediaDevices>
-#include <QVideoFrameFormat>
 #include <QBuffer>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QStringList>
 #include <QTimer>
 #include <QPointer>
 #include <memory>
@@ -17,54 +16,80 @@ class ProfilePhoto : public QObject {
     Q_OBJECT
 public:
     using QObject::QObject;
-    void cancel() { if (job) { delete job; job = nullptr; } }
+    void cancel() {
+        if (!job) return;
+        auto process = qobject_cast<QProcess *>(job.data());
+        job = nullptr;
+        if (process) process->kill();
+        if (process) process->deleteLater();
+    }
     void take() {
-        cancel();
-        if (QMediaDevices::defaultVideoInput().isNull()) { emit failed(); return; }
-        job = new QObject(this);
+        if (job) { emit failed(); return; }
         const auto device = QMediaDevices::defaultVideoInput();
-        auto camera = new QCamera(device, job);
-        const auto format = preferredFormat(device);
-        if (!format.isNull()) camera->setCameraFormat(format);
-        auto session = new QMediaCaptureSession(job);
-        auto capture = new QImageCapture(job);
-        session->setCamera(camera); session->setImageCapture(capture);
-        auto requested = std::make_shared<bool>(false);
-        connect(capture, &QImageCapture::readyForCaptureChanged, job, [capture, requested](bool ready) {
-            if (ready && !*requested) { *requested = true; capture->capture(); }
+        const auto path = QString::fromUtf8(device.id());
+        if (device.isNull() || !QRegularExpression("^/dev/video[0-9]+$").match(path).hasMatch()) {
+            emit failed();
+            return;
+        }
+        auto process = new QProcess(this);
+        job = process;
+        process->setProgram("ffmpeg");
+        process->setArguments(QStringList{
+            "-nostdin", "-hide_banner", "-loglevel", "error",
+            "-f", "video4linux2", "-input_format", "mjpeg",
+            "-video_size", "640x480", "-framerate", "15",
+            "-i", path, "-frames:v", "1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"
         });
-        connect(capture, &QImageCapture::imageCaptured, job, [this, camera](int, const QImage &source) {
-            camera->stop();
+        process->setStandardErrorFile(QProcess::nullDevice());
+        constexpr qsizetype expected = 640 * 480 * 3;
+        auto output = std::make_shared<QByteArray>();
+        auto finished = std::make_shared<bool>(false);
+        connect(process, &QProcess::readyReadStandardOutput, process, [process, output] {
+            output->append(process->readAllStandardOutput());
+            if (output->size() > expected) process->kill();
+        });
+        connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), process,
+                [this, process, output, finished](int code, QProcess::ExitStatus status) {
+            if (*finished) return;
+            output->append(process->readAllStandardOutput());
+            *finished = true;
+            if (job == process) job = nullptr;
+            process->deleteLater();
+            if (status != QProcess::NormalExit || code != 0 || output->size() != expected) {
+                emit failed();
+                return;
+            }
+            auto source = QImage(reinterpret_cast<const uchar *>(output->constData()),
+                                 640, 480, 640 * 3, QImage::Format_RGB888).copy();
             auto scaled = source.scaled(64, 64, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
             auto photo = scaled.copy((scaled.width()-64)/2, (scaled.height()-64)/2, 64, 64).convertToFormat(QImage::Format_RGB888);
-            if (photo.isNull()) { emit failed(); cancelLater(); return; }
+            if (photo.isNull()) { emit failed(); return; }
             QByteArray rgb;
             for (int row = 0; row < 64; ++row) rgb.append(reinterpret_cast<const char *>(photo.constScanLine(row)), 192);
             QByteArray png; QBuffer buffer(&png); buffer.open(QIODevice::WriteOnly); photo.save(&buffer, "PNG");
             emit captured("data:image/png;base64," + QString::fromLatin1(png.toBase64()), QString::fromLatin1(rgb.toBase64()));
-            cancelLater();
         });
-        connect(capture, &QImageCapture::errorOccurred, job, [this](int, QImageCapture::Error, const QString &) { emit failed(); cancelLater(); });
-        connect(camera, &QCamera::errorOccurred, job, [this](QCamera::Error, const QString &) { emit failed(); cancelLater(); });
-        QTimer::singleShot(5000, job, [this] { emit failed(); cancelLater(); });
-        camera->start();
+        connect(process, &QProcess::errorOccurred, process, [this, process, finished](QProcess::ProcessError) {
+            if (*finished) return;
+            *finished = true;
+            if (job == process) job = nullptr;
+            process->deleteLater();
+            emit failed();
+        });
+        QTimer::singleShot(5000, process, [this, process, finished] {
+            if (*finished) return;
+            *finished = true;
+            if (job == process) job = nullptr;
+            process->kill();
+            process->deleteLater();
+            emit failed();
+        });
+        process->start();
     }
 signals:
     void captured(const QString &preview, const QString &rgb);
     void failed();
 private:
     QPointer<QObject> job;
-    static QCameraFormat preferredFormat(const QCameraDevice &device) {
-        const auto formats = device.videoFormats();
-        for (const auto &format : formats) {
-            if (format.resolution() == QSize(640, 480) &&
-                    format.pixelFormat() == QVideoFrameFormat::Format_YUYV)
-                return format;
-        }
-        for (const auto &format : formats) {
-            if (format.resolution() == QSize(640, 480)) return format;
-        }
-        return formats.isEmpty() ? QCameraFormat() : formats.first();
-    }
-    void cancelLater() { if (job) { job->deleteLater(); job = nullptr; } }
 };

@@ -79,6 +79,19 @@ TestCase {
         compare(findChild(window, "aboutMemory").text, "4.0 GiB")
         window.destroy()
     }
+    function test_camera_preview_uses_bounded_format_without_runtime_enums() {
+        var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
+        verify(window !== null)
+        var selected = window.previewFormat({videoFormats: [
+            {resolution: {width: 640, height: 480}, mode: "raw"},
+            {resolution: {width: 1920, height: 1080}, mode: "large"},
+            {resolution: {width: 640, height: 480}, mode: "compressed"}
+        ]})
+        compare(selected.resolution.width, 640)
+        compare(selected.resolution.height, 480)
+        compare(selected.mode, "compressed")
+        window.destroy()
+    }
     function test_unknown_theme_falls_back() {
         palette.selected = "unknown"
         compare(palette.paletteIndex, 0)

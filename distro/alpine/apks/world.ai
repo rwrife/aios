@@ -7,6 +7,7 @@ qt6-qtdeclarative
 font-dejavu
 qt6-qtmultimedia
 qt6-qtmultimedia-ffmpeg
+ffmpeg
 pulseaudio
 pulseaudio-alsa
 pulseaudio-utils
