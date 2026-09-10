@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/build-iso.yml"
+      - "build.ps1"
       - "distro/alpine/**"
       - "scripts/build-apps.sh"
       - "scripts/build-iso.sh"

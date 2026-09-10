@@ -11,8 +11,20 @@ See `docs/qa/implementation-status.md` for executed checks and remaining release
 
 ## Try the development image
 
-Build on Linux with Docker: `bash scripts/build.sh`. On Windows, build inside
-WSL with a working Linux Docker daemon, or copy an existing x86_64 ISO to Windows.
+Build on Linux with Docker:
+
+```sh
+bash scripts/build.sh
+```
+
+On Windows, use PowerShell with WSL2 and a working Linux Docker daemon:
+
+```powershell
+.\build.ps1
+# Choose a different WSL distribution:
+.\build.ps1 -Distro Debian
+```
+
 Build caches use the Docker volume `aios-build-cache`; images are written to
 `distro/alpine/out`.
 
