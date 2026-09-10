@@ -38,9 +38,10 @@ Model weights are downloaded or imported separately. The optional small starter
 model is for trying local chat; it is not a capable coding assistant.
 
 First target: x86_64 QEMU. BIOS and UEFI are separate validation gates. VMware
-and bare metal are not supported claims until tested. Start with 4 GiB RAM and
-32 GiB disk for development; larger models require additional RAM/storage.
-These are initial test settings, not measured minimum requirements.
+and bare metal are not supported claims until tested. Development launchers use
+16 GiB RAM, four CPUs, and a 64 GiB disk so the RAM-backed live environment can
+run and download every curated model. These are test settings, not measured
+minimum requirements.
 
 Release gates: clean image build, offline boot, ordinary-user graphical session,
 local and remote real responses, recoverable failures, example app built offline,

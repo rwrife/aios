@@ -5,8 +5,9 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from aios import core
 
 
@@ -119,6 +120,16 @@ class CoreTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_local_request_waits_for_model_server_startup(self):
+        response = io.BytesIO(b'{"ready":true}')
+        opener = Mock()
+        opener.open.side_effect = [urllib.error.URLError(ConnectionRefusedError()), response]
+        with patch("urllib.request.build_opener", return_value=opener), \
+                patch("aios.core.time.sleep") as sleep:
+            self.assertIs(core.request("/health", timeout=5), response)
+        self.assertEqual(opener.open.call_count, 2)
+        sleep.assert_called_once_with(core.LOCAL_CONNECT_RETRY_DELAY)
 
     def test_missing_model_rejected(self):
         with self.assertRaises(ValueError):
