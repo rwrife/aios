@@ -692,7 +692,7 @@ private:
         m_actionInFlight = false;
         m_navigationOperation = 0;
         m_navigationStarted = false;
-        m_expectedHistoryUrl = {};
+        m_expectedHistoryUrl = QUrl();
         m_operationTimer.start();
     }
 
@@ -707,7 +707,7 @@ private:
         m_actionInFlight = false;
         m_navigationOperation = 0;
         m_navigationStarted = false;
-        m_expectedHistoryUrl = {};
+        m_expectedHistoryUrl = QUrl();
         m_operationTimer.stop();
         respond(socket, QJsonObject{{"error", message}});
     }
@@ -801,7 +801,7 @@ private:
                 return;
             }
             m_navigationStarted = false;
-            m_expectedHistoryUrl = {};
+            m_expectedHistoryUrl = QUrl();
             respond(socket, value);
         });
     }
