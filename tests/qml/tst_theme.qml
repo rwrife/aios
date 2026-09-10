@@ -33,6 +33,11 @@ TestCase {
         var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
         verify(window !== null)
         window.show()
+        compare(findChild(window, "settingsWindowSurface").radius, palette.windowRadius)
+        compare(findChild(window, "settingsWindowTitle").font.pixelSize, 22)
+        compare(findChild(window, "settingsCloseButton").implicitWidth, 36)
+        compare(findChild(window, "settingsCloseButton").implicitHeight, 36)
+        compare(findChild(window, "settingsCloseButton").background.radius, 8)
         findChild(window, "settingsPages").currentIndex = 5
         wait(100)
         compare(palette.choices.length, 8)
@@ -44,7 +49,7 @@ TestCase {
         mouseClick(swatch)
         tryCompare(backend.config, "theme_color", "rose")
         tryVerify(function() { return String(palette.horizon) !== original })
-        compare(window.color, palette.panel)
+        compare(findChild(window, "settingsWindowSurface").color, palette.panel)
         verify(swatch.checked)
         verify(!choices.itemAt(0).checked)
         backend.configuring = true

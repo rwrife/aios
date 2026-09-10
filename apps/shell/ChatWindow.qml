@@ -16,7 +16,7 @@ Window {
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
     width: Math.min(740, Screen.width - 40); height: Math.min(650, Screen.height - 64)
     x: (Screen.width - width)/2; y: (Screen.height - height)/2
-    color: theme.panel
+    color: "transparent"
     signal minimized()
     signal removed()
     onVisibilityChanged: function() {
@@ -37,6 +37,13 @@ Window {
         conversation.cancelFlick(); conversation.followLatest = true
         session.send(composer.text); composer.clear(); conversation.scrollToLatest()
     }
+    Rectangle {
+        objectName: "chatWindowSurface"
+        anchors.fill: parent
+        color: theme.panel
+        radius: theme.windowRadius
+        border.color: theme.line
+    }
     component QuietButton: Button {
         id: button
         property string tip: text
@@ -50,15 +57,16 @@ Window {
         anchors.fill: parent; anchors.margins: 24; spacing: 10
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 56
+            Layout.preferredHeight: 44
             Item {
-                Layout.fillWidth: true; implicitHeight: 36
-                Text { text: "Chat"; color: theme.muted; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                WindowTitle { objectName: "chatWindowTitle"; anchors.fill: parent; theme: chat.theme; text: "Chat" }
                 MouseArea { anchors.fill: parent; onPressed: chat.startSystemMove() }
             }
-            QuietButton { text: "⋯"; tip: "Chat settings"; onClicked: options.open() }
-            QuietButton { text: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
-            QuietButton { text: "×"; tip: "Close this chat"; onClicked: chat.close() }
+            WindowControlButton { theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
+            WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
+            WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
         }
         UserBubble { id: userProfile; parent: chat.contentItem; anchors.top: parent.top; anchors.topMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; control: chat.profileControl; ink: theme.ink; surface: theme.input }
         Item {
@@ -177,7 +185,7 @@ Window {
         id: options; parent: chat.contentItem; anchors.centerIn: parent
         width: Math.min(490, parent.width - 24); height: Math.min(560, parent.height - 24)
         modal: true; padding: 20; closePolicy: Popup.CloseOnEscape
-        background: Rectangle { color: theme.panel; border.color: theme.line; radius: 10 }
+        background: Rectangle { color: theme.panel; border.color: theme.line; radius: theme.windowRadius }
         onOpened: { modelSettings.reload(); if (optionsTabs.currentIndex === 1) chatAccounts.refresh(); }
         contentItem: ColumnLayout {
             TabBar {

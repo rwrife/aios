@@ -10,11 +10,12 @@ Window {
     required property var theme
     required property var profileControl
     title: "Welcome to AIOS"
+    flags: Qt.Window | Qt.FramelessWindowHint
     width: Math.min(720, Screen.width - 32)
     height: Math.min(640, Screen.height - 48)
     minimumWidth: 440; minimumHeight: 360
     x: (Screen.width - width) / 2; y: (Screen.height - height) / 2
-    color: theme.panel
+    color: "transparent"
     property int step: 0
     property bool ownsOperation: false
     readonly property var steps: ["Welcome", "Internet", "Account", "Camera", "Models", "Ready"]
@@ -36,6 +37,13 @@ Window {
         target: backend
         function onChanged() { if (!backend.busy) wizard.ownsOperation = false }
     }
+    Rectangle {
+        objectName: "setupWindowSurface"
+        anchors.fill: parent
+        color: theme.panel
+        radius: theme.windowRadius
+        border.color: theme.line
+    }
     Shortcut { sequence: "Escape"; onActivated: wizard.close() }
     component Note: Text {
         Layout.fillWidth: true; wrapMode: Text.Wrap
@@ -52,8 +60,20 @@ Window {
         anchors.fill: parent; anchors.margins: 24; spacing: 16
         RowLayout {
             Layout.fillWidth: true
-            Text { text: wizard.steps[wizard.step]; color: theme.ink; font.pixelSize: 26; Layout.fillWidth: true }
-            Action { objectName: "closeSetup"; text: "Close setup"; onClicked: wizard.close() }
+            Layout.preferredHeight: 44
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                WindowTitle { objectName: "setupWindowTitle"; anchors.fill: parent; theme: wizard.theme; text: wizard.steps[wizard.step] }
+                MouseArea { anchors.fill: parent; onPressed: wizard.startSystemMove() }
+            }
+            WindowControlButton {
+                objectName: "closeSetup"
+                theme: wizard.theme
+                symbol: "\u00d7"
+                tip: "Close setup"
+                onClicked: wizard.close()
+            }
         }
         Note { text: "Step " + (wizard.step + 1) + " of " + wizard.steps.length + " · Every step is optional"; font.pixelSize: 12 }
         ScrollView {

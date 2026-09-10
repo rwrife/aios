@@ -17,6 +17,7 @@ TestCase {
         property color line: "#4c6574"
         property color night: "#101b27"
         property color horizon: "#354e60"
+        property real windowRadius: 16
     }
     QtObject {
         id: backend
