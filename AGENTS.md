@@ -64,6 +64,8 @@ repository.
   browser and terminal frames receive the same radius through Picom.
 - Use Picom's GLX renderer for native rounded frames: it redraws the border
   along the antialiased curve. XRender clipping alone leaves corner gaps.
+  Software-rendered desktops use the session's automatic XRender fallback:
+  software GLX can freeze the initial window pixmap, leaving a black desktop.
 - Disable damage-only repainting so newly opened software-rendered Qt
   surfaces do not remain blank under GLX.
 - Keep initial application windows below 75% of each screen dimension.

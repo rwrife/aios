@@ -12,7 +12,22 @@ if [ -f "$HOME/.screenlayout/default.sh" ]; then
 fi
 openbox &
 wm=$!
-picom --config /etc/xdg/picom.conf >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+# Software GLX can cache a window's initial (black) pixmap indefinitely.
+# Probe the actual renderer rather than assuming that a virtual GPU is accelerated.
+graphics_log="$HOME/.local/state/aios/graphics.log"
+backend=xrender
+if LC_ALL=C timeout 5 glxinfo -B >"$graphics_log" 2>&1; then
+    if grep -q 'OpenGL renderer string:' "$graphics_log" &&
+       ! grep -Eiq 'Accelerated: no|OpenGL renderer string:.*(llvmpipe|softpipe|swrast|software rasterizer)' "$graphics_log"; then
+        backend=glx
+    fi
+fi
+printf 'AIOS compositor: %s (renderer diagnostics: %s)\n' "$backend" "$graphics_log" >>"$HOME/.local/state/aios/compositor.log"
+if [ "$backend" = xrender ]; then
+    picom --config /etc/xdg/picom.conf --backend xrender --no-vsync >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+else
+    picom --config /etc/xdg/picom.conf >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+fi
 compositor=$!
 trap 'kill "$compositor" "$wm" 2>/dev/null || true' EXIT INT TERM
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on

@@ -26,6 +26,7 @@ DISK_PATH="${AIOS_VM_DISK:-$ROOT_DIR/.tmp-aios-live.qcow2}"
 DISK_SIZE="${AIOS_VM_DISK_SIZE:-64G}"
 MEM_MB="${AIOS_VM_MEM_MB:-16384}"
 CPU_COUNT="${AIOS_VM_CPUS:-4}"
+VM_NAME="${AIOS_VM_NAME:-AIOS-$(basename "$ISO_PATH" .iso)-$$}"
 CAMERA_BUS="${AIOS_VM_CAMERA_BUS:-}"
 CAMERA_ADDR="${AIOS_VM_CAMERA_ADDR:-}"
 if [ -n "$CAMERA_BUS$CAMERA_ADDR" ]; then
@@ -50,7 +51,7 @@ fi
 
 QEMU_ARGS=(
   qemu-system-x86_64
-  -name AIOS
+  -name "${VM_NAME//,/,,}"
   -m "$MEM_MB"
   -smp "$CPU_COUNT"
   -boot d
@@ -93,4 +94,5 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
+printf '[aios] Booting %s as %s\n' "$ISO_PATH" "$VM_NAME"
 exec "${QEMU_ARGS[@]}"

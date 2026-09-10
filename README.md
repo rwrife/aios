@@ -69,6 +69,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1
 # Choose another WSL distribution, or use the slower native Windows fallback:
 .\scripts\run.ps1 -Distro Ubuntu
 .\scripts\run.ps1 -Native
+# Give a preview a recognizable window title:
+.\scripts\run.ps1 -Name "AIOS boot fix"
 ```
 
 Both launchers select the newest ISO in `distro/alpine/out` when no path is given.
@@ -81,6 +83,8 @@ Intel HD Audio speakers and microphone, 16 GiB RAM, four CPUs, and a persistent
 64 GiB sparse disk at `.tmp-aios-live.qcow2`. The larger memory allocation also
 gives the RAM-backed live filesystem enough room for every curated model download.
 Existing disks are reused unchanged.
+Window titles include the selected image and a unique process ID by default;
+`-Name` on Windows or `AIOS_VM_NAME` overrides the title.
 Networking needs no bridge or administrator privileges; the guest sees wired
 Ethernet even when the host uses Wi-Fi. Inbound connections are not forwarded.
 Linux uses PulseAudio (including PipeWire's PulseAudio compatibility service);
@@ -102,7 +106,17 @@ launching or creating a disk with
 `.\scripts\run.ps1 C:\images\image.iso -DryRun`.
 
 For boot diagnostics, `AIOS_QEMU_SERIAL` accepts a QEMU serial destination
-(for WSL, use a Linux path, such as `file:/tmp/aios-boot.log`). If WSL audio
+in both WSL and native Windows mode (for WSL, use a Linux path, such as
+`file:/tmp/aios-boot.log`; for native mode, use `file:C:\Temp\aios-boot.log`).
+The guest probes its OpenGL renderer before starting the compositor. Accelerated
+renderers use GLX; software renderers and failed probes use XRender without
+vsync to avoid a black or frozen desktop. Rounded native window outlines can be
+less smooth with XRender. Renderer details and the selected backend are recorded
+in `~/.local/state/aios/graphics.log` and `compositor.log`.
+This fix is part of the guest image: rebuild the ISO, then launch that new image;
+updating the launcher alone cannot repair an older ISO.
+
+If WSL audio
 devices appear but playback hangs, check `timeout 5 pactl list short sinks`
 inside WSL. A timeout there indicates a WSLg audio-service problem, outside the
 guest; see [the upstream report](https://github.com/microsoft/wslg/issues/1482).

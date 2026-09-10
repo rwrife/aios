@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)][string]$IsoPath,
+    [string]$Name,
     [switch]$DryRun
 )
 
@@ -40,13 +41,16 @@ try {
     $diskSize = Get-Setting 'AIOS_VM_DISK_SIZE' '64G'
     $memory = Get-Setting 'AIOS_VM_MEM_MB' '16384'
     $cpuCount = Get-Setting 'AIOS_VM_CPUS' '4'
+    $vmName = if ($Name) { $Name } else {
+        Get-Setting 'AIOS_VM_NAME' "AIOS-$([IO.Path]::GetFileNameWithoutExtension($IsoPath))-$PID"
+    }
     $audioBackend = Get-Setting 'AIOS_QEMU_AUDIO' 'dsound'
     $accelerator = Get-Setting 'AIOS_QEMU_ACCEL' 'tcg'
     $qemu = 'qemu-system-x86_64.exe'
     if (-not $dry) { $qemu = Find-QemuTool 'qemu-system-x86_64' }
 
     $qemuArgs = @(
-        '-name', 'AIOS',
+        '-name', $vmName.Replace(',', ',,'),
         '-m', $memory, '-smp', $cpuCount,
         '-accel', $accelerator, '-cpu', 'max',
         '-boot', 'd', '-cdrom', $IsoPath,
@@ -62,9 +66,10 @@ try {
         $qemuArgs += @('-drive', "if=pflash,format=raw,readonly=on,file=$($env:AIOS_OVMF_CODE.Replace(',', ',,'))")
     }
     if ($env:AIOS_QEMU_HEADLESS -eq '1') {
-        $qemuArgs += @('-display', 'none', '-serial', 'mon:stdio')
+        $qemuArgs += @('-display', 'none', '-serial', (Get-Setting 'AIOS_QEMU_SERIAL' 'mon:stdio'))
     } else {
         $qemuArgs += @('-display', 'sdl,full-screen=off')
+        if ($env:AIOS_QEMU_SERIAL) { $qemuArgs += @('-serial', $env:AIOS_QEMU_SERIAL) }
     }
     if ($dry) {
         # Print a copyable PowerShell command, without creating a disk or starting QEMU.
@@ -76,6 +81,7 @@ try {
         & $qemuImg create -f qcow2 $diskPath $diskSize
         if ($LASTEXITCODE -ne 0) { throw "Could not create VM disk: $diskPath" }
     }
+    Write-Host "Booting $IsoPath as $vmName"
     & $qemu @qemuArgs
     exit $LASTEXITCODE
 } catch {
