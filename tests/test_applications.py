@@ -682,7 +682,8 @@ class ApplicationStoreTests(unittest.TestCase):
         )
 
     def test_invalid_or_unavailable_native_create_is_rejected(self):
-        with mock.patch.object(applications.shutil, "which", return_value=None):
+        with mock.patch.dict(os.environ, {"AIOS_APP_HOST": ""}), \
+                mock.patch.object(applications, "_is_regular_file", return_value=False):
             store = self._store()
         self.assertNotIn("runtime", store.definition()["function"]["parameters"]["properties"])
         for payload in (
@@ -698,6 +699,35 @@ class ApplicationStoreTests(unittest.TestCase):
         host = self._native_host("")
         with self.assertRaises(ValueError):
             ApplicationStore(root=Path(self.tmp.name) / "third", native_host=host, native_templates=("unknown",))
+
+    def test_default_native_host_uses_environment_override(self):
+        host = self._native_host("")
+        with mock.patch.dict(os.environ, {"AIOS_APP_HOST": str(host)}):
+            store = self._store()
+        self.assertEqual(store.native_host, host)
+        self.assertEqual(store.native_templates, NATIVE_TEMPLATES)
+        self.assertIn("runtime", store.definition()["function"]["parameters"]["properties"])
+
+    def test_default_native_host_path_absent_remains_web_only(self):
+        with mock.patch.dict(os.environ, {"AIOS_APP_HOST": ""}), \
+                mock.patch.object(applications, "_is_regular_file", return_value=False) as regular_file:
+            store = self._store()
+        self.assertEqual(store.native_host, Path("/usr/local/bin/aios-app-host"))
+        self.assertEqual(store.native_templates, ())
+        self.assertNotIn("runtime", store.definition()["function"]["parameters"]["properties"])
+        regular_file.assert_called_once_with(Path("/usr/local/bin/aios-app-host"))
+
+    def test_default_native_host_rejects_symlink_override(self):
+        host = self._native_host("")
+        link = Path(self.tmp.name) / "host-link"
+        try:
+            link.symlink_to(host)
+        except (OSError, NotImplementedError):
+            self.skipTest("environment cannot create symlinks")
+        with mock.patch.dict(os.environ, {"AIOS_APP_HOST": str(link)}):
+            store = self._store()
+        self.assertEqual(store.native_host, link)
+        self.assertEqual(store.native_templates, ())
 
     def test_injected_launcher_false_and_exception_are_structured(self):
         for launcher in (lambda _folder: False, lambda _folder: (_ for _ in ()).throw(RuntimeError("secret"))):

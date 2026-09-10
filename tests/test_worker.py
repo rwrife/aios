@@ -152,6 +152,35 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertEqual(source.count('rm -rf "$DEST/usr/local/share/aios/'), 2)
         self.assertTrue((ROOT / "apps/skills/application-builder/SKILL.md").is_file())
 
+    def test_native_host_has_fixed_resource_and_protocol(self):
+        source = self.read("apps/shell/app_host.cpp")
+        self.assertIn('QStringLiteral("qrc:/AppHost.qml")', source)
+        self.assertIn('QByteArrayLiteral("calculator")', source)
+        self.assertIn('"ready\\n"', source)
+        self.assertNotIn("AIOS_APP_TEMPLATE) +", source)
+        self.assertNotIn("argv[1]", source)
+
+    def test_calculator_avoids_dynamic_or_external_code(self):
+        source = self.read("apps/shell/AppHost.qml")
+        for forbidden in ("eval(", "Function(", "Loader", "XmlHttpRequest", "WebSocket"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+        self.assertIn("textFormat: Text.PlainText", source)
+        self.assertIn("function press(key)", source)
+        self.assertIn("function reset()", source)
+
+    def test_cmake_builds_resources_and_installs_host(self):
+        source = self.read("apps/shell/CMakeLists.txt")
+        self.assertIn("qt_add_executable(aios-app-host app_host.cpp)", source)
+        self.assertIn("qt_add_resources(aios-app-host app_host_ui", source)
+        self.assertIn("AppHost.qml", source)
+        self.assertIn("install(TARGETS aios-shell aios-app-host RUNTIME DESTINATION bin)", source)
+
+    def test_preview_exports_built_native_host(self):
+        source = self.read("scripts/preview-chat.sh")
+        self.assertIn("cmake --build /preview-build --target aios-shell aios-app-host", source)
+        self.assertIn("export AIOS_APP_HOST=/preview-build/aios-app-host", source)
+
 
 if __name__ == "__main__":
     unittest.main()

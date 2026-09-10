@@ -372,7 +372,10 @@ class ApplicationStore:
         self.root = self.root.expanduser()
         _ensure_secure_directory(self.root)
         self.launcher = launcher
-        discovered_host = shutil.which("aios-app-host") if native_host is None else os.fspath(native_host)
+        if native_host is None:
+            discovered_host = os.environ.get("AIOS_APP_HOST") or "/usr/local/bin/aios-app-host"
+        else:
+            discovered_host = os.fspath(native_host)
         self.native_host = Path(discovered_host).expanduser() if discovered_host else None
         host_available = self.native_host is not None and _is_regular_file(self.native_host) and os.access(self.native_host, os.X_OK)
         if native_templates is None:
