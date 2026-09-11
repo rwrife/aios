@@ -213,6 +213,40 @@ TestCase {
         compare(findChild(desktop, "powerDialog").background.radius, palette.windowRadius)
     }
 
+    function test_desktop_clock_matches_wordmark() {
+        createDesktop()
+        var wordmark = findChild(desktop, "desktopWordmark")
+        var clock = findChild(desktop, "desktopClock")
+        verify(wordmark !== null)
+        verify(clock !== null)
+        verify(/^\d\d:\d\d$/.test(clock.text))
+        compare(clock.color, wordmark.color)
+        compare(clock.opacity, wordmark.opacity)
+        compare(clock.font.pixelSize, wordmark.font.pixelSize)
+        compare(clock.font.letterSpacing, wordmark.font.letterSpacing)
+        fuzzyCompare(clock.y, wordmark.y, 0.1)
+        fuzzyCompare(clock.x + clock.width, desktop.width - 48, 0.1)
+    }
+
+    function test_desktop_controls_are_faded_until_hovered() {
+        createDesktop()
+        var settings = findChild(desktop, "desktopSettingsButton")
+        var terminal = findChild(desktop, "desktopTerminalButton")
+        var volume = findChild(desktop, "volumeButton")
+        var power = findChild(desktop, "desktopPowerButton")
+        verify(settings !== null)
+        verify(terminal !== null)
+        verify(volume !== null)
+        verify(power !== null)
+        compare(settings.opacity, 0.65)
+        compare(terminal.opacity, 0.65)
+        compare(volume.opacity, 0.65)
+        compare(power.opacity, 0.65)
+
+        mouseMove(settings, settings.width / 2, settings.height / 2)
+        tryCompare(settings, "opacity", 1)
+    }
+
     function test_power_actions_are_balanced_and_prominent() {
         createDesktop()
         var dialog = findChild(desktop, "powerDialog")

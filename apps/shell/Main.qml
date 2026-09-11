@@ -19,6 +19,7 @@ Window {
     property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
     property var minimizedChats: []
     readonly property int minimizedChatCount: minimizedChats.length
+    property date currentTime: new Date()
     Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backendApi.config.reduced_motion === true
@@ -102,6 +103,12 @@ Window {
         running: !desktop.reducedMotion && desktop.visible
         onTriggered: waves.requestPaint()
     }
+    Timer {
+        interval: 1000
+        repeat: true
+        running: desktop.visible
+        onTriggered: desktop.currentTime = new Date()
+    }
     Rectangle { anchors.fill: parent; gradient: Gradient {
         GradientStop { position: 0; color: theme.night }
         GradientStop { position: 0.68; color: theme.horizon }
@@ -152,7 +159,27 @@ Window {
             }
         }
     }
-    Text { x: 48; y: 36; text: "aios"; color: theme.ink; opacity: 0.65; font.pixelSize: 22; font.letterSpacing: 4 }
+    Text {
+        id: wordmark
+        objectName: "desktopWordmark"
+        x: 48
+        y: 36
+        text: "aios"
+        color: theme.ink
+        opacity: 0.65
+        font.pixelSize: 22
+        font.letterSpacing: 4
+    }
+    Text {
+        objectName: "desktopClock"
+        anchors.right: parent.right
+        anchors.rightMargin: 48
+        y: wordmark.y
+        text: Qt.formatTime(desktop.currentTime, "hh:mm")
+        color: wordmark.color
+        opacity: wordmark.opacity
+        font: wordmark.font
+    }
     Loader {
         x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
         active: displayBridgeApi.enabled && sessionControlApi.embeddedDisplay
@@ -184,7 +211,12 @@ Window {
     }
     Row {
         anchors.right: parent.right; anchors.rightMargin: 32; anchors.verticalCenter: launcher.verticalCenter; spacing: 12
-        QuietButton { tip: "Settings"; implicitWidth: 44; onClicked: desktop.openSettings()
+        QuietButton {
+            objectName: "desktopSettingsButton"
+            tip: "Settings"
+            implicitWidth: 44
+            fadesWhenIdle: true
+            onClicked: desktop.openSettings()
             contentItem: Canvas { onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
                 for (var i = 0; i < 3; i++) {
@@ -194,12 +226,19 @@ Window {
                 }
             } }
         }
-        QuietButton { text: ">_"; tip: "Terminal"; onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal() }
+        QuietButton {
+            objectName: "desktopTerminalButton"
+            text: ">_"
+            tip: "Terminal"
+            fadesWhenIdle: true
+            onClicked: sessionControlApi.enabled ? sessionControlApi.launch("terminal") : backendApi.terminal()
+        }
         QuietButton {
             id: volumeButton
             objectName: "volumeButton"
             tip: backendApi.volumeAvailable ? (backendApi.muted ? "Volume muted" : "Volume · " + backendApi.volume + "%") : "Volume"
             implicitWidth: 44
+            fadesWhenIdle: true
             onClicked: volumePopup.open()
             contentItem: SpeakerIcon {
                 muted: backendApi.muted
@@ -207,7 +246,12 @@ Window {
                 glyphObjectName: "volumeButtonGlyph"
             }
         }
-        QuietButton { tip: "Power"; implicitWidth: 44; onClicked: powerDialog.open()
+        QuietButton {
+            objectName: "desktopPowerButton"
+            tip: "Power"
+            implicitWidth: 44
+            fadesWhenIdle: true
+            onClicked: powerDialog.open()
             contentItem: Canvas { implicitWidth: 20; implicitHeight: 20; onPaint: {
                 var c = getContext("2d"); c.reset(); c.strokeStyle = theme.ink; c.lineWidth = 1.5;
                 c.beginPath(); c.arc(width/2, height/2, 7, -Math.PI/3, Math.PI*4/3); c.stroke();
@@ -219,8 +263,10 @@ Window {
         id: control
         property string tip: text
         property bool outlined: false
+        property bool fadesWhenIdle: false
         Accessible.name: tip
         hoverEnabled: true
+        opacity: fadesWhenIdle && !hovered && !activeFocus && !down ? 0.65 : 1
         implicitWidth: Math.max(44, implicitContentWidth + 24); implicitHeight: 44
         contentItem: Text { text: control.text; color: control.enabled ? theme.ink : theme.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 16 }
         background: Rectangle {
@@ -229,6 +275,7 @@ Window {
             border.width: control.activeFocus ? 2 : control.outlined ? 1 : 0
             border.color: control.activeFocus ? theme.accent : theme.line
         }
+        Behavior on opacity { NumberAnimation { duration: desktop.reducedMotion ? 0 : 120 } }
         ToolTip.visible: hovered || activeFocus; ToolTip.text: tip; ToolTip.delay: activeFocus ? 0 : 700
     }
     component SpeakerIcon: Item {
