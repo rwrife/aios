@@ -20,7 +20,7 @@ from aios.applications import ApplicationStore
 from aios.toolhost import ToolHost, close_service, list_tools, serve
 
 
-USER_REQUEST = "I need a calculator"
+USER_REQUEST = "create a calculator application"
 APP_TITLE = "Calculator"
 APP_SUMMARY = "A trusted native calculator for basic arithmetic."
 APP_KEYWORDS = ["arithmetic", "calculator", "native"]
@@ -150,6 +150,9 @@ class _ModelState:
         _require("Inspect the advertised `application` tool schema" in prompt, "Schema inspection instructions were absent.")
         _require("trusted native `calculator` template" in prompt, "Native calculator instructions were absent.")
         _require("self-contained `index.html`" in prompt, "Web fallback instructions were absent.")
+        _require("finish by launching it in the same turn" in prompt, "Base launch policy was absent.")
+        _require("Publication is optional and separate" in prompt, "Optional publication instructions were absent.")
+        _require('`template: "calculator"`, then `launch`' in prompt, "Direct native launch instructions were absent.")
         application_tools = [
             tool for tool in body["tools"]
             if tool.get("function", {}).get("name") == "application"
@@ -220,24 +223,10 @@ class _ModelState:
                 _require(result.get("runtime") == "native", "Create did not return the native runtime.")
                 _require(result.get("template") == "calculator", "Create did not return the calculator template.")
                 self.application_id = app_id
-                arguments = {
-                    "action": "publish",
-                    "id": self.application_id,
-                    "summary": APP_SUMMARY,
-                    "keywords": APP_KEYWORDS,
-                }
-                self.actions[run].append(arguments)
-                return _tool_call("run1-publish", arguments), "tool_calls"
-            if tool_count == 3:
-                result = self._latest_result(body, "run1-publish")
-                _require(result.get("published") is True, f"Publish failed: {result!r}")
-                _require(result.get("id") == self.application_id, "Publish returned the wrong application ID.")
-                _require(result.get("runtime") == "native", "Publish did not preserve the native runtime.")
-                _require(result.get("template") == "calculator", "Publish did not preserve the calculator template.")
                 arguments = {"action": "launch", "id": self.application_id}
                 self.actions[run].append(arguments)
                 return _tool_call("run1-launch", arguments), "tool_calls"
-            if tool_count == 4:
+            if tool_count == 3:
                 result = self._latest_result(body, "run1-launch")
                 _require(result.get("launched") is True, f"Launch failed: {result!r}")
                 _require(result.get("id") == self.application_id, "Launch returned the wrong application ID.")
@@ -340,7 +329,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
         self.assertTrue(any(event.get("type") == "token" for event in events))
         return events
 
-    def test_real_worker_builds_then_reuses_cached_calculator(self):
+    def test_real_worker_launches_draft_then_reuses_explicitly_published_calculator(self):
         scratch = ROOT / "tmp"
         scratch.mkdir(exist_ok=True)
         temp_path = None
@@ -428,7 +417,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                         time.sleep(0.02)
                 self.assertEqual(
                     [tool["function"]["name"] for tool in listed["tools"]],
-                    ["browser", "application"],
+                    ["browser", "application", "os_settings"],
                 )
                 self.assertEqual(listed["warnings"], [])
 
@@ -438,7 +427,6 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                     [
                         "Application: search",
                         "Application: create",
-                        "Application: publish",
                         "Application: launch",
                     ],
                 )
@@ -448,12 +436,19 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     [action["action"] for action in state.actions[1]],
-                    ["search", "create", "publish", "launch"],
+                    ["search", "create", "launch"],
                 )
 
                 self.assertIsNotNone(state.application_id)
                 app_folder = application_root / state.application_id
                 self.assertNotEqual(app_folder, legacy_folder)
+                self.assertEqual({path.name for path in app_folder.iterdir()}, {".draft.json"})
+                self.assertEqual(launched[0].name, state.application_id)
+                self.assertNotEqual(launched[0], app_folder)
+                self.assertFalse(launched[0].exists())
+                self.assertEqual(len(store.search({"query": USER_REQUEST})), 1)
+                # Publication is a separate explicit action, not part of the app request.
+                store.publish({"id": state.application_id, "summary": APP_SUMMARY, "keywords": APP_KEYWORDS})
                 self.assertEqual({path.name for path in app_folder.iterdir()}, {"manifest.json"})
                 manifest_path = app_folder / "manifest.json"
                 manifest_bytes = manifest_path.read_bytes()
@@ -469,7 +464,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                 self.assertFalse((app_folder / "index.html").exists())
                 self.assertFalse((app_folder / ".draft.json").exists())
                 self.assertFalse(any(path.name.endswith((".tmp", ".temp")) for path in app_folder.iterdir()))
-                self.assertEqual(launched, [app_folder])
+                self.assertEqual(len(launched), 1)
                 before = (manifest_bytes, manifest_path.stat().st_mtime_ns)
 
                 second_events = self._events(self._run_worker(env, tool_socket))
@@ -501,9 +496,10 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                     (manifest_path.read_bytes(), manifest_path.stat().st_mtime_ns),
                     before,
                 )
-                self.assertEqual(launched, [app_folder, app_folder])
+                self.assertEqual(len(launched), 2)
+                self.assertEqual(launched[1], app_folder)
                 self.assertEqual(state.completed_runs, 2)
-                self.assertEqual(len(state.requests), 8)
+                self.assertEqual(len(state.requests), 7)
                 self.assertEqual(state.errors, [], "\n".join(state.errors))
                 self.assertEqual(browser.calls, [])
                 self.assertEqual(mcp.calls, [])

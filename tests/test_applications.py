@@ -47,7 +47,9 @@ class ApplicationStoreTests(unittest.TestCase):
         self.root = Path(self.tmp.name) / "applications"
 
     def _store(self, launcher=None, **kwargs):
-        return ApplicationStore(root=self.root, launcher=launcher, **kwargs)
+        store = ApplicationStore(root=self.root, launcher=launcher, **kwargs)
+        self.addCleanup(store.close)
+        return store
 
     def _native_host(self, body):
         path = Path(self.tmp.name) / "aios-app-host"
@@ -107,6 +109,176 @@ class ApplicationStoreTests(unittest.TestCase):
         second = application_tool(("calculator",))
         self.assertNotIn("bad", APPLICATION_TOOL["function"]["parameters"]["properties"]["action"]["enum"])
         self.assertEqual(second["function"]["parameters"]["properties"]["template"]["enum"], ["calculator"])
+
+    def test_draft_web_launch_uses_validated_snapshot_without_publishing(self):
+        from aios.app_runner import load_document
+
+        launched = []
+        html = "<!doctype html><title>Draft</title>"
+
+        def launch(folder):
+            launched.append(folder)
+            self.assertNotEqual(folder.parent, self.root)
+            self.assertEqual(load_document(folder), html)
+            self.assertEqual({path.name for path in folder.iterdir()}, {"manifest.json", "index.html"})
+            self.assertEqual(stat.S_IMODE(folder.stat().st_mode), 0o700)
+            return True
+
+        store = self._store(launcher=launch)
+        app = store.create({"title": "Draft", "request": "Create a draft app"})
+        store.write({"id": app["id"], "html": html})
+        self.assertTrue(store.launch({"id": app["id"]})["launched"])
+        self.assertEqual(launched[0].name, app["id"])
+        self.assertFalse(launched[0].exists())
+        folder = self.root / app["id"]
+        self.assertEqual({path.name for path in folder.iterdir()}, {".draft.json", "index.html"})
+        self.assertEqual(store.search({"query": "Create a draft app"}), [])
+        store.write({"id": app["id"], "html": "<!doctype html><title>Edited</title>"})
+        self.assertTrue(store.publish({"id": app["id"], "summary": "Edited app", "keywords": ["draft"]})["published"])
+        self.assertEqual(store.search({"query": "Create a draft app"})[0]["id"], app["id"])
+
+    def test_draft_native_launch_remains_unpublished_until_explicit_publish(self):
+        launched = []
+
+        def launch(folder):
+            launched.append(folder)
+            self.assertEqual({path.name for path in folder.iterdir()}, {"manifest.json"})
+            self.assertEqual(_read_json(folder / "manifest.json")["template"], "calculator")
+            return True
+
+        store = self._store(launcher=launch, native_host=self._native_host(""))
+        app = store.create({
+            "title": "Calculator", "request": "create a calculator application",
+            "runtime": "native", "template": "calculator",
+        })
+        self.assertTrue(store.launch({"id": app["id"]})["launched"])
+        self.assertEqual(len(launched), 1)
+        self.assertFalse(launched[0].exists())
+        self.assertEqual({path.name for path in (self.root / app["id"]).iterdir()}, {".draft.json"})
+        self.assertEqual(store.search({"query": "calculator"}), [])
+        self.assertTrue(store.publish({"id": app["id"], "summary": "Calculator", "keywords": ["calculator"]})["published"])
+
+    def test_draft_launch_rejects_missing_html_and_unexpected_files(self):
+        launcher = mock.Mock()
+        store = self._store(launcher=launcher)
+        app = store.create({"title": "Invalid", "request": "Create an app"})
+        with self.assertRaisesRegex(ValueError, "Write the HTML"):
+            store.launch({"id": app["id"]})
+        store.write({"id": app["id"], "html": "<!doctype html><title>Draft</title>"})
+        (self.root / app["id"] / "extra.js").write_text("invalid", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            store.launch({"id": app["id"]})
+        launcher.assert_not_called()
+
+    def test_failed_draft_launch_removes_snapshot_and_preserves_draft(self):
+        folders = []
+        store = self._store(launcher=lambda folder: folders.append(folder) or False)
+        app = store.create({"title": "Fail", "request": "Create a failing app"})
+        store.write({"id": app["id"], "html": "<!doctype html><title>Draft</title>"})
+        result = store.launch({"id": app["id"]})
+        self.assertFalse(result["launched"])
+        self.assertEqual(result["reason"], applications.LAUNCH_FAILURE_REASON)
+        self.assertFalse(folders[0].parent.exists())
+        self.assertTrue((self.root / app["id"] / ".draft.json").exists())
+
+    @unittest.skipUnless(os.name == "posix", "chat-owned process groups require POSIX")
+    def test_chat_close_reaps_native_and_web_apps_without_affecting_other_chat(self):
+        from aios.toolhost import ToolHost
+
+        host_binary = self._native_host("""
+            import os, time
+            os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
+            os.close(int(os.environ["AIOS_APP_READY_FD"]))
+            time.sleep(30)
+        """)
+        chromium = self._write_executable("chromium", """
+            import os, sys, time
+            from urllib.request import urlopen
+            url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app="))
+            urlopen(url + "app", timeout=5).read()
+            time.sleep(30)
+        """)
+        env = {
+            "PATH": str(chromium.parent) + os.pathsep + os.environ.get("PATH", ""),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "apps"),
+        }
+        stores = [self._store(native_host=host_binary, launch_timeout=5) for _ in range(2)]
+        hosts = [ToolHost(browser=mock.Mock(), applications=store, mcp=mock.Mock()) for store in stores]
+        for host in hosts:
+            self.addCleanup(host.close)
+        with mock.patch.dict(os.environ, env):
+            for runtime in ("native", "web"):
+                payload = {"title": "Owned", "request": "Create an owned app", "runtime": runtime}
+                if runtime == "native":
+                    payload["template"] = "calculator"
+                app = stores[0].create(payload)
+                if runtime == "web":
+                    stores[0].write({"id": app["id"], "html": "<!doctype html><title>Owned</title>"})
+                for host in hosts:
+                    self.assertTrue(host.call("application", {"action": "launch", "id": app["id"]})["launched"])
+        children = [list(store._processes.items()) for store in stores]
+        for group in children:
+            self.assertEqual(len(group), 2)
+            for process, snapshot in group:
+                self.assertIsNone(process.poll())
+                self.assertTrue(Path(snapshot.name).exists())
+        hosts[0].close()
+        for process, snapshot in children[0]:
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(Path(snapshot.name).exists())
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(process.pid, 0)
+        for process, snapshot in children[1]:
+            self.assertIsNone(process.poll())
+            self.assertTrue(Path(snapshot.name).exists())
+        hosts[1].close()
+        for process, snapshot in children[1]:
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(Path(snapshot.name).exists())
+        with self.assertRaisesRegex(RuntimeError, "closed"):
+            stores[0].launch({"id": app["id"]})
+        self.assertTrue((self.root / app["id"] / ".draft.json").exists())
+
+    @unittest.skipUnless(os.name == "posix", "launch and shutdown races require POSIX")
+    def test_close_during_spawn_or_readiness_cannot_orphan_app(self):
+        host = self._native_host("import time\ntime.sleep(30)\n")
+        real_popen = subprocess.Popen
+        for stage in ("spawn", "readiness"):
+            with self.subTest(stage=stage):
+                store = self._store(native_host=host, launch_timeout=30)
+                app = store.create({
+                    "title": "Race", "request": "Create a calculator",
+                    "runtime": "native", "template": "calculator",
+                })
+                spawned = Event()
+                proceed = Event()
+                processes = []
+                results = []
+
+                def popen(*args, **kwargs):
+                    process = real_popen(*args, **kwargs)
+                    processes.append(process)
+                    spawned.set()
+                    if stage == "spawn":
+                        self.assertTrue(proceed.wait(5))
+                    return process
+
+                with mock.patch.object(applications.subprocess, "Popen", side_effect=popen):
+                    launch = Thread(target=lambda: results.append(store.launch({"id": app["id"]})))
+                    launch.start()
+                    self.assertTrue(spawned.wait(5))
+                    close = Thread(target=store.close)
+                    close.start()
+                    self.assertTrue(store._closed.wait(2))
+                    proceed.set()
+                    launch.join(5)
+                    close.join(5)
+                self.assertFalse(launch.is_alive())
+                self.assertFalse(close.is_alive())
+                self.assertEqual(len(results), 1)
+                self.assertFalse(results[0]["launched"])
+                self.assertIsNotNone(processes[0].poll())
+                self.assertEqual(store._processes, {})
 
     def test_create_write_publish_search_launch_happy_path(self):
         launched = []
@@ -901,6 +1073,24 @@ class ApplicationStoreTests(unittest.TestCase):
                 ])
                 proc.wait.assert_called()
 
+    def test_ready_message_from_exited_process_is_not_launch_success(self):
+        store = self._store(launch_timeout=1)
+        app = store.create({"title": "Exited", "request": "Create an app"})
+        store.write({"id": app["id"], "html": "<!doctype html><title>Exited</title>"})
+        process = mock.Mock(pid=4321)
+        process.poll.return_value = 1
+        selector = mock.Mock()
+        selector.select.return_value = [object()]
+        with mock.patch.object(applications.os, "name", "posix"), \
+                mock.patch.object(applications.subprocess, "Popen", return_value=process), \
+                mock.patch.object(applications.selectors, "DefaultSelector", return_value=selector), \
+                mock.patch.object(applications.os, "read", return_value=b"ready\n"), \
+                mock.patch.object(applications.os, "killpg", create=True):
+            result = store.launch({"id": app["id"]})
+        self.assertFalse(result["launched"])
+        self.assertEqual(result["reason"], applications.LAUNCH_FAILURE_REASON)
+        self.assertEqual(store._processes, {})
+
     def test_default_launcher_cancellation_and_reaper_failure_terminate_child(self):
         class Selector:
             def __init__(self, error=None):
@@ -957,9 +1147,10 @@ class ApplicationStoreTests(unittest.TestCase):
     def test_verified_native_launcher_ready_exit_and_timeout(self):
         cases = {
             "ready": """
-                import os
+                import os, time
                 os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
                 os.close(int(os.environ["AIOS_APP_READY_FD"]))
+                time.sleep(30)
             """,
             "exit": "pass\n",
             "timeout": """
@@ -993,6 +1184,7 @@ class ApplicationStoreTests(unittest.TestCase):
                     elapsed = time.monotonic() - started
                 self.assertEqual(result["launched"], name == "ready")
                 self.assertLess(elapsed, 2)
+                store.close()
                 if name == "timeout":
                     pid = int(pid_file.read_text(encoding="utf-8"))
                     with self.assertRaises(ProcessLookupError):
@@ -1002,7 +1194,7 @@ class ApplicationStoreTests(unittest.TestCase):
     def test_native_launcher_uses_fixed_argv_and_environment(self):
         capture = Path(self.tmp.name) / "capture.json"
         host = self._native_host("""
-            import json, os, sys
+            import json, os, sys, time
             with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
                 json.dump({
                     "argv": sys.argv,
@@ -1011,6 +1203,7 @@ class ApplicationStoreTests(unittest.TestCase):
                 }, stream)
             os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
             os.close(int(os.environ["AIOS_APP_READY_FD"]))
+            time.sleep(30)
         """)
         with mock.patch.dict(os.environ, {"AIOS_TEST_CAPTURE": str(capture)}):
             store = self._store(native_host=host, native_templates=("calculator",))

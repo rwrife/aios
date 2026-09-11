@@ -40,7 +40,12 @@ APPLICATION_TOOL = {
     "type": "function",
     "function": {
         "name": "application",
-        "description": "Create, store, search, publish, and launch cached desktop applications, with sandboxed single-file HTML fallback.",
+        "description": (
+            "Create and launch desktop applications for this chat, with sandboxed single-file HTML fallback. "
+            "For an app creation request, create then launch (write HTML first for web apps) in the same turn. "
+            "Drafts can launch without publishing. Publish only when the user explicitly requests publication "
+            "to the reusable cache. Launched apps close when this chat stops or closes."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -400,6 +405,9 @@ class ApplicationStore:
             raise ValueError("Choose a valid application launch timeout.") from None
         if self.launch_timeout < 0 or not math.isfinite(self.launch_timeout):
             raise ValueError("Choose a valid application launch timeout.")
+        self._lifecycle_lock = threading.RLock()
+        self._closed = threading.Event()
+        self._processes: dict[subprocess.Popen[Any], tempfile.TemporaryDirectory | None] = {}
 
     def definition(self) -> dict[str, Any]:
         return application_tool(self.native_templates)
@@ -505,6 +513,19 @@ class ApplicationStore:
             raise ValueError("Keep the keyword list to 20 items or fewer.")
         summary = _normalize_summary(summary_value)
         keywords = _normalize_keywords(keywords_value)
+        manifest, _ = self._build_manifest(folder, draft, summary, keywords)
+        _atomic_write_json(folder / "manifest.json", manifest)
+        (folder / ".draft.json").unlink(missing_ok=True)
+        result: dict[str, Any] = {"published": True, "id": draft["id"], "runtime": draft["runtime"]}
+        if draft["runtime"] == "native":
+            result["template"] = manifest["template"]
+        else:
+            result["sha256"] = manifest["sha256"]
+        return result
+
+    def _build_manifest(
+        self, folder: Path, draft: dict[str, Any], summary: str, keywords: list[str],
+    ) -> tuple[dict[str, Any], bytes | None]:
         manifest = {
             "id": draft["id"],
             "title": draft["title"],
@@ -515,22 +536,21 @@ class ApplicationStore:
             "keywords": keywords,
             "runtime": draft["runtime"],
         }
-        result: dict[str, Any] = {"published": True, "id": draft["id"], "runtime": draft["runtime"]}
+        html_bytes = None
         if draft["runtime"] == "native":
             manifest["template"] = draft["template"]
-            result["template"] = draft["template"]
         else:
             index = folder / "index.html"
             if not _is_regular_file(index):
-                raise ValueError("Write the HTML document before publishing.")
+                raise ValueError("Write the HTML document before launching or publishing.")
             try:
                 html_bytes = _read_regular_file_bytes(index, MAX_HTML_BYTES)
             except FileNotFoundError as error:
-                raise ValueError("Write the HTML document before publishing.") from error
+                raise ValueError("Write the HTML document before launching or publishing.") from error
             except ValueError as error:
                 if str(error) == "The file is too large.":
                     raise ValueError("The HTML document is too large.") from error
-                raise ValueError("Write the HTML document before publishing.") from error
+                raise ValueError("Write the HTML document before launching or publishing.") from error
             try:
                 if not DOCTYPE_RE.match(html_bytes.decode("utf-8")):
                     raise ValueError("HTML must start with <!doctype html>.")
@@ -538,10 +558,7 @@ class ApplicationStore:
                 raise ValueError("The HTML document is not valid UTF-8.") from error
             sha256 = _sha256_bytes(html_bytes)
             manifest.update({"entrypoint": "index.html", "sha256": sha256})
-            result["sha256"] = sha256
-        _atomic_write_json(folder / "manifest.json", manifest)
-        (folder / ".draft.json").unlink(missing_ok=True)
-        return result
+        return manifest, html_bytes
 
     def search(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         query = payload.get("query")
@@ -589,21 +606,45 @@ class ApplicationStore:
         ]
 
     def launch(self, payload: dict[str, Any]) -> dict[str, Any]:
-        folder = self._published_folder(payload)
+        with self._lifecycle_lock:
+            if self._closed.is_set():
+                raise RuntimeError("This chat's application service is closed.")
+            return self._launch(payload)
+
+    def _launch(self, payload: dict[str, Any]) -> dict[str, Any]:
+        folder = self._existing_folder(payload)
         manifest = self._load_manifest(folder)
+        html_bytes = None
+        is_draft = manifest is None
         if manifest is None:
-            raise ValueError("Publish the application before launching it.")
+            folder = self._draft_folder(payload)
+            draft = self._load_draft(folder)
+            manifest, html_bytes = self._build_manifest(folder, draft, draft["title"], [])
         if manifest["runtime"] == "native":
             if manifest["template"] not in self.native_templates or self.native_host is None:
                 raise ValueError("This native application template is not available.")
         success = False
+        snapshot = None
         try:
+            if is_draft:
+                # Keep runner integrity checks unchanged and leave the editable draft unpublished.
+                snapshot = tempfile.TemporaryDirectory(prefix="aios-application-")
+                folder = Path(snapshot.name) / manifest["id"]
+                folder.mkdir(mode=0o700)
+                if html_bytes is not None:
+                    _atomic_write_bytes(folder / "index.html", html_bytes)
+                _atomic_write_json(folder / "manifest.json", manifest)
             if self.launcher is not None:
                 success = self.launcher(folder) is not False
             else:
-                success = self._default_launcher(folder, manifest)
+                success = self._default_launcher(folder, manifest, snapshot)
+                if success:
+                    snapshot = None
         except Exception:
             success = False
+        finally:
+            if snapshot is not None:
+                snapshot.cleanup()
         result: dict[str, Any] = {
             "launched": success,
             "id": manifest["id"],
@@ -616,7 +657,9 @@ class ApplicationStore:
             result["reason"] = LAUNCH_FAILURE_REASON
         return result
 
-    def _default_launcher(self, folder: Path, manifest: dict[str, Any]) -> bool:
+    def _default_launcher(
+        self, folder: Path, manifest: dict[str, Any], snapshot: tempfile.TemporaryDirectory | None = None,
+    ) -> bool:
         if os.name != "posix":
             return False
         if manifest["runtime"] == "native":
@@ -627,6 +670,8 @@ class ApplicationStore:
         process = None
         owns_process = False
         try:
+            if self._closed.is_set():
+                return False
             if manifest["runtime"] == "native":
                 command = [os.fspath(self.native_host)]
                 environment = os.environ.copy()
@@ -666,10 +711,12 @@ class ApplicationStore:
                     selector.register(read_fd, selectors.EVENT_READ)
                     deadline = time.monotonic() + self.launch_timeout
                     received = b""
-                    while time.monotonic() < deadline:
-                        events = selector.select(max(0, deadline - time.monotonic()))
+                    while time.monotonic() < deadline and not self._closed.is_set():
+                        events = selector.select(min(0.1, max(0, deadline - time.monotonic())))
                         if not events:
-                            break
+                            if process.poll() is not None:
+                                break
+                            continue
                         chunk = os.read(read_fd, 64)
                         if not chunk:
                             break
@@ -684,9 +731,10 @@ class ApplicationStore:
             finally:
                 os.close(read_fd)
                 read_fd = -1
-            if not ready:
+            if not ready or self._closed.is_set() or process.poll() is not None:
                 return False
-            threading.Thread(target=process.wait, name="aios-app-reaper", daemon=True).start()
+            self._processes[process] = snapshot
+            threading.Thread(target=self._reap_child, args=(process,), name="aios-app-reaper", daemon=True).start()
             owns_process = False
             return True
         except Exception:
@@ -703,7 +751,39 @@ class ApplicationStore:
                 except OSError:
                     pass
             if owns_process and process is not None:
+                self._processes.pop(process, None)
                 self._terminate_child(process)
+
+    def _reap_child(self, process: subprocess.Popen[Any]) -> None:
+        process.wait()
+        with self._lifecycle_lock:
+            if process not in self._processes:
+                return
+            snapshot = self._processes.pop(process)
+            self._close_child(process, snapshot)
+
+    def _close_child(self, process: subprocess.Popen[Any], snapshot: tempfile.TemporaryDirectory | None) -> None:
+        try:
+            self._terminate_child(process)
+        finally:
+            if snapshot is not None:
+                snapshot.cleanup()
+
+    def close(self) -> None:
+        # Interrupt readiness before taking the lock held by launch, including during Popen.
+        self._closed.set()
+        with self._lifecycle_lock:
+            processes = self._processes
+            self._processes = {}
+            threads = []
+            for process, snapshot in processes.items():
+                thread = threading.Thread(
+                    target=self._close_child, args=(process, snapshot), name="aios-app-close",
+                )
+                thread.start()
+                threads.append(thread)
+            for thread in threads:
+                thread.join()
 
     @staticmethod
     def _terminate_child(process: subprocess.Popen[Any]) -> None:
@@ -758,12 +838,6 @@ class ApplicationStore:
         draft = self._load_draft(folder)
         allowed = {".draft.json", "index.html"} if draft["runtime"] == "web" else {".draft.json"}
         self._validate_folder_contents(folder, allowed)
-        return folder
-
-    def _published_folder(self, payload: dict[str, Any]) -> Path:
-        folder = self._existing_folder(payload)
-        if not _is_regular_file(folder / "manifest.json"):
-            raise ValueError("This application is not published.")
         return folder
 
     def _load_draft(self, folder: Path) -> dict[str, Any]:
