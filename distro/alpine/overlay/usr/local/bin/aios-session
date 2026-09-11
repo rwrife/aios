@@ -1,9 +1,14 @@
 #!/bin/sh
 set -eu
 
-runtime_parent="${XDG_RUNTIME_DIR:-/tmp}"
-[ -d "$runtime_parent" ] && [ -w "$runtime_parent" ] || runtime_parent=/tmp
-XDG_RUNTIME_DIR=$(mktemp -d "$runtime_parent/aios-session-$(id -u).XXXXXX")
+uid=$(id -u)
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+if [ ! -d "$XDG_RUNTIME_DIR" ] || [ -L "$XDG_RUNTIME_DIR" ] ||
+   [ "$(stat -c %u "$XDG_RUNTIME_DIR")" != "$uid" ]; then
+    echo "AIOS requires an owned runtime directory at $XDG_RUNTIME_DIR" >&2
+    exit 1
+fi
+chmod 700 "$XDG_RUNTIME_DIR"
 export XDG_RUNTIME_DIR
 
 # Minimal visual baseline
@@ -44,7 +49,6 @@ cleanup() {
     aios-local-runtime stop >>"$HOME/.local/state/aios/local-runtime.log" 2>&1 || true
     wait "$local_runtime" 2>/dev/null || true
     kill "$compositor" "$wm" 2>/dev/null || true
-    rmdir "$XDG_RUNTIME_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on

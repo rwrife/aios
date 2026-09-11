@@ -27,6 +27,8 @@ class CompositorSelectionTests(unittest.TestCase):
                 home = Path(directory)
                 bin_dir = home / "bin"
                 bin_dir.mkdir()
+                runtime = home / "runtime"
+                runtime.mkdir(mode=0o700)
                 stubs = {
                     "xsetroot": "exit 0",
                     "openbox": "exit 0",
@@ -45,6 +47,7 @@ class CompositorSelectionTests(unittest.TestCase):
                 subprocess.run(
                     ["sh", str(ROOT / "distro/alpine/overlay/usr/local/bin/aios-session")],
                     env=dict(os.environ, HOME=str(home),
+                             XDG_RUNTIME_DIR=str(runtime),
                              PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
                              PROBE_OUTPUT=output, PROBE_STATUS=str(status)),
                     capture_output=True, text=True, check=True, timeout=10,
