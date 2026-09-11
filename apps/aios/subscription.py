@@ -595,6 +595,8 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         _chat_rpc_result(turn_result, 'turn')
         count = 0
         content_bytes = 0
+        buffered_content = ""
+        completion_retry = False
         while True:
             event = server.next_event(min(
                 MAX_EVENT_WAIT, _chat_remaining(deadline, clock)))
@@ -638,6 +640,7 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     raise RuntimeError(
                         'ChatGPT requested an invalid tool call or reached the action limit.')
                 if session is not None:
+                    buffered_content = ""
                     yield {'type': 'progress', 'text': session.progress(tool, args)}
                     try:
                         remaining = _chat_remaining(deadline, clock)
@@ -661,6 +664,7 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     deadline=deadline,
                     clock=clock,
                 )
+                session.check_application_failure()
                 continue
 
             if not isinstance(method, str) or not isinstance(params, dict):
@@ -678,7 +682,10 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     content_bytes += len(delta.encode('utf-8'))
                     if content_bytes > agent.MAX_CONTENT_BYTES:
                         raise RuntimeError('ChatGPT reply was too large. Try again.')
-                    yield {'type': 'token', 'text': delta}
+                    if session is not None and session.verify_application_completion:
+                        buffered_content += delta
+                    else:
+                        yield {'type': 'token', 'text': delta}
                 elif method == 'turn/completed':
                     turn = params.get('turn')
                     status = turn.get('status') if isinstance(turn, dict) else None
@@ -686,6 +693,19 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                         raise RuntimeError('ChatGPT returned an invalid completion. Try again.')
                     if status != 'completed':
                         raise RuntimeError('ChatGPT could not finish the reply. Check your subscription limits or try again.')
+                    if session is not None and session.verify_application_completion:
+                        if session.application_completion_pending():
+                            if completion_retry:
+                                raise RuntimeError(agent.APPLICATION_LAUNCH_PENDING)
+                            completion_retry = True
+                            buffered_content = ""
+                            resumed = server.request('turn/start', {'threadId': thread, 'input': [
+                                {'type': 'text', 'text': agent.APPLICATION_LAUNCH_CONTINUATION}]},
+                                timeout=min(30, _chat_remaining(deadline, clock)))
+                            _chat_rpc_result(resumed, 'turn')
+                            continue
+                        if buffered_content:
+                            yield {'type': 'token', 'text': buffered_content}
                     return
                 elif method == 'error':
                     will_retry = params.get('willRetry', False)

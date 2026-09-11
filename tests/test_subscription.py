@@ -222,7 +222,7 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_blocked_tool_response_obeys_turn_deadline_and_reaps_everything(self):
         os.environ['AIOS_FAKE_SCENARIO'] = 'blocked-tool-response'
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = [{
             'type': 'function', 'name': 'application', 'description': 'Applications',
             'inputSchema': {'type': 'object'},
@@ -289,6 +289,49 @@ class SubscriptionTests(unittest.TestCase):
         turns = [r for r in requests if r.get('method') == 'turn/start']
         self.assertEqual(turns[-1]['params']['input'][0]['text'], 'Second window')
 
+    @patch('aios.agent.toolhost.list_tools', return_value={'tools': [clone(APPLICATION_TOOL)], 'warnings': []})
+    def test_application_completion_buffers_unverified_text_and_recovers_once(self, _tools):
+        skill = Skill(name='application-builder', description='Build apps.', instructions='Create then launch.',
+                      allowed_tools=('application',), triggers=('create a calculator',))
+        for scenario in ('application-no-tools', 'application-recovery'):
+            with self.subTest(scenario=scenario):
+                os.environ['AIOS_FAKE_SCENARIO'] = scenario
+                session = agent.AgentSession(
+                    [{'role': 'user', 'content': 'create a calculator application'}], 'tools.sock', catalog=[skill])
+                emitted = []
+                before = len(self.requests()) if self.log.exists() else 0
+                with patch('aios.agent.toolhost.call', return_value={'id': 'calculator-12345678', 'launched': True}) as call:
+                    if scenario == 'application-no-tools':
+                        with self.assertRaisesRegex(RuntimeError, 'not launched'):
+                            emitted.extend(subscription.chat(session.messages, session=session))
+                        self.assertEqual(emitted, [])
+                        call.assert_not_called()
+                    else:
+                        emitted.extend(subscription.chat(session.messages, session=session))
+                        self.assertEqual([e['text'] for e in emitted if e['type'] == 'token'], ['Calculator is open.'])
+                        call.assert_called_once()
+                turns = [r for r in self.requests()[before:] if r.get('method') == 'turn/start']
+                self.assertEqual(len(turns), 2)
+                self.assertEqual(turns[1]['params']['input'][0]['text'], agent.APPLICATION_LAUNCH_CONTINUATION)
+
+    @patch('aios.agent.toolhost.list_tools', return_value={'tools': [clone(APPLICATION_TOOL)], 'warnings': []})
+    def test_application_completion_rejects_failed_launch_and_honors_draft_only(self, _tools):
+        skill = Skill(name='application-builder', description='Build apps.', instructions='Create then launch.',
+                      allowed_tools=('application',), triggers=('create a calculator',))
+        os.environ['AIOS_FAKE_SCENARIO'] = 'application-recovery'
+        session = agent.AgentSession(
+            [{'role': 'user', 'content': 'create a calculator application'}], 'tools.sock', catalog=[skill])
+        emitted = []
+        with patch('aios.agent.toolhost.call', return_value={
+                'id': 'calculator-12345678', 'launched': False, 'reason': 'Application window could not open.'}), \
+                self.assertRaisesRegex(RuntimeError, 'could not open'):
+            emitted.extend(subscription.chat(session.messages, session=session))
+        self.assertFalse(any(e['type'] == 'token' for e in emitted))
+        os.environ['AIOS_FAKE_SCENARIO'] = ''
+        draft = agent.AgentSession(
+            [{'role': 'user', 'content': 'create a calculator application, draft only'}], 'tools.sock', catalog=[skill])
+        self.assertEqual(list(subscription.chat(draft.messages, session=draft)), [{'type': 'token', 'text': 'Hello 世界'}])
+
     @patch('aios.agent.toolhost.list_tools')
     def test_shared_agent_session_tools_prompt_and_application_dispatch(self, list_tools):
         list_tools.return_value = {'tools': [clone(APPLICATION_TOOL)], 'warnings': []}
@@ -349,7 +392,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(error, 'The model requested an unavailable tool.')
 
     def test_generic_dispatch_errors_and_invalid_results_are_bounded_and_redacted(self):
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = [{
             'type': 'function', 'name': 'application', 'description': 'Applications',
             'inputSchema': {'type': 'object'},
@@ -384,7 +427,7 @@ class SubscriptionTests(unittest.TestCase):
             {'value': 1, 'error': None}, 'fallback')['success'])
 
     def test_activation_note_cannot_push_system_prompt_over_limit(self):
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = []
         session.system_prompt.return_value = 'x' * agent.MAX_SYSTEM_PROMPT_BYTES
         with self.assertRaisesRegex(RuntimeError, 'prompt is too large'):
@@ -424,7 +467,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertIn('next user turn', thread['params']['baseInstructions'])
 
     def test_malformed_tool_calls_and_argument_bounds_fail_the_turn(self):
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = [{
             'type': 'function', 'name': 'application', 'description': 'Applications',
             'inputSchema': {'type': 'object'},
@@ -441,7 +484,7 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_tool_call_limit_fails_before_thirty_third_dispatch(self):
         os.environ['AIOS_FAKE_SCENARIO'] = 'call-limit'
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = [{
             'type': 'function', 'name': 'application', 'description': 'Applications',
             'inputSchema': {'type': 'object'},
@@ -454,7 +497,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(session.dispatch.call_count, 32)
 
     def test_delta_content_and_deadline_bounds(self):
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = []
         session.system_prompt.return_value = 'AIOS policy'
         for scenario in ('oversized-delta', 'non-string-delta', 'malformed-completed'):
@@ -474,7 +517,7 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_cross_thread_tool_request_is_rejected_without_dispatch(self):
         os.environ['AIOS_FAKE_SCENARIO'] = 'cross-thread-call'
-        session = Mock()
+        session = Mock(verify_application_completion=False)
         session.codex_tools.return_value = [{
             'type': 'function', 'name': 'application', 'description': 'Applications',
             'inputSchema': {'type': 'object'},

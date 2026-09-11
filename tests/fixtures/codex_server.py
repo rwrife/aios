@@ -8,11 +8,13 @@ import time
 scenario = os.environ.get('AIOS_FAKE_SCENARIO', '')
 thread = 'test-thread'
 tool_index = 0
+turn_count = 0
 
 
 TOOL_SEQUENCES = {
     'browser': [('browser', {'action': 'snapshot'})],
     'application': [('application', {'action': 'search', 'query': 'calculator'})],
+    'application-recovery': [('application', {'action': 'launch', 'id': 'calculator-12345678'})],
     'mcp-error': [('mcp_fixture_echo', {'value': 'fail'})],
     'unknown-generic': [('shell', {'command': 'whoami'})],
     'generic-error': [('application', {'action': 'search', 'query': 'secret'})],
@@ -44,6 +46,7 @@ def finish_tool_scenario():
     messages = {
         'browser': 'Browser done',
         'application': 'Application done',
+        'application-recovery': 'Calculator is open.',
         'mcp-error': 'MCP recovered',
         'unknown-generic': 'Unknown tool recovered',
         'generic-error': 'Generic error recovered',
@@ -115,11 +118,15 @@ for line in sys.stdin:
     else:
         send({'id': value['id'], 'result': result})
     if method == 'turn/start':
+        turn_count += 1
         if scenario == 'disconnect':
             break
         if scenario == 'malformed-turn':
             notify('turn/completed', {'threadId': thread, 'turn': {'status': 'completed'}})
-        if scenario in TOOL_SEQUENCES:
+        if scenario == 'application-no-tools' or (scenario == 'application-recovery' and turn_count == 1):
+            notify('item/agentMessage/delta', {'threadId': thread, 'delta': 'Successfully created and launched.'})
+            notify('turn/completed', {'threadId': thread, 'turn': {'status': 'completed'}})
+        elif scenario in TOOL_SEQUENCES:
             tool_request(0)
         elif scenario == 'malformed-args':
             send({'id': 'tool-request', 'method': 'item/tool/call', 'params': {

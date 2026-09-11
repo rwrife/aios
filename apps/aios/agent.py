@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from typing import Any
 
@@ -56,6 +57,17 @@ TOOL_RESULT_OMITTED = '{"previous_tool_result_omitted":true}'
 WARNING_OMISSION = "Additional capability warnings were omitted."
 HOST_TOOL_OMISSION_WARNING = "Additional host tools were omitted."
 TOOL_BYTES_OMISSION_WARNING = "Additional tool definitions were omitted because the agent prompt limit was reached."
+APPLICATION_LAUNCH_PENDING = "The application was not launched. The model did not complete the required application tool calls."
+APPLICATION_LAUNCH_CONTINUATION = (
+    "The application task is incomplete: no successful application launch was verified. "
+    "Use the advertised application tool to finish creating or writing the requested app, then launch it. "
+    "Do not publish unless explicitly requested. Do not claim success in text instead of calling tools."
+)
+_DRAFT_ONLY_REQUEST = re.compile(
+    r"\b(?:draft[- ]only|(?:only|just) (?:a )?draft|"
+    r"(?:do not|don't|don\u2019t|never) (?:launch|open|run)|"
+    r"without (?:launching|opening|running))\b", re.IGNORECASE,
+)
 
 
 def _safe_error_text(message: str, fallback: str) -> str:
@@ -250,6 +262,23 @@ class AgentSession:
             for skill in skills.initial_skills(self.catalog, self.messages[-1]["content"])
         }
         self.advertised_names: set[str] = set()
+        self._application_launched = False
+        self._application_failure: str | None = None
+        self._application_draft_only = bool(_DRAFT_ONLY_REQUEST.search(self.messages[-1]["content"]))
+
+    @property
+    def verify_application_completion(self) -> bool:
+        return "application-builder" in self.active and not self._application_draft_only
+
+    def application_completion_pending(self) -> bool:
+        if not self.verify_application_completion:
+            return False
+        self.check_application_failure()
+        return not self._application_launched
+
+    def check_application_failure(self) -> None:
+        if self.verify_application_completion and self._application_failure is not None:
+            raise RuntimeError(self._application_failure)
 
     @property
     def remote_preferred(self) -> bool:
@@ -357,11 +386,35 @@ class AgentSession:
             return {"activated": skill_name}
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be an object.")
-        if timeout is None:
-            result = toolhost.call(self.tool_socket, name, arguments)
-        else:
-            result = toolhost.call(self.tool_socket, name, arguments, timeout=timeout)
-        _tool_result_json(result)
+        application_action = arguments.get("action") if name == "application" else None
+        if application_action in ("create", "write", "launch"):
+            self._application_launched = False
+        try:
+            if timeout is None:
+                result = toolhost.call(self.tool_socket, name, arguments)
+            else:
+                result = toolhost.call(self.tool_socket, name, arguments, timeout=timeout)
+            _tool_result_json(result)
+        except (OSError, ValueError, RuntimeError) as error:
+            if name == "application":
+                self._application_failure = (
+                    _safe_error_text(str(error), "The application tool failed.")
+                    if isinstance(error, ValueError) else "The application tool failed."
+                )
+            raise
+        if name == "application" and isinstance(result, dict) and result.get("error"):
+            self._application_failure = _safe_error_text(result["error"], "The application tool failed.")
+        if application_action == "launch":
+            self._application_launched = (
+                isinstance(result, dict) and result.get("launched") is True
+                and isinstance(result.get("id"), str) and result["id"] == arguments.get("id")
+                and not result.get("error")
+            )
+            if not self._application_launched:
+                self._application_failure = "The application launch was not confirmed."
+                if isinstance(result, dict) and result.get("launched") is False:
+                    self._application_failure = _safe_error_text(
+                        result.get("reason"), "The application launch failed.")
         return result
 
     def progress(self, name, arguments) -> str:
@@ -409,6 +462,8 @@ def openai_chat(
     deadline = clock() + duration
     model = core.model_name(profile)
     history = [{"role": "system", "content": ""}, *session.messages]
+    completion_retry = False
+    force_application = False
     for _ in range(8):
         calls: dict[int, dict[str, Any]] = {}
         fragment_bytes: dict[int, int] = {}
@@ -417,8 +472,14 @@ def openai_chat(
         finish = None
         tools = session.tools()
         history[0]["content"] = session.system_prompt()
+        tool_choice = "auto"
+        if force_application:
+            if "application" not in session.advertised_names:
+                raise RuntimeError(APPLICATION_LAUNCH_PENDING)
+            tool_choice = {"type": "function", "function": {"name": "application"}}
+            force_application = False
         body = _request_body(
-            {"model": model, "messages": history, "tools": tools, "tool_choice": "auto", "stream": True}
+            {"model": model, "messages": history, "tools": tools, "tool_choice": tool_choice, "stream": True}
         )
         remaining = _remaining_time(deadline, clock)
         with core.request(
@@ -466,7 +527,8 @@ def openai_chat(
                         if content_bytes > MAX_CONTENT_BYTES:
                             raise RuntimeError("The model response was too large.")
                         content += token
-                        yield {"type": "token", "text": token}
+                        if not session.verify_application_completion:
+                            yield {"type": "token", "text": token}
                     tool_fragments = delta.get("tool_calls", [])
                     if not isinstance(tool_fragments, list):
                         raise RuntimeError("The model tool request was invalid.")
@@ -539,11 +601,22 @@ def openai_chat(
                         "content": _tool_result_json(result),
                     }
                 )
+                session.check_application_failure()
             for message in [item for item in history[:round_start] if item["role"] == "tool"][:-2]:
                 message["content"] = TOOL_RESULT_OMITTED
-            if content:
+            if content and not session.verify_application_completion:
                 yield {"type": "token", "text": "\n\n"}
         elif finish:
+            if session.application_completion_pending():
+                if completion_retry:
+                    raise RuntimeError(APPLICATION_LAUNCH_PENDING)
+                completion_retry = True
+                force_application = True
+                history.append({"role": "assistant", "content": content})
+                history.append({"role": "system", "content": APPLICATION_LAUNCH_CONTINUATION})
+                continue
+            if session.verify_application_completion and content:
+                yield {"type": "token", "text": content}
             return
         else:
             raise RuntimeError("The connection ended before the reply completed.")
