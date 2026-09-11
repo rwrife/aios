@@ -46,6 +46,10 @@ try {
     }
     $audioBackend = Get-Setting 'AIOS_QEMU_AUDIO' 'dsound'
     $accelerator = Get-Setting 'AIOS_QEMU_ACCEL' 'tcg'
+    $serialDefault = if ($env:AIOS_QEMU_HEADLESS -eq '1') { 'mon:stdio' } else {
+        "file:$(Join-Path $rootDir '.tmp-aios-boot.log')"
+    }
+    $serial = Get-Setting 'AIOS_QEMU_SERIAL' $serialDefault
     $qemu = 'qemu-system-x86_64.exe'
     if (-not $dry) { $qemu = Find-QemuTool 'qemu-system-x86_64' }
 
@@ -54,7 +58,7 @@ try {
         '-m', $memory, '-smp', $cpuCount,
         '-accel', $accelerator, '-cpu', 'max',
         '-boot', 'd', '-cdrom', $IsoPath,
-        '-serial', (Get-Setting 'AIOS_QEMU_SERIAL' 'mon:stdio'),
+        '-serial', $serial,
         '-drive', "if=virtio,file=$($diskPath.Replace(',', ',,')),format=qcow2",
         '-nic', 'user,model=virtio-net-pci',
         '-audiodev', "$audioBackend,id=audio0",
@@ -82,7 +86,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Could not create VM disk: $diskPath" }
     }
     Write-Host "Booting $IsoPath as $vmName"
-    Write-Host 'Live desktop startup can take several minutes. Boot progress is sent to the serial console.'
+    if ($env:AIOS_QEMU_HEADLESS -ne '1') {
+        Write-Host 'The full desktop opens in a separate QEMU window. No terminal login is needed.'
+        Write-Host 'Live desktop startup can take several minutes.'
+    }
+    Write-Host "Serial diagnostics: $serial"
     & $qemu @qemuArgs
     exit $LASTEXITCODE
 } catch {

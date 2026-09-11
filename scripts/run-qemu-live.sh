@@ -27,6 +27,14 @@ DISK_SIZE="${AIOS_VM_DISK_SIZE:-64G}"
 MEM_MB="${AIOS_VM_MEM_MB:-16384}"
 CPU_COUNT="${AIOS_VM_CPUS:-4}"
 VM_NAME="${AIOS_VM_NAME:-AIOS-$(basename "$ISO_PATH" .iso)-$$}"
+SERIAL="${AIOS_QEMU_SERIAL:-}"
+if [ -z "$SERIAL" ]; then
+  if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
+    SERIAL=mon:stdio
+  else
+    SERIAL="file:$ROOT_DIR/.tmp-aios-boot.log"
+  fi
+fi
 CAMERA_BUS="${AIOS_VM_CAMERA_BUS:-}"
 CAMERA_ADDR="${AIOS_VM_CAMERA_ADDR:-}"
 if [ -n "$CAMERA_BUS$CAMERA_ADDR" ]; then
@@ -56,7 +64,7 @@ QEMU_ARGS=(
   -smp "$CPU_COUNT"
   -boot d
   -cdrom "$ISO_PATH"
-  -serial "${AIOS_QEMU_SERIAL:-mon:stdio}"
+  -serial "$SERIAL"
   -drive "if=virtio,file=${DISK_PATH//,/,,},format=qcow2"
   -nic user,model=virtio-net-pci
   -audiodev "${AIOS_QEMU_AUDIO:-pa},id=audio0"
@@ -93,5 +101,9 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 printf '[aios] Booting %s as %s\n' "$ISO_PATH" "$VM_NAME"
-echo '[aios] Live desktop startup can take several minutes. Boot progress is sent to the serial console.'
+if [ "${AIOS_QEMU_HEADLESS:-0}" != "1" ]; then
+  echo '[aios] The full desktop opens in a separate QEMU window. No terminal login is needed.'
+  echo '[aios] Live desktop startup can take several minutes.'
+fi
+printf '[aios] Serial diagnostics: %s\n' "$SERIAL"
 exec "${QEMU_ARGS[@]}"

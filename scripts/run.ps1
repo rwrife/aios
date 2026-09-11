@@ -28,6 +28,26 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Could not convert path for WSL: $Path" }
         return ($converted -join "`n").Trim()
     }
+    function Get-WslgDisplayState {
+        # Use the latest state, with no embedded double quotes for PowerShell 5.1's WSL argument handling.
+        $probe = @'
+if [ ! -r /mnt/wslg/weston.log ]; then
+    echo unavailable
+    exit 0
+fi
+state=$(sed -n 's/.*RDP backend: use_gfxredir = \([01]\)$/\1/p' /mnt/wslg/weston.log | tail -n 1)
+case $state in
+    1) echo ready ;;
+    0) echo broken ;;
+    *) echo starting ;;
+esac
+'@
+        $state = ((& wsl.exe -d $Distro --exec sh -c $probe) -join "`n").Trim()
+        if ($LASTEXITCODE -ne 0 -or $state -notin @('ready', 'broken', 'starting', 'unavailable')) {
+            throw 'Could not inspect the WSLg display service. QEMU was not started.'
+        }
+        return $state
+    }
     $cameraUsbId = ''
     if ($CameraBusId) {
         $usbCommand = Get-Command usbipd.exe -ErrorAction SilentlyContinue
@@ -120,6 +140,42 @@ done
     if ($DryRun -or $env:DRY_RUN -eq '1') { $wslArgs += 'DRY_RUN=1' }
     $wslArgs += @('bash', $launcher)
     if ($IsoPath) { $wslArgs += Convert-ToWslPath $IsoPath }
+    if (-not ($DryRun -or $env:DRY_RUN -eq '1' -or $env:AIOS_QEMU_HEADLESS -eq '1')) {
+        $displayState = Get-WslgDisplayState
+        for ($attempt = 0; $displayState -in @('starting', 'unavailable') -and $attempt -lt 20; $attempt++) {
+            Start-Sleep -Milliseconds 500
+            $displayState = Get-WslgDisplayState
+        }
+        if ($displayState -eq 'broken') {
+            Write-Warning 'WSLg is in COPY MODE: QEMU can boot but its desktop window may be invisible.'
+            $answer = Read-Host 'Restart the WSLg display service? This closes ALL WSL GUI apps, but does not shut down WSL or Docker. [y/N]'
+            if ($answer -notmatch '^(?i:y|yes)$') {
+                throw 'WSLg repair was declined. QEMU was not started.'
+            }
+            $restart = @'
+set -eu
+set -- $(pidof weston)
+if [ $# -ne 1 ]; then
+    echo 'Expected one WSLg Weston process; refusing to restart an ambiguous target.' >&2
+    exit 1
+fi
+kill -TERM $1
+'@
+            & wsl.exe -d $Distro --system --exec sh -c $restart
+            if ($LASTEXITCODE -ne 0) { throw 'Could not restart the WSLg display service. QEMU was not started.' }
+            # WSLg also recycles PulseAudio; the display log can report ready before that teardown finishes.
+            Start-Sleep -Seconds 4
+            for ($attempt = 0; $attempt -lt 20; $attempt++) {
+                Start-Sleep -Milliseconds 500
+                $displayState = Get-WslgDisplayState
+                if ($displayState -eq 'ready') { break }
+            }
+            if ($displayState -eq 'ready') { Write-Host 'WSLg display restored.' }
+        }
+        if ($displayState -ne 'ready') {
+            throw 'WSLg is not ready. QEMU was not started. Check /mnt/wslg/weston.log; WSL2 with WSLg is required for windowed launches.'
+        }
+    }
     & wsl.exe @wslArgs
     exit $LASTEXITCODE
 } catch {

@@ -78,10 +78,19 @@ The whole OS runs inside one resizable QEMU window, with fullscreen disabled at
 startup. Chat, settings, and other guest apps stay inside that VM. Use this flow
 for interactive OS previews; `preview-chat.sh` is only an isolated UI development
 tool. Camera passthrough setup is documented in [the webcam guide](docs/wsl-webcam.md#camera-inside-the-windowed-vm).
-Boot progress appears in the launching terminal by default, alongside the QEMU
-window. Wait for the desktop: the live image installs its packages into RAM at
-each boot, which can take several minutes. Headless mode is opt-in through
-`AIOS_QEMU_HEADLESS=1`.
+Normal launches open the full desktop in the QEMU window; no terminal login is
+needed. Serial boot diagnostics go to `.tmp-aios-boot.log` in the checkout
+(replaced on each launch), rather than exposing an Alpine login prompt in
+PowerShell. Wait for the desktop: the live image installs its packages into RAM
+at each boot, which can take several minutes. Headless mode is opt-in through
+`AIOS_QEMU_HEADLESS=1` and uses an interactive terminal console instead.
+Before a windowed Windows launch, `run.ps1` checks WSLg's display connection.
+If WSLg has fallen into the known invisible-window `[WARN:COPY MODE]` failure,
+the launcher asks permission to restart only its Weston display service. This
+closes all WSL GUI apps, so save their work before accepting; it does not shut
+down WSL, Docker, or other Linux services. QEMU starts only after the display
+connection is restored. Healthy launches need no prompt or extra parameters,
+and native, headless, and dry-run launches do not perform this repair.
 They provide NAT networking (outbound internet through the host, with guest DHCP),
 Intel HD Audio speakers and microphone, 16 GiB RAM, four CPUs, and a persistent
 64 GiB sparse disk at `.tmp-aios-live.qcow2`. The larger memory allocation also
@@ -109,8 +118,8 @@ launching or creating a disk with
 `DRY_RUN=1 bash scripts/run.sh /path/to/image.iso` or
 `.\scripts\run.ps1 C:\images\image.iso -DryRun`.
 
-For boot diagnostics, `AIOS_QEMU_SERIAL` overrides the default `mon:stdio`
-with a QEMU serial destination
+For boot diagnostics, `AIOS_QEMU_SERIAL` overrides the default log file
+with a QEMU serial destination (`mon:stdio` explicitly enables a terminal console)
 in both WSL and native Windows mode (for WSL, use a Linux path, such as
 `file:/tmp/aios-boot.log`; for native mode, use `file:C:\Temp\aios-boot.log`).
 The guest probes its OpenGL renderer before starting the compositor. Accelerated
