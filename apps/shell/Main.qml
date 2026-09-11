@@ -175,10 +175,11 @@ Window {
         anchors.right: parent.right
         anchors.rightMargin: 48
         y: wordmark.y
-        text: Qt.formatTime(desktop.currentTime, "hh:mm")
+        text: Qt.formatTime(desktop.currentTime, "h:mm AP")
         color: wordmark.color
         opacity: wordmark.opacity
         font: wordmark.font
+        font.pixelSize: wordmark.font.pixelSize * 0.75
     }
     Loader {
         x: 410; y: 84; width: Math.max(0, desktop.width - 440); height: Math.max(0, desktop.height - 180)
