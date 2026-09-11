@@ -1,0 +1,132 @@
+"""Bounded, same-user Unix client shared by native UI and scheduling tools."""
+import json
+import os
+from pathlib import Path
+import socket
+import stat
+import struct
+import time
+
+from .scheduled_execution import desktop_only
+from .scheduling import SchedulingError, UnavailableError, fields, integer, text
+from .scheduled_store import identifier
+from .toolhost import _read_socket_line
+
+REQUEST_LIMIT = 128 * 1024
+RESPONSE_LIMIT = 2 * 1024 * 1024
+STATUSES = {'ok', 'invalid', 'unavailable', 'conflict', 'quota_exceeded', 'needs_user_action'}
+ACTIONS = {
+    'health': ((), ()),
+    'binding': (('prompt',), ()),
+    'preview': (('schedule',), ()),
+    'create': (('config',), ()),
+    'get': (('job_id',), ()),
+    'list': ((), ('limit', 'after')),
+    'update': (('job_id', 'expected_revision', 'config'), ()),
+    'pause': (('job_id', 'expected_revision'), ()),
+    'resume': (('job_id', 'expected_revision'), ()),
+    'delete': (('job_id', 'expected_revision'), ()),
+    'run_now': (('job_id', 'expected_revision', 'request_id'), ()),
+    'cancel_run': (('run_id',), ()),
+    'list_runs': (('job_id',), ('limit', 'before')),
+    'read_result': (('run_id',), ()),
+    'acknowledge_result': (('run_id',), ()),
+    'unread': ((), ('limit', 'after')),
+}
+
+
+def runtime_dir():
+    desktop_only()
+    base = os.environ.get('XDG_RUNTIME_DIR')
+    if not base:
+        raise UnavailableError('The private desktop runtime directory is unavailable')
+    parent = Path(base)
+    info = parent.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_mode & 0o077):
+        raise UnavailableError('Scheduler requires a private user-owned runtime directory')
+    path = parent / 'aios-scheduler'
+    if len(os.fsencode(path / ('run-' + '0' * 36) / 'tools.sock')) >= 108:
+        raise UnavailableError('Scheduler runtime path exceeds the Unix socket path limit')
+    path.mkdir(mode=0o700, exist_ok=True)
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_mode & 0o077):
+        raise UnavailableError('Scheduler runtime directory is not private')
+    return path
+
+
+def socket_path():
+    return runtime_dir() / 'service.sock'
+
+
+def same_user(connection):
+    credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+    _, uid, _ = struct.unpack('3i', credentials)
+    if uid != os.getuid():
+        raise UnavailableError('Scheduler peer identity does not match the OS user')
+
+
+def validate_request(value):
+    if not isinstance(value, dict) or not isinstance(value.get('action'), str):
+        raise SchedulingError('Invalid scheduling request')
+    action = value['action']
+    if action not in ACTIONS:
+        raise SchedulingError('Unknown scheduling action')
+    required, optional = ACTIONS[action]
+    fields(value, ('action', *required), optional)
+    for name in ('job_id', 'run_id', 'request_id'):
+        if name in value:
+            identifier(value[name])
+    if 'expected_revision' in value:
+        integer(value['expected_revision'], 'expected revision', 1, 2 ** 63 - 1)
+    if 'limit' in value:
+        integer(value['limit'], 'page limit', 1, 100)
+    if 'before' in value:
+        integer(value['before'], 'run cursor', 1, 2 ** 63 - 1)
+    if 'after' in value:
+        if action == 'list':
+            identifier(value['after'])
+        else:
+            integer(value['after'], 'outbox cursor', 0, 2 ** 63 - 1)
+    if 'prompt' in value:
+        text(value['prompt'], 'prompt', 32768)
+    return value
+
+
+def encode(value, limit):
+    try:
+        raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode() + b'\n'
+    except (ValueError, TypeError, RecursionError):
+        raise SchedulingError('Invalid scheduling JSON') from None
+    if len(raw) > limit:
+        raise SchedulingError('Scheduling message is too large; request a smaller page')
+    return raw
+
+
+def request(value, timeout=10):
+    """Return an explicit status envelope. No credentials or ownership arguments."""
+    try:
+        desktop_only()
+        validate_request(value)
+        raw = encode(value, REQUEST_LIMIT)
+        if not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
+            raise SchedulingError('Invalid scheduling timeout')
+        with socket.socket(socket.AF_UNIX) as client:
+            deadline = time.monotonic() + timeout
+            client.settimeout(timeout)
+            client.connect(str(socket_path()))
+            same_user(client)
+            client.sendall(raw)
+            reply = json.loads(_read_socket_line(
+                client, RESPONSE_LIMIT, deadline, incomplete_error='Invalid scheduler response'))
+        if not isinstance(reply, dict) or reply.get('status') not in STATUSES:
+            raise UnavailableError('Invalid scheduler response')
+        expected = {'status', 'result'} if reply['status'] == 'ok' else {'status', 'error'}
+        if set(reply) != expected or ('error' in reply and not isinstance(reply['error'], str)):
+            raise UnavailableError('Invalid scheduler response')
+        return reply
+    except SchedulingError as error:
+        return {'status': error.code, 'error': str(error)}
+    except (OSError, RuntimeError, ValueError):
+        return {'status': 'unavailable', 'error': 'Scheduled jobs service is unavailable'}

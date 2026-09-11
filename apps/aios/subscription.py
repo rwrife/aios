@@ -564,9 +564,12 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         account = account_result.get('account') if isinstance(account_result, dict) else None
         if not isinstance(account, dict) or account.get('type') != 'chatgpt':
             raise RuntimeError('Sign in with ChatGPT in AI models settings first.')
-        config = core.load_config()
-        model = config.get('subscription_model') or None
+        background = getattr(session, 'background', None)
+        config = background.configuration() if background else core.load_config()
+        model = background.execution['model'] if background else config.get('subscription_model') or None
         if session is not None:
+            if background is not None:
+                background.output(encoded_args.decode('utf-8'))
             tools = session.codex_tools()
             base_instructions = session.system_prompt() + '\n\n' + CHATGPT_ACTIVATION_NOTE
             if len(base_instructions.encode('utf-8')) > agent.MAX_SYSTEM_PROMPT_BYTES:
@@ -676,6 +679,8 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     if not isinstance(delta, str):
                         raise RuntimeError('ChatGPT returned an invalid reply. Try again.')
                     content_bytes += len(delta.encode('utf-8'))
+                    if background is not None:
+                        background.output(delta)
                     if content_bytes > agent.MAX_CONTENT_BYTES:
                         raise RuntimeError('ChatGPT reply was too large. Try again.')
                     yield {'type': 'token', 'text': delta}

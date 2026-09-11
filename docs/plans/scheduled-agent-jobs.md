@@ -1,7 +1,7 @@
 # Scheduled agent jobs and orb attention
 
-Status: milestone 1 implemented as an internal core; scheduling is not yet
-exposed to users and no background workers are started.
+Status: milestone 1 implemented; milestone 2 service/execution implementation
+is in progress on its dependent PR. Configuration and feedback UI are pending.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -34,7 +34,7 @@ result returns unavailable instead of running again. Unread results are never
 automatically pruned. The database is capped at 100 MiB, with a dispatch reserve
 for active-run completion; storage exceptions propagate to the future service.
 
-Milestones 2-5 remain pending. The core records provider/model/capability
+Milestones 3-5 remain pending. The core records provider/model/capability
 bindings but cannot authorize or execute them. The service must enforce
 singleton ownership, validate those bindings against live configuration, use
 monotonic deadlines and bounded timer rechecks, supervise isolated workers, and

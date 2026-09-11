@@ -199,8 +199,8 @@ def model_name(profile="current"):
     raise ValueError("Unknown model profile.")
 
 
-def request(route, body=None, timeout=90, profile="current"):
-    config = load_config()
+def request(route, body=None, timeout=90, profile="current", *, config=None, background=False):
+    config = load_config() if config is None else config
     local = False
     if profile == "current":
         if config["mode"] == "chatgpt":

@@ -226,7 +226,8 @@ def _load_host_definitions(tool_socket) -> tuple[list[dict[str, Any]], list[str]
 
 
 class AgentSession:
-    def __init__(self, messages, tool_socket, catalog=None):
+    def __init__(self, messages, tool_socket, catalog=None, background=None):
+        self.background = background
         self.messages = _validate_messages(list(messages))
         self.tool_socket = tool_socket
         if catalog is None:
@@ -342,6 +343,8 @@ class AgentSession:
     def dispatch(self, name, arguments, timeout=None):
         if name not in self.advertised_names:
             raise ValueError("The model requested an unavailable tool.")
+        if self.background is not None:
+            self.background.tool()
         if name == "activate_skill":
             if not isinstance(arguments, dict) or set(arguments) != {"name"} or not isinstance(arguments.get("name"), str):
                 raise ValueError("Skill activation requires an exact installed name.")
@@ -406,7 +409,8 @@ def openai_chat(
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError("Choose a valid agent turn timeout.")
     deadline = clock() + duration
-    model = core.model_name(profile)
+    background = getattr(session, 'background', None)
+    model = background.execution['model'] if background else core.model_name(profile)
     history = [{"role": "system", "content": ""}, *session.messages]
     for _ in range(8):
         calls: dict[int, dict[str, Any]] = {}
@@ -419,12 +423,19 @@ def openai_chat(
         body = _request_body(
             {"model": model, "messages": history, "tools": tools, "tool_choice": "auto", "stream": True}
         )
+        options = {}
+        if background is not None:
+            if background.remaining_tokens <= 0:
+                raise RuntimeError('Scheduled run output budget reached')
+            body['max_tokens'] = background.remaining_tokens
+            options = {'config': background.configuration(), 'background': True}
         remaining = _remaining_time(deadline, clock)
         with core.request(
             "/chat/completions",
             body,
             timeout=min(MAX_PROVIDER_TIMEOUT, remaining),
             profile=profile,
+            **options,
         ) as response:
             for event in core.sse_events(response):
                 _remaining_time(deadline, clock)
@@ -465,6 +476,8 @@ def openai_chat(
                         if content_bytes > MAX_CONTENT_BYTES:
                             raise RuntimeError("The model response was too large.")
                         content += token
+                        if background is not None:
+                            background.output(token)
                         yield {"type": "token", "text": token}
                     tool_fragments = delta.get("tool_calls", [])
                     if not isinstance(tool_fragments, list):
@@ -488,6 +501,8 @@ def openai_chat(
                         arguments_fragment = function.get("arguments", "")
                         if not isinstance(name_fragment, str) or not isinstance(arguments_fragment, str):
                             raise RuntimeError("The model tool request was invalid.")
+                        if background is not None:
+                            background.output(part_id + name_fragment + arguments_fragment)
                         fragment_bytes[index] = fragment_bytes.get(index, 0) + sum(
                             len(fragment.encode("utf-8"))
                             for fragment in (part_id, name_fragment, arguments_fragment)
@@ -572,8 +587,18 @@ def select_provider(session, config):
     raise ValueError("The agent model provider is not configured.")
 
 
-def chat(messages, tool_socket):
-    session = AgentSession(messages, tool_socket)
+def chat(messages, tool_socket, *, background=None):
+    session = AgentSession(messages, tool_socket, background=background)
+    if background is not None:
+        background.configuration()
+        if background.execution['provider'] == 'subscription':
+            from .subscription import chat as subscription_chat
+            yield from subscription_chat(messages, session=session,
+                                         turn_timeout=background.execution['timeout_seconds'])
+        else:
+            yield from openai_chat(session, background.profile,
+                                   turn_timeout=background.execution['timeout_seconds'])
+        return
     provider, profile = select_provider(session, core.load_config())
     if provider == "chatgpt":
         from .subscription import chat as subscription_chat

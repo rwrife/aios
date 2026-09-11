@@ -13,6 +13,74 @@ There are three related pieces:
 Model text is never interpreted as a command. Only a completed structured call
 to a tool advertised for that turn can reach the per-chat tool host.
 
+## Scheduled jobs service (internal integration)
+
+`aios-scheduler` is a single Linux per-OS-user service started by the desktop
+session, not by a chat window. Configuration/feedback UI and the model-facing
+scheduling tool are separate follow-on layers. Python integrations call
+`aios.scheduled_jobs.request(value, timeout=10)`. The same protocol is one
+UTF-8 JSON line per connection at
+`$XDG_RUNTIME_DIR/aios-scheduler/service.sock`. Both endpoints verify `SO_PEERCRED`;
+the runtime directory is 0700 and socket 0600. There is no TCP listener.
+
+Every response is `{"status":"ok","result":...}` or
+`{"status":"invalid|unavailable|conflict|quota_exceeded|needs_user_action","error":"..."}`.
+Requests are capped at 128 KiB, responses at 2 MiB, and pages at 100 entries.
+Unexpected fields (including owner, credentials, endpoint, and commands) are
+rejected. All IDs are opaque UUID strings. Mutations use integer revisions.
+
+| Action | Required fields besides `action` | Optional fields | Result |
+| --- | --- | --- | --- |
+| `health` | None | None | `available`, safe `error`, `active_runs`, configured `zone` or null |
+| `binding` | `prompt` | None | Effective `provider`, opaque `profile`, `model`, permitted `capabilities`, `warnings`, configured `zone` or null |
+| `preview` | `schedule` | None | Up to three `{utc,local}` occurrences |
+| `create` | `config` | None | Normalized full job readback |
+| `get` | `job_id` | None | Full job readback |
+| `list` | None | `limit`, `after` job ID | Job readbacks without prompt/context bodies |
+| `update` | `job_id`, `expected_revision`, `config` | None | Full replacement configuration readback |
+| `pause`, `resume` | `job_id`, `expected_revision` | None | Full job readback |
+| `delete` | `job_id`, `expected_revision` | None | `deleted: true`; stops active work before tombstoning |
+| `run_now` | `job_id`, `expected_revision`, `request_id` | None | Durable run; request ID retries never execute twice |
+| `cancel_run` | `run_id` | None | Run after process cleanup; terminal runs are unchanged |
+| `list_runs` | `job_id` | `limit`, `before` sequence | Run summaries without result bodies/snapshots |
+| `read_result` | `run_id` | None | Run including immutable job snapshot, result/error, usage |
+| `acknowledge_result` | `run_id` | None | `acknowledged: true` |
+| `unread` | None | `limit`, `after` sequence (default 0) | Durable unacknowledged outbox rows |
+
+Job configuration follows `scheduling.validate_job`: title, prompt, schedule
+`{kind:"once"|"cron",value,zone}`, execution
+`{provider,profile,model,capabilities,timeout_seconds,token_budget,tool_budget,missed_run}`,
+and optional context, conversation reference, notification policy. Readbacks
+include `next_due`, `next_local`, and `next_occurrences` (three-entry preview).
+Never substitute UTC when `zone` discovery returns null; obtain an explicit
+IANA zone. Preview does not execute or save work.
+
+Binding uses existing initial-skill provider routing and trusted AI models
+configuration. The saved profile is an opaque `current@fingerprint` or
+`agent@fingerprint` reference to its endpoint/model or local model path, never
+a credential. Create/update accept `current` or `agent` to bind explicitly;
+existing opaque references are validated, not silently rebound. Missing keys,
+changed bindings and rejected authentication produce one durable action-needed
+result and pause dispatch for that unchanged job configuration. Resume requires
+the user to fix the existing binding or explicitly edit the job.
+
+Each run owns an isolated worker, agent session, tool host and browser session.
+Saved capability names are intersected with the current allowlist on the
+server before calls. Background MCP requires explicit configured tool names;
+wildcard discovery does not grant unattended access. Scheduling and native
+authentication are unavailable from background runs. Protected workspaces
+explicitly return unavailable until their broker-backed adapter exists.
+
+Workers use monotonic deadlines, a hard tool-call count and bounded output.
+`token_budget` is conservatively enforced as UTF-8 output bytes (including tool
+arguments) independently of tokenizer; OpenAI-compatible requests also receive
+the remaining `max_tokens`. This bounds accepted/generated visible output,
+not a provider's unreported internal reasoning or billing. Results and errors
+are committed only after the run subreaper has stopped its descendants,
+including browser/MCP processes in separate process groups. A scheduler crash
+closes the run control pipe; restart waits for cleanup leases before marking
+abandoned runs interrupted. No shared desktop conversation history is written.
+
 ## Agent Skills
 
 ### OS control

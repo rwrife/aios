@@ -360,10 +360,13 @@ def _write_socket_line(connection: socket.socket, payload: dict[str, Any], deadl
 
 
 class ToolHost:
-    def __init__(self, browser: Browser | None = None, applications: ApplicationStore | None = None, mcp: McpRegistry | None = None):
+    def __init__(self, browser: Browser | None = None, applications: ApplicationStore | None = None, mcp: McpRegistry | None = None, *, background=None):
+        self.background = background
         self.browser = browser if browser is not None else Browser()
         self.applications = applications if applications is not None else ApplicationStore()
-        self.mcp = mcp if mcp is not None else McpRegistry()
+        self.mcp = mcp if mcp is not None else McpRegistry(
+            allowed_tools=background['capabilities'] if background is not None else None)
+        self._background_calls = 0
         self._advertised_mcp = {}
         self._closed = False
         self._close_lock = threading.Lock()
@@ -410,6 +413,15 @@ class ToolHost:
             warnings = _warning_strings(summary_warnings)
 
         self._advertised_mcp = dict(advertised_mcp)
+        if self.background is not None:
+            from .scheduled_execution import permitted_capabilities
+            allowed = set(self.background['capabilities']) & set(permitted_capabilities()['capabilities'])
+            tools = [tool for tool in tools if tool['function']['name'] in allowed]
+            # Never advertise native sign-in to an unattended agent.
+            tools = json.loads(_json_dumps(tools))
+            for tool in tools:
+                if tool['function']['name'] == 'os_settings':
+                    tool['function']['parameters']['properties']['action']['enum'] = ['read', 'set']
         return _definitions_result(tools, warnings)
 
     def call(self, name: str, arguments: dict[str, Any]) -> Any:
@@ -422,6 +434,16 @@ class ToolHost:
             raise ValueError(SAFE_TOOL_NAME)
         if not isinstance(arguments, dict):
             raise ValueError(SAFE_TOOL_ARGUMENTS)
+        if self.background is not None:
+            from .scheduled_execution import permitted_capabilities
+            allowed = set(self.background['capabilities']) & set(permitted_capabilities()['capabilities'])
+            if name not in allowed or arguments.get('action') in ('authenticate', 'authentication_status'):
+                raise ValueError('This capability is unavailable to background jobs.')
+            if name == 'os_settings' and arguments.get('action') not in ('read', 'set'):
+                raise ValueError('This OS operation requires an interactive chat.')
+            if self._background_calls >= self.background['tool_budget']:
+                raise RuntimeError('Scheduled run tool budget reached')
+            self._background_calls += 1
         if name == "browser":
             result = self.browser.act(arguments)
         elif name == "application":
@@ -669,4 +691,7 @@ def serve(
 if __name__ == "__main__":
     import sys
 
-    serve(sys.argv[1])
+    background = None
+    if len(sys.argv) == 3 and sys.argv[2] == '--background':
+        background = json.loads(sys.stdin.buffer.readline(REQUEST_LIMIT + 1))
+    serve(sys.argv[1], ToolHost(background=background))

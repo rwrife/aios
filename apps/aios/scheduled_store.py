@@ -332,6 +332,23 @@ class ScheduledStore:
             self.db.execute("UPDATE runs SET state='running',started=? WHERE id=?", (self._now(), run_id))
         return self.get_run(run_id)
 
+    def active_runs(self):
+        return [self.get_run(row['id']) for row in self.db.execute(
+            "SELECT id FROM runs WHERE owner=? AND state IN ('queued','running')",
+            (self.owner,))]
+
+    def block(self, run_id, error):
+        """Commit one action-needed result and pause the still-matching binding."""
+        text(error, 'safe error', 4096)
+        with self._transaction():
+            run = self.get_run(run_id)
+            self._finish(run_id, 'needs_user_action', '', error)
+            row = self._job(run['job_id'])
+            if json.loads(row['config'])['execution'] == run['snapshot']['execution']:
+                self.db.execute('''UPDATE jobs SET enabled=0,next_due=NULL,
+                    revision=revision+1,updated=? WHERE id=?''', (self._now(), row['id']))
+        return self.get_run(run_id)
+
     def _finish(self, run_id, state, result, error, usage=None, outcome=None):
         run = self.get_run(run_id)
         if run['state'] not in ACTIVE:
