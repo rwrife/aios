@@ -60,11 +60,12 @@ repository.
 - Frameless AIOS windows must render `WindowBorder.qml` as their topmost,
   input-transparent child.
 - Decorated windows use the AIOS Openbox theme and its one-pixel border.
-- Match `Theme.windowRadius` (16 px) on both the surface and outline. Native
-  browser and terminal frames receive the same radius through Picom.
-- Use Picom's GLX renderer for native rounded frames: it redraws the border
-  along the antialiased curve. XRender clipping alone leaves corner gaps.
-  Software-rendered desktops use the session's automatic XRender fallback:
+  Keep native browser, terminal, and other OS-level frames square; compositor
+  rounding clips their border corners on XRender.
+- Match `Theme.windowRadius` (16 px) on both the surface and outline of
+  frameless QML windows, including Chat and Settings.
+- Preserve the session's automatic GLX/XRender renderer selection.
+  Software-rendered desktops use the automatic XRender fallback:
   software GLX can freeze the initial window pixmap, leaving a black desktop.
 - Disable damage-only repainting so newly opened software-rendered Qt
   surfaces do not remain blank under GLX.

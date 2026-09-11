@@ -56,6 +56,7 @@ QEMU_ARGS=(
   -smp "$CPU_COUNT"
   -boot d
   -cdrom "$ISO_PATH"
+  -serial "${AIOS_QEMU_SERIAL:-mon:stdio}"
   -drive "if=virtio,file=${DISK_PATH//,/,,},format=qcow2"
   -nic user,model=virtio-net-pci
   -audiodev "${AIOS_QEMU_AUDIO:-pa},id=audio0"
@@ -71,12 +72,9 @@ if [ "${AIOS_QEMU_UEFI:-0}" = 1 ]; then
 fi
 
 if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
-  QEMU_ARGS+=( -display none -serial "${AIOS_QEMU_SERIAL:-mon:stdio}" )
+  QEMU_ARGS+=( -display none )
 else
   QEMU_ARGS+=( -display gtk,full-screen=off,zoom-to-fit=on )
-  if [ -n "${AIOS_QEMU_SERIAL:-}" ]; then
-    QEMU_ARGS+=( -serial "$AIOS_QEMU_SERIAL" )
-  fi
 fi
 
 if [ "$(uname -m)" = "x86_64" ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
@@ -95,4 +93,5 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 printf '[aios] Booting %s as %s\n' "$ISO_PATH" "$VM_NAME"
+echo '[aios] Live desktop startup can take several minutes. Boot progress is sent to the serial console.'
 exec "${QEMU_ARGS[@]}"
