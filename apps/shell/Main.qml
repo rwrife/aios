@@ -178,7 +178,7 @@ Window {
         text: Qt.formatTime(desktop.currentTime, "h:mm AP")
         color: wordmark.color
         opacity: wordmark.opacity
-        font: wordmark.font
+        font.letterSpacing: wordmark.font.letterSpacing
         font.pixelSize: wordmark.font.pixelSize * 0.75
     }
     Loader {
