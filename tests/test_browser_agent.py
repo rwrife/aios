@@ -501,22 +501,16 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertIsNotNone(skill)
         session = agent.AgentSession(
-            [{"role": "user", "content": "I need a calculator"}],
+            [{"role": "user", "content": "create a calculator application"}],
             "tools.sock",
             catalog=[skill],
         )
         bodies = []
         html = "<!doctype html><title>Calculator</title><button>1</button>"
         calls = [
-            ("fallback-search", {"action": "search", "query": "I need a calculator"}),
-            ("fallback-create", {"action": "create", "title": "Calculator", "request": "I need a calculator"}),
+            ("fallback-search", {"action": "search", "query": "create a calculator application"}),
+            ("fallback-create", {"action": "create", "title": "Calculator", "request": "create a calculator application"}),
             ("fallback-write", {"action": "write", "id": "calculator-web", "html": html}),
-            ("fallback-publish", {
-                "action": "publish",
-                "id": "calculator-web",
-                "summary": "Offline web calculator.",
-                "keywords": ["calculator", "offline"],
-            }),
             ("fallback-launch", {"action": "launch", "id": "calculator-web"}),
         ]
 
@@ -526,6 +520,8 @@ class BrowserAgentTests(unittest.TestCase):
                 prompt = body["messages"][0]["content"]
                 self.assertIn("Inspect the advertised `application` tool schema", prompt)
                 self.assertIn("self-contained `index.html`", prompt)
+                self.assertIn("Publication is optional and separate", prompt)
+                self.assertIn("finish by launching it in the same turn", prompt)
                 properties = body["tools"][1]["function"]["parameters"]["properties"]
                 self.assertNotIn("runtime", properties)
                 self.assertNotIn("template", properties)
@@ -552,7 +548,6 @@ class BrowserAgentTests(unittest.TestCase):
             {"matches": []},
             {"id": "calculator-web", "title": "Calculator", "runtime": "web"},
             {"written": True, "bytes": len(html.encode("utf-8"))},
-            {"published": True, "id": "calculator-web", "runtime": "web"},
             {"launched": True, "id": "calculator-web", "runtime": "web"},
         ]
         with patch("aios.agent.core.request", side_effect=request), patch(
@@ -571,7 +566,6 @@ class BrowserAgentTests(unittest.TestCase):
                 "Application: search",
                 "Application: create",
                 "Application: write",
-                "Application: publish",
                 "Application: launch",
             ],
         )
