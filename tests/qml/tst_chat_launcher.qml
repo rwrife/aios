@@ -202,7 +202,10 @@ TestCase {
         backend.loaded()
         verify(!desktop.setupWindow.visible)
         desktop.openSettings()
-        mouseClick(findChild(desktop.settingsWindow, "launchSetup"))
+        findChild(desktop.settingsWindow, "settingsPages").currentIndex = 6
+        var launchSetup = findChild(desktop.settingsWindow, "launchSetup")
+        tryCompare(launchSetup, "visible", true)
+        mouseClick(launchSetup)
         tryCompare(desktop.setupWindow, "visible", true)
         tryCompare(desktop.settingsWindow, "visible", false)
     }
