@@ -262,6 +262,12 @@ class AgentSession:
                 _json_bytes({"name": skill.name, "description": skill.description}).decode("utf-8")
             )
         parts = [POLICY, "\n".join(catalog_lines)]
+        if self.background is not None:
+            parts.append(
+                "This is one unattended scheduled run, with no live user or originating chat. "
+                "Complete only the saved task using advertised capabilities. Do not create schedules "
+                "or start native authentication. If blocked, explain the required user action in "
+                "the saved answer; do not wait for a reply or claim the blocked action succeeded.")
         if self.active:
             skill_sections = []
             for skill in self.active.values():

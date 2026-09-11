@@ -166,11 +166,13 @@ class SchedulerProcessTests(unittest.TestCase):
             time.sleep(0.05)
         self.fail('Run did not complete')
 
-    def configure_mcp(self, hang=False):
+    def configure_mcp(self, hang=False, nested=False):
         core.write_json(core.config_dir() / 'mcp.json', {'servers': {'fixture': {
             'command': sys.executable, 'args': [str(FIXTURE.resolve())], 'tools': ['ping'],
             'env': {'SCHEDULED_TEST_PIDS': str(self.root / 'pids'),
-                    'SCHEDULED_TEST_HANG': '1' if hang else '0'},
+                    'SCHEDULED_TEST_HANG': '1' if hang else '0',
+                    'SCHEDULED_TEST_SCHEDULER': str(scheduled_jobs.socket_path()) if nested else '',
+                    'SCHEDULED_TEST_NESTED_RESULT': str(self.root / 'nested-result')},
         }}})
 
     def wait_pids(self):
@@ -235,6 +237,46 @@ class SchedulerProcessTests(unittest.TestCase):
         self.assertEqual(started['params']['model'], 'test-model')
         self.assertTrue(started['params']['ephemeral'])
 
+    def test_local_jobs_share_session_runtime_without_chat_and_survive_timeout(self):
+        from aios import local_runtime
+        with socket.socket(socket.AF_INET) as probe:
+            try:
+                probe.bind(('127.0.0.1', 8080))
+            except OSError:
+                self.skipTest('Local inference port is occupied by another service')
+        model = self.root / 'fixture.gguf'
+        model.write_bytes(b'GGUF fixture')
+        self.config.update(mode='local', model_path=str(model))
+        core.write_json(core.config_dir() / 'config.json', self.config)
+        pids_path = self.root / 'model-pids'
+        runtime = subprocess.Popen(
+            [sys.executable, str(FIXTURE.parent / 'scheduled_local_runtime.py')],
+            env={**os.environ, 'SCHEDULED_TEST_MODEL_PIDS': str(pids_path)},
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        self.processes.append(runtime)
+        result = self.wait_run(self.run_job(self.job(provider='local', model='local')), 'succeeded')
+        self.assertEqual(result['result'], 'Local background answer')
+        first_pid = int(pids_path.read_text().strip())
+        with core.request('/chat/completions', {'model': 'local', 'messages': [
+                {'role': 'user', 'content': 'Interactive task'}], 'stream': True}) as response:
+            self.assertTrue(list(core.sse_events(response)))
+        self.wait_run(self.run_job(self.job(provider='local', model='local')), 'succeeded')
+        self.assertEqual(pids_path.read_text().split(), [str(first_pid)])
+        self.wait_run(self.run_job(self.job('LOCAL_HANG', provider='local', model='local',
+                                            timeout_seconds=3)), 'failed')
+        self.assertIsNone(runtime.poll())
+        deadline = time.monotonic() + 5
+        while live(first_pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(live(first_pid))
+        self.wait_run(self.run_job(self.job(provider='local', model='local')), 'succeeded')
+        self.assertEqual(len(pids_path.read_text().split()), 2)
+        job = self.job(provider='local', model='local')
+        model.write_bytes(b'GGUF changed replacement')
+        self.wait_run(self.run_job(job), 'needs_user_action')
+        local_runtime.stop_service()
+        runtime.wait(timeout=5)
+
     def test_live_capability_revocation_prevents_tool_call(self):
         self.configure_mcp()
         def revoke(_):
@@ -245,6 +287,11 @@ class SchedulerProcessTests(unittest.TestCase):
         messages = self.provider.requests[-1]['messages']
         self.assertTrue(any(item['role'] == 'tool' and 'unavailable' in item['content'] for item in messages))
         self.provider.on_request = None
+
+    def test_background_mcp_cannot_access_scheduler_socket(self):
+        self.configure_mcp(nested=True)
+        self.wait_run(self.run_job(self.job('MCP', capabilities=['mcp_fixture_ping'])), 'succeeded')
+        self.assertEqual((self.root / 'nested-result').read_text(), 'blocked')
 
     def test_rejected_credentials_are_action_needed(self):
         self.wait_run(self.run_job(self.job('AUTH_FAILURE')), 'needs_user_action')

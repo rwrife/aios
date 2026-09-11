@@ -34,9 +34,18 @@ else
     picom --config /etc/xdg/picom.conf >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
 fi
 compositor=$!
+aios-local-runtime service >>"$HOME/.local/state/aios/local-runtime.log" 2>&1 &
+local_runtime=$!
 aios-scheduler >>"$HOME/.local/state/aios/scheduler.log" 2>&1 &
 scheduler=$!
-trap 'kill "$scheduler" "$compositor" "$wm" 2>/dev/null || true; wait "$scheduler" 2>/dev/null || true' EXIT INT TERM
+cleanup() {
+    kill "$scheduler" 2>/dev/null || true
+    wait "$scheduler" 2>/dev/null || true
+    aios-local-runtime stop >>"$HOME/.local/state/aios/local-runtime.log" 2>&1 || true
+    wait "$local_runtime" 2>/dev/null || true
+    kill "$compositor" "$wm" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on
 # its RHI renderer because the software scenegraph cannot display video frames.
 # GStreamer avoids the Qt FFmpeg startup crash on the live desktop while

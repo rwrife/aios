@@ -81,6 +81,21 @@ including browser/MCP processes in separate process groups. A scheduler crash
 closes the run control pipe; restart waits for cleanup leases before marking
 abandoned runs interrupted. No shared desktop conversation history is written.
 
+The desktop starts `aios-local-runtime service` before the scheduler and stops
+it after scheduled workers have exited. This one unprivileged daemon owns
+`llama-server`; the shell owns only a readiness client. `core.request` holds
+`local_runtime.admission(config, background=..., timeout=...)` until the HTTP
+response closes. Waiting interactive requests take priority over waiting
+background requests, FIFO within each class. Active local background requests
+are capped at 60 seconds, interactive requests at 120 seconds; abandonment or
+expiry stops the old model process before admitting another generation.
+Background callers never spawn the daemon under their run guardian.
+Local model file identity is included in saved bindings, so replacing a model
+requires reviewing affected jobs rather than silently switching their model.
+Local model loading and lease errors are bounded safe failures, not permission
+to fall back to a paid provider. Full hardware/model compatibility and the real
+Alpine Chromium sandbox remain part of the later image acceptance milestone.
+
 ## Agent Skills
 
 ### OS control

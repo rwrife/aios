@@ -185,6 +185,8 @@ class Scheduler:
 
     def launch(self, run):
         try:
+            if '@' not in run['snapshot']['execution']['profile']:
+                raise NeedsUserAction('Save this job again to bind its provider and model explicitly')
             bind(run['snapshot']['execution'], require_credentials=True)
         except NeedsUserAction as error:
             self.store.block(run['id'], str(error))
@@ -333,16 +335,22 @@ class Scheduler:
             poll.register(server, selectors.EVENT_READ)
             clients = {}
             next_tick = 0
+
+            def recheck():
+                nonlocal next_tick
+                if time.monotonic() < next_tick:
+                    return
+                try:
+                    self.tick()
+                except (sqlite3.Error, OSError, SchedulingError):
+                    self.health_error = 'Scheduler storage or process supervision failed; dispatch is stopped'
+                next_tick = time.monotonic() + RECHECK_SECONDS
+
             try:
                 while not self.stopping:
-                    now = time.monotonic()
-                    if now >= next_tick:
-                        try:
-                            self.tick()
-                        except (sqlite3.Error, OSError, SchedulingError):
-                            self.health_error = 'Scheduler storage or process supervision failed; dispatch is stopped'
-                        next_tick = time.monotonic() + RECHECK_SECONDS
+                    recheck()
                     for key, _ in poll.select(0.1):
+                        recheck()
                         if key.fileobj is server:
                             client, _ = server.accept()
                             try:

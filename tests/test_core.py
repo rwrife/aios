@@ -1,4 +1,5 @@
 import io
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -401,11 +402,44 @@ class CoreTests(unittest.TestCase):
         response = io.BytesIO(b'{"ready":true}')
         opener = Mock()
         opener.open.side_effect = [urllib.error.URLError(ConnectionRefusedError()), response]
+        released = []
+        @contextmanager
+        def admission(config, **options):
+            self.assertEqual(options, {'background': False, 'timeout': 5})
+            yield 5
+            self.assertTrue(response.closed)
+            released.append(True)
         with patch("urllib.request.build_opener", return_value=opener), \
+                patch("aios.local_runtime.admission", admission), \
                 patch("aios.core.time.sleep") as sleep:
-            self.assertIs(core.request("/health", timeout=5), response)
+            with core.request("/health", timeout=5) as opened:
+                self.assertIs(opened, response)
+                self.assertEqual(released, [])
+        self.assertEqual(released, [True])
         self.assertEqual(opener.open.call_count, 2)
         sleep.assert_called_once_with(core.LOCAL_CONNECT_RETRY_DELAY)
+
+    def test_local_request_failure_abandons_admission_and_remote_bypasses_it(self):
+        from aios.local_runtime import admission
+        @contextmanager
+        def slot(config, **options):
+            try:
+                yield 0.001
+            except RuntimeError:
+                released.append('abandoned')
+                raise
+        released = []
+        opener = Mock()
+        opener.open.side_effect = urllib.error.HTTPError('http://localhost', 401, '', {}, None)
+        with patch('aios.local_runtime.admission', slot), patch('urllib.request.build_opener', return_value=opener):
+            with self.assertRaises(RuntimeError):
+                core.request('/chat/completions', background=True)
+        self.assertEqual(released, ['abandoned'])
+        core.save_config({'mode': 'remote', 'url': 'https://example.com/v1'})
+        with patch('aios.local_runtime.admission', wraps=admission) as lease, \
+                patch('urllib.request.build_opener', return_value=Mock()):
+            core.request('/models')
+            lease.assert_not_called()
 
     def test_missing_model_rejected(self):
         with self.assertRaises(ValueError):

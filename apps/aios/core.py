@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import shutil
+import sys
 import time
 from pathlib import Path
 import urllib.error
@@ -199,6 +200,35 @@ def model_name(profile="current"):
     raise ValueError("Unknown model profile.")
 
 
+class _LeasedResponse:
+    def __init__(self, response, lease):
+        self.response = response
+        self.lease = lease
+
+    def __getattr__(self, name):
+        return getattr(self.response, name)
+
+    def __iter__(self):
+        return iter(self.response)
+
+    def __enter__(self):
+        return self.response
+
+    def __exit__(self, kind, error, traceback):
+        lease, self.lease = self.lease, None
+        if lease is None:
+            return
+        try:
+            self.response.close()
+        except BaseException:
+            lease.__exit__(*sys.exc_info())
+            raise
+        lease.__exit__(kind, error, traceback)
+
+    def close(self):
+        self.__exit__(None, None, None)
+
+
 def request(route, body=None, timeout=90, profile="current", *, config=None, background=False):
     config = load_config() if config is None else config
     local = False
@@ -223,9 +253,27 @@ def request(route, body=None, timeout=90, profile="current", *, config=None, bac
             headers=headers,
             data=json.dumps(body).encode() if body is not None else None,
         )
-        opener = urllib.request.build_opener(NoRedirect)
+        handlers = [NoRedirect]
+        if local:
+            handlers.append(urllib.request.ProxyHandler({}))
+        opener = urllib.request.build_opener(*handlers)
     except ValueError:
         raise RuntimeError(SAFE_REQUEST_VALUE_ERROR) from None
+    lease = None
+    if local:
+        from .local_runtime import admission
+        lease = admission(config, background=background, timeout=timeout)
+        timeout = min(timeout, lease.__enter__())
+    try:
+        response = _open_request(opener, req, timeout, local)
+        return _LeasedResponse(response, lease) if lease is not None else response
+    except BaseException:
+        if lease is not None:
+            lease.__exit__(*sys.exc_info())
+        raise
+
+
+def _open_request(opener, req, timeout, local):
     deadline = time.monotonic() + min(timeout, LOCAL_CONNECT_RETRY_SECONDS)
     while True:
         try:

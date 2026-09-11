@@ -21,7 +21,8 @@ def _route(profile, config):
     if profile == 'current':
         mode = config['mode']
         if mode == 'local':
-            return 'local', 'local', config.get('model_path', '')
+            from .local_runtime import _model_identity
+            return 'local', 'local', _model_identity(config.get('model_path', ''))
         if mode == 'remote':
             return 'remote', config['model'], core.validate_url(config['url'])
         if mode == 'chatgpt':
@@ -46,7 +47,7 @@ def bind(execution, *, require_credentials=False):
     profile = execution['profile'].split('@', 1)[0]
     try:
         provider, model, destination = _route(profile, config)
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, OSError, RuntimeError):
         raise NeedsUserAction('Review the saved provider and model in AI models settings') from None
     reference = _reference(profile, provider, model, destination)
     if (execution['provider'] != provider or execution['model'] != model
@@ -55,8 +56,14 @@ def bind(execution, *, require_credentials=False):
     if not model or (provider == 'local' and not destination):
         raise NeedsUserAction('Choose an explicit installed model before scheduling this job')
     if require_credentials:
-        if provider == 'remote' and not config.get('agent_api_key' if profile == 'agent' else 'api_key'):
-            raise NeedsUserAction('Configure the saved provider API key, then resume this job')
+        if provider == 'remote':
+            key = config.get('agent_api_key' if profile == 'agent' else 'api_key')
+            try:
+                core._validate_agent_api_key(key, 'Invalid saved provider API key')
+            except ValueError:
+                raise NeedsUserAction('Configure the saved provider API key, then resume this job') from None
+            if not key.strip():
+                raise NeedsUserAction('Configure the saved provider API key, then resume this job')
         if provider == 'subscription':
             from .subscription import private_home
             if not (private_home() / 'auth.json').is_file():
@@ -75,7 +82,10 @@ def binding(prompt):
     provider, profile = select_provider(SimpleNamespace(remote_preferred=preferred), config)
     if provider == 'chatgpt':
         profile = 'agent' if preferred and config.get('agent_mode') == 'chatgpt' else 'current'
-    provider, model, destination = _route(profile, config)
+    try:
+        provider, model, destination = _route(profile, config)
+    except (KeyError, ValueError, OSError, RuntimeError):
+        raise NeedsUserAction('Review the saved provider and model in AI models settings') from None
     if not model:
         raise NeedsUserAction('Choose an explicit model in AI models settings')
     return {'provider': provider, 'profile': _reference(profile, provider, model, destination),

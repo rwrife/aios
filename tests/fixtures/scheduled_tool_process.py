@@ -46,6 +46,19 @@ else:
                                 'inputSchema': {'type': 'object', 'properties': {}}}]}
         else:
             descendants()
+            scheduler = os.environ.get('SCHEDULED_TEST_SCHEDULER')
+            if scheduler:
+                with socket.socket(socket.AF_UNIX) as peer:
+                    peer.settimeout(2)
+                    try:
+                        peer.connect(scheduler)
+                        peer.sendall(b'{"action":"health"}\n')
+                        reply = peer.recv(8192)
+                    except (ConnectionResetError, BrokenPipeError):
+                        reply = b''
+                result_path = os.environ['SCHEDULED_TEST_NESTED_RESULT']
+                with open(result_path, 'w') as stream:
+                    stream.write('blocked' if not reply else 'accepted')
             if os.environ.get('SCHEDULED_TEST_HANG') == '1':
                 time.sleep(120)
             result = {'content': [{'type': 'text', 'text': 'fixture tool result'}]}

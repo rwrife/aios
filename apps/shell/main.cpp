@@ -15,8 +15,6 @@
 #include <QQuickWindow>
 #include <QPalette>
 #include <QFont>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QRegularExpression>
 #include <QUuid>
 #include <QTemporaryDir>
@@ -151,36 +149,18 @@ public:
         });
         tieToDesktop(local);
         tieToDesktop(tools);
-        readiness.setInterval(500);
-        connect(&readiness, &QTimer::timeout, this, [this] {
-            if (checkingReady) return;
-            checkingReady = true;
-            QNetworkRequest request(QUrl("http://127.0.0.1:8080/health"));
-            request.setTransferTimeout(1500);
-            auto reply = network.get(request);
-            connect(reply, &QNetworkReply::finished, this, [this,reply] {
-                checkingReady = false;
-                if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200) {
-                    readiness.stop();
-                    if (!m_busy && local.state() == QProcess::Running && m_config.value("mode") == "local") {
-                        m_status = "Ready"; emit changed();
-                    }
-                }
-                reply->deleteLater();
-            });
-        });
         connect(&local, &QProcess::errorOccurred, this, [this] {
             m_status = "Local model could not start. Check the model file and available memory."; emit changed();
         });
         connect(&local, &QProcess::readyReadStandardError, this, [this] {
-            // Drain model diagnostics. Never render logs as chat content.
+            // Drain readiness diagnostics. Never render logs as chat content.
             local.readAllStandardError();
         });
         connect(&local, &QProcess::readyReadStandardOutput, this, [this] { local.readAllStandardOutput(); });
         connect(&local, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
             [this](int code, QProcess::ExitStatus) {
-                readiness.stop();
                 if (code != 0 && m_config.value("mode") == "local") { m_status = "Local model stopped. Check model compatibility and available memory."; emit changed(); }
+                else if (!m_busy && m_config.value("mode") == "local") { m_status = "Ready"; emit changed(); }
             });
         startDesktopControls();
         if (owner) {
@@ -469,12 +449,9 @@ private:
     bool m_busy = false;
     bool m_configuring = false;
     QProcess *active = nullptr;
-    QProcess local;
+    QProcess local; // Readiness client only; the desktop runtime owns llama-server.
     QProcess tools;
     QTemporaryDir toolDirectory;
-    QNetworkAccessManager network;
-    QTimer readiness;
-    bool checkingReady = false;
     int m_volume = 50;
     bool m_muted = false;
     bool m_volumeAvailable = false;
@@ -535,10 +512,12 @@ private:
             local.terminate(); if (!local.waitForFinished(1000)) { local.kill(); local.waitForFinished(1000); }
         }
         if (m_config.value("mode") == "local" && !m_config.value("model_path").toString().isEmpty()) {
-            local.start("llama-server", {"--model", m_config.value("model_path").toString(), "--alias", "local",
-                "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja", "--chat-template-kwargs", "{\"enable_thinking\":false}"});
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert("PYTHONPATH", env.value("AIOS_PYTHONPATH").isEmpty()
+                       ? "/usr/local/share/aios" : env.value("AIOS_PYTHONPATH"));
+            local.setProcessEnvironment(env);
+            local.start("python3", {"-m", "aios.local_runtime", "ready"});
             m_status = "Local model starting. You can chat when it is ready.";
-            readiness.start();
         }
     }
     void run(QJsonObject request) {

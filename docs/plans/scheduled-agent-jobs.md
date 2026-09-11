@@ -1,7 +1,8 @@
 # Scheduled agent jobs and orb attention
 
-Status: milestone 1 implemented; milestone 2 service/execution implementation
-is in progress on its dependent PR. Configuration and feedback UI are pending.
+Status: milestones 1-2 implemented as the core and isolated execution service.
+Configuration, feedback UI, protected-workspace support, and image validation
+remain pending in the following dependent layers.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -34,15 +35,45 @@ result returns unavailable instead of running again. Unread results are never
 automatically pruned. The database is capped at 100 MiB, with a dispatch reserve
 for active-run completion; storage exceptions propagate to the future service.
 
-Milestones 3-5 remain pending. The core records provider/model/capability
-bindings but cannot authorize or execute them. The service must enforce
-singleton ownership, validate those bindings against live configuration, use
-monotonic deadlines and bounded timer rechecks, supervise isolated workers, and
-stop processes before recording cancellation/deletion or restart recovery.
-Outbox storage is ready for the later notification bridge; quiet-hours,
-actionable-only filtering, and snooze are saved policy, not active delivery.
-No scheduling tool, skill, settings UI, orb changes, or protected-workspace
-adapter is enabled yet.
+Milestone 2 adds `scheduler.py`, `scheduled_jobs.py`, `scheduled_execution.py`,
+`scheduled_runner.py`, and `local_runtime.py`, with packaged desktop-session
+launchers. The scheduler owns a private, peer-validated Unix socket and a
+storage-scoped singleton lease, so alternate runtime directories cannot start
+another dispatcher over the same store. Its timer rechecks once per second.
+Immutable worker snapshots bind existing current/agent provider routes to
+credential-free fingerprints, including local model file identity. Missing or
+changed bindings pause the unchanged job with one durable action-needed result.
+
+Each run starts a real worker/agent/tool-host pair under a Linux subreaper.
+Run cleanup leases outlive scheduler crashes, and cancellation, deletion,
+shutdown and recovery stop browser/MCP descendants before terminal state is
+committed. The service itself adopts descendants if a run guardian crashes.
+Background calls enforce saved/current capability intersection, reject native
+sign-in and nested scheduling, and never save shared conversation history.
+The client exposes normalized readback, next-three-occurrence preview, binding
+and capability discovery, explicit configured-zone discovery, revision checks,
+bounded pagination, results and unread outbox access; exact signatures are in
+`docs/agentic-tools.md`.
+
+The desktop-owned local runtime shares one model process across foreground and
+background callers, with interactive-first queued admission and connection-held
+leases through HTTP response closure. Active background inference is capped at
+60 seconds; abandoned leases stop old generation before another is admitted.
+Scheduled workers cannot launch a daemon beneath their cleanup guardian.
+Output budgets conservatively count UTF-8 bytes (including tool arguments);
+compatible providers also receive remaining `max_tokens`. Reported usage is
+retained when supplied. This is not a guarantee about unreported provider
+reasoning tokens or billing.
+
+Headless tests exercise real local/remote/subscription worker paths with
+deterministic provider processes, isolated browser/MCP fixture subprocesses,
+cleanup, timeouts, crashes, credentials, revocation, idempotency and snapshots.
+Native shell compilation and the real Alpine/browser/model hardware acceptance
+remain in the batched image gate; this layer does not build an ISO or claim
+live provider account coverage. Outbox storage is ready for the notification
+bridge; quiet-hours, actionable-only filtering, and snooze remain saved policy,
+not active delivery. No scheduling tool, skill, settings UI, orb changes, or
+protected-workspace adapter is enabled yet.
 
 ## Outcome
 
