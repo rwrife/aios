@@ -27,14 +27,17 @@ UPLOAD_CHUNK_BYTES = 768
 
 FIRST_ACCEPTANCE = r'''#!/usr/bin/env python3
 import base64
+import http.server
 import json
 import os
 from pathlib import Path
 import stat
+import threading
 import time
 import uuid
 
 from aios import core, scheduled_jobs
+from aios.browser import Browser, discover
 
 
 def require(condition, message):
@@ -64,6 +67,154 @@ def command_lines():
     return found
 
 
+class BrowserHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        if self.path.startswith("/set/"):
+            identity = self.path.rsplit("/", 1)[-1]
+            body = (
+                "<title>Browser " + identity + "</title><h1>Browser " + identity
+                + "</h1><label>Name <input></label><button onclick=\"document.querySelector("
+                  "'#result').innerText='Hello '+document.querySelector('input').value\">"
+                  "Greet</button><p id=\"result\"></p><a href=\"/echo\">Echo</a>"
+                  "<div style=\"height:1800px\"></div><button>Bottom control</button>"
+                  "<p>Bottom marker</p>"
+            ).encode()
+            self.send_response(200)
+            self.send_header("Set-Cookie", f"browser_owner={identity}; Path=/")
+        elif self.path == "/echo":
+            cookie = self.headers.get("Cookie", "")
+            body = f"<title>Cookie echo</title><h1>{cookie}</h1>".encode()
+            self.send_response(200)
+        else:
+            body = b"<title>Next page</title><h1>Navigation works</h1>"
+            self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def descendants(pid):
+    processes = command_lines()
+    parents = {}
+    for entry in processes:
+        try:
+            stat_fields = Path(f"/proc/{entry['pid']}/stat").read_text().split(") ", 1)[1].split()
+            parents[entry["pid"]] = int(stat_fields[1])
+        except (FileNotFoundError, IndexError, ValueError):
+            pass
+    selected = {pid}
+    changed = True
+    while changed:
+        changed = False
+        for child, parent in parents.items():
+            if parent in selected and child not in selected:
+                selected.add(child)
+                changed = True
+    return [entry for entry in processes if entry["pid"] in selected]
+
+
+def browser_acceptance():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), BrowserHandler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    first = Browser(session="installed-browser-one", theme="blue")
+    second = Browser(session="installed-browser-two", theme="sage")
+    evidence = {}
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        page = first.act({"action": "open", "url": base + "/set/one"})
+        require(page["title"] == "Browser one", f"first browser failed to load: {page}")
+        entry = next(control["element"] for control in page["controls"]
+                     if control["tag"] == "input")
+        page = first.act({"action": "type", "element": entry, "text": "AIOS"})
+        button = next(control["element"] for control in page["controls"]
+                      if control["label"] == "Greet")
+        page = first.act({"action": "click", "element": button})
+        require("Hello AIOS" in page["text"], "bounded browser input/click failed")
+        require(not any(control["label"] == "Bottom control" for control in page["controls"]),
+                "browser snapshot was not viewport bounded")
+        for _ in range(30):
+            page = first.act({"action": "scroll", "direction": "down"})
+            if any(control["label"] == "Bottom control" for control in page["controls"]):
+                break
+        require("Bottom marker" in page["text"], "browser scrolling did not reach page bottom")
+        page = first.act({"action": "navigate", "url": base + "/next"})
+        require(page["title"] == "Next page", "browser navigation failed")
+        require(first.act({"action": "back"})["title"] == "Browser one",
+                "browser back navigation failed")
+
+        page = second.act({"action": "open", "url": base + "/set/two"})
+        require(page["title"] == "Browser two", f"second browser failed to load: {page}")
+        first_cookie = first.act({"action": "navigate", "url": base + "/echo"})
+        second_cookie = second.act({"action": "navigate", "url": base + "/echo"})
+        require("browser_owner=one" in first_cookie["text"]
+                and "browser_owner=two" not in first_cookie["text"],
+                "first browser profile crossed into the second")
+        require("browser_owner=two" in second_cookie["text"]
+                and "browser_owner=one" not in second_cookie["text"],
+                "second browser profile crossed into the first")
+
+        registrations = discover()
+        sessions = {item["session"] for item in registrations}
+        require({"installed-browser-one", "installed-browser-two"} <= sessions,
+                f"concurrent browser registrations missing: {registrations}")
+        trees = descendants(first.process.pid) + descendants(second.process.pid)
+        command_text = "\n".join(" ".join(item["argv"]) for item in trees)
+        require("--no-sandbox" not in command_text,
+                "Chromium sandbox was disabled in a browser process")
+        renderer_status = []
+        for item in trees:
+            if any("--type=renderer" in argument for argument in item["argv"]):
+                status = Path(f"/proc/{item['pid']}/status").read_text()
+                fields = {}
+                for line in status.splitlines():
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        fields[key] = value.strip()
+                renderer_status.append({
+                    "pid": item["pid"],
+                    "no_new_privs": fields.get("NoNewPrivs"),
+                    "seccomp": fields.get("Seccomp"),
+                })
+        require(renderer_status, "Chromium renderer process was not observed")
+        require(all(item["no_new_privs"] == "1" or item["seccomp"] == "2"
+                    for item in renderer_status),
+                f"Chromium renderer sandbox evidence missing: {renderer_status}")
+        evidence = {
+            "sessions": sorted(sessions),
+            "isolated_cookies": True,
+            "sandbox_disabled_flag_present": False,
+            "renderer_status": renderer_status,
+            "browser_processes": trees,
+        }
+    finally:
+        pids = set()
+        for browser in (first, second):
+            if browser.process:
+                pids.update(item["pid"] for item in descendants(browser.process.pid))
+            browser.close()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        remaining_pids = [pid for pid in pids if Path(f"/proc/{pid}").exists()]
+        if not remaining_pids:
+            break
+        time.sleep(0.1)
+    require(not remaining_pids, f"browser processes survived cleanup: {remaining_pids}")
+    remaining_sessions = {item["session"] for item in discover()}
+    require("installed-browser-one" not in remaining_sessions
+            and "installed-browser-two" not in remaining_sessions,
+            f"browser registrations survived cleanup: {remaining_sessions}")
+    evidence["cleanup"] = {"processes_removed": True, "registrations_removed": True}
+    return evidence
+
+
 uid = os.getuid()
 require(uid != 0, "acceptance must run as the aios user")
 require(Path("/etc/aios-mode").read_text().strip() == "installed",
@@ -91,6 +242,7 @@ while time.monotonic() < deadline:
 else:
     raise AssertionError("desktop, local runtime, and scheduler did not all become ready")
 
+browser = browser_acceptance()
 binding = call("binding", prompt="Return a short installed-system acceptance phrase.")
 require(binding["provider"] == "local", f"bundled local provider not selected: {binding}")
 require(binding["model"] == "local", f"bundled local model not selected: {binding}")
@@ -168,6 +320,7 @@ evidence = {
     },
     "health": health["result"],
     "binding": binding,
+    "browser": browser,
     "preview": preview,
     "job": job,
     "run": result,
@@ -515,6 +668,7 @@ class SerialConsole:
                 f"XDG_CONFIG_HOME=/home/aios/.config "
                 f"XDG_DATA_HOME=/home/aios/.local/share "
                 f"XDG_RUNTIME_DIR=/run/user/{uid} "
+                f"DISPLAY=:0 "
                 f"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
                 f"PYTHONPATH=/usr/local/share/aios "
                 f"/usr/bin/python3 {shlex.quote(remote_path)}"
