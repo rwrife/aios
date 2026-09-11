@@ -90,8 +90,10 @@ class Sessions:
         self.verified_until = 0
         self.manual_owner = None
         self.manual_until = 0
-        self._stop_scheduled()
-        self._stop_chats()
+        try:
+            self._stop_scheduled()
+        finally:
+            self._stop_chats()
 
     def _stop_scheduled(self):
         scheduled, self.scheduled = self.scheduled, None
@@ -118,38 +120,55 @@ class Sessions:
             raise PermissionError('Protected chat scope expired')
         chat = ProtectedChat(self)
         self.chats[chat.id] = chat
-        return {'chat': chat.id, 'history': self.journal.history(self.work),
+        return {'chat': chat.id, 'key': chat.key, 'history': self.journal.history(self.work),
                 'config': chat.config}
 
-    def _chat(self, lease, scope, chat):
+    def _chat(self, lease, scope, chat, key):
         self._present()
         if (lease, scope) != (self.lease, self.work):
             raise PermissionError('Protected chat scope expired')
         value = self.chats.get(chat)
-        if value is None:
+        if value is None or key != value.key:
             raise PermissionError('Protected chat is unavailable')
         value.authorize()
         return value
 
-    def chat_send(self, lease, scope, chat, content):
-        value = self._chat(lease, scope, chat)
+    def chat_send(self, lease, scope, chat, key, content):
+        value = self._chat(lease, scope, chat, key)
         if not isinstance(content, str) or not content.strip() or len(content) > 32768:
             raise ValueError('Invalid protected chat message')
         content = content.strip()
         self.journal.message(self.work, 'user', content)
         history = self.journal.history(self.work)['messages']
-        value.send([{'role': item['role'], 'content': item['content']} for item in history])
+        try:
+            value.send([{'role': item['role'], 'content': item['content']} for item in history])
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
         return {'accepted': True}
 
-    def chat_poll(self, lease, scope, chat):
-        return self._chat(lease, scope, chat).poll()
+    def chat_poll(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
+        try:
+            return value.poll()
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
 
-    def chat_stop(self, lease, scope, chat):
-        self._chat(lease, scope, chat).stop()
+    def chat_stop(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
+        try:
+            value.stop()
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
         return {'stopping': True}
 
-    def chat_close(self, lease, scope, chat):
-        value = self._chat(lease, scope, chat)
+    def chat_close(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
         self.chats.pop(chat, None)
         value.close()
         return {'closed': True}

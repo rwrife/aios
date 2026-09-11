@@ -128,6 +128,10 @@ public:
             return schedulingContext() == binding ? binding : QJsonObject{};
         }, this);
         connect(this, &SessionControl::privacyLost, chat, &ProtectedChat::invalidate);
+        connect(chat, &ProtectedChat::failed, this, [this](const QString &message) {
+            m_error = message;
+            emit changed();
+        });
         return chat;
     }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }

@@ -111,6 +111,7 @@ public:
 signals:
     void changed();
     void invalidated();
+    void failed(const QString &message);
     void authenticationRequested();
     void transcribed(const QString &text);
 private:
@@ -118,6 +119,7 @@ private:
     QJsonObject context;
     std::function<QJsonObject()> currentContext;
     QString chatId;
+    QString chatKey;
     QVariantList m_messages;
     QVariantMap m_config;
     QString m_status;
@@ -138,7 +140,10 @@ private:
         }
         QJsonObject request{{"action", action}, {"lease", context.value("lease")},
                             {"scope", context.value("scope")}};
-        if (action != "chat_open") request["chat"] = chatId;
+        if (action != "chat_open") {
+            request["chat"] = chatId;
+            request["key"] = chatKey;
+        }
         for (auto it = fields.begin(); it != fields.end(); ++it) request[it.key()] = it.value();
         auto raw = QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n';
         if (raw.size() > 65536 || sockets.size() >= 4) {
@@ -207,10 +212,11 @@ private:
     void apply(const QString &action, const QJsonObject &result) {
         if (action == "chat_open") {
             chatId = result.value("chat").toString();
+            chatKey = result.value("key").toString();
             const auto history = result.value("history").toObject();
             m_messages = history.value("messages").toArray().toVariantList();
             m_config = result.value("config").toObject().toVariantMap();
-            if (chatId.isEmpty()) {
+            if (chatId.isEmpty() || chatKey.isEmpty()) {
                 fail("Protected chat could not open.");
                 return;
             }
@@ -249,6 +255,7 @@ private:
         if (invalid) return;
         m_status = message;
         emit changed();
+        emit failed(message);
         invalidate();
         if (closing) deleteLater();
     }

@@ -39,10 +39,10 @@ FIELDS = {
     'evidence': ('tracks',), 'simulate': ('state',),
     'scheduled_jobs': ('lease', 'scope', 'request'),
     'chat_open': ('lease', 'scope'),
-    'chat_send': ('lease', 'scope', 'chat', 'content'),
-    'chat_poll': ('lease', 'scope', 'chat'),
-    'chat_stop': ('lease', 'scope', 'chat'),
-    'chat_close': ('lease', 'scope', 'chat'),
+    'chat_send': ('lease', 'scope', 'chat', 'key', 'content'),
+    'chat_poll': ('lease', 'scope', 'chat', 'key'),
+    'chat_stop': ('lease', 'scope', 'chat', 'key'),
+    'chat_close': ('lease', 'scope', 'chat', 'key'),
 }
 
 
@@ -154,13 +154,14 @@ class Service:
         if action == 'chat_open':
             return s.chat_open(request['lease'], request['scope'])
         if action == 'chat_send':
-            return s.chat_send(request['lease'], request['scope'], request['chat'], request['content'])
+            return s.chat_send(request['lease'], request['scope'], request['chat'],
+                               request['key'], request['content'])
         if action == 'chat_poll':
-            return s.chat_poll(request['lease'], request['scope'], request['chat'])
+            return s.chat_poll(request['lease'], request['scope'], request['chat'], request['key'])
         if action == 'chat_stop':
-            return s.chat_stop(request['lease'], request['scope'], request['chat'])
+            return s.chat_stop(request['lease'], request['scope'], request['chat'], request['key'])
         if action == 'chat_close':
-            return s.chat_close(request['lease'], request['scope'], request['chat'])
+            return s.chat_close(request['lease'], request['scope'], request['chat'], request['key'])
         if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
             if action not in ('status', 'suspend', 'evidence', 'display_attest'):
                 raise PermissionError('Personal requests require the registered display process')

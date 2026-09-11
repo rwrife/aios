@@ -27,6 +27,13 @@ TestCase {
         signal documentLoaded(string content)
         signal documentSaved()
         function chatProfile() { return sessionControl }
+        property int protectedChatClients: 0
+        function createProtectedChat() {
+            protectedChatClients++
+            var client = protectedSessionComponent.createObject(test)
+            privacyLost.connect(client.invalidated)
+            return client
+        }
         property int scheduledClients: 0
         function createScheduledJobs() {
             scheduledClients++
@@ -72,6 +79,8 @@ TestCase {
     Component {
         id: sessionComponent
         QtObject {
+            property bool protectedMode: false
+            property var config: ({})
             property var messages: []
             property bool busy: false
             property bool recording: false
@@ -89,6 +98,35 @@ TestCase {
             function attach(file) {}
             function setVoiceActive(active) { recording = active }
             function cancelRecording() { recording = false }
+            function stop() { busy = false }
+        }
+    }
+    Component {
+        id: protectedSessionComponent
+        QtObject {
+            property bool protectedMode: true
+            property var config: ({
+                mode: "remote", model: "private", model_path: "",
+                voice_mode: "remote", voice_url: ""
+            })
+            property var messages: []
+            property bool busy: false
+            property bool recording: false
+            property bool speaking: false
+            property var attachments: []
+            property string status: ""
+            property int closeCalls: 0
+            signal changed()
+            signal transcribed(string text)
+            signal invalidated()
+            function closeSession() { closeCalls += 1 }
+            function send(text) {}
+            function copy(text) {}
+            function readReply(text) {}
+            function removeAttachment(index) {}
+            function attach(file) {}
+            function setVoiceActive(active) {}
+            function cancelRecording() {}
             function stop() { busy = false }
         }
     }
@@ -157,6 +195,7 @@ TestCase {
         sessionControl.enabled = false
         sessionControl.shield = false
         sessionControl.scheduledClients = 0
+        sessionControl.protectedChatClients = 0
         desktopJobs.calls = 0
         backend.needsSetup = false
         launcher = null
@@ -405,6 +444,24 @@ TestCase {
         verify(first !== second)
         verify(first.visibility !== Window.Minimized)
         verify(second.visibility !== Window.Minimized)
+    }
+
+    function test_protected_chat_uses_scoped_session_and_closes_on_privacy_loss() {
+        var main = createDesktop()
+        sessionControl.enabled = true
+        sessionControl.greetingOnly = false
+        var chat = main.openChat()
+        verify(chat !== null)
+        compare(sessionControl.protectedChatClients, 1)
+        compare(backend.createSessionCalls, 0)
+        verify(chat.protectedMode)
+        verify(!findChild(chat, "chatSettingsButton").visible)
+        var session = chat.session
+        sessionControl.privacyLost()
+        tryCompare(session, "closeCalls", 1)
+        tryVerify(function() { return !chat.visible }, 1000)
+        sessionControl.enabled = false
+        sessionControl.greetingOnly = true
     }
 
     function test_default_chat_size_fits_screen() {

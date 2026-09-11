@@ -109,12 +109,13 @@ Each run owns an isolated worker, agent session, tool host and browser session.
 Saved capability names are intersected with the current allowlist on the
 server before calls. Background MCP requires explicit configured tool names;
 wildcard discovery does not grant unattended access. Scheduling and native
-authentication are unavailable from background runs. The model client
-currently returns unavailable in protected process contexts (a principal
-descriptor or `AIOS_SESSION_SOCKET`/`AIOS_SESSION_ID` marker): it has no
-broker-authorized per-chat request route and never falls back to the desktop
-socket. Native protected integrations must use the broker adapter and its
-current authorization, not process descriptors or sign-in status as capabilities.
+authentication are unavailable from background runs. The model client returns unavailable for a bare protected process context.
+Only a broker-launched protected foreground chat receives
+`AIOS_PROTECTED_CHAT_SOCKET`, a private fixed-action relay owned by that chat's
+sandbox supervisor. It accepts only a validated `scheduled_jobs` request and
+returns the normal status envelope. A principal descriptor or
+`AIOS_SESSION_SOCKET`/`AIOS_SESSION_ID` marker never authorizes scheduling and
+never falls back to the desktop socket.
 
 Workers use monotonic deadlines, a hard tool-call count and bounded output.
 `token_budget` is conservatively enforced as UTF-8 output bytes (including tool
@@ -151,9 +152,8 @@ It uses the same service configuration objects and normalized readbacks as
 the Python client, not a separate scheduling implementation.
 Protected sessions expose native **Scheduled jobs** in `IdentityStatus.qml`.
 Opening it creates a separate native client bound to that SessionControl's
-current lease/work, never the global desktop client. Protected model/chat
-scheduling remains unavailable until the foreground-chat prerequisite below
-is implemented and accepted; native configuration does not complete that gate.
+current lease/work, never the global desktop client. Protected natural-language
+chat uses the same schemas and scheduler validation through its per-chat relay.
 
 The QML-facing methods are fixed:
 
@@ -223,22 +223,25 @@ An agent tool cannot call this privileged broker directly. The global
 `scheduledJobs` object never receives a protected context provider; only the
 dedicated native widget's instance does. A descriptor, informational sign-in
 completion, or QML property cannot authorize or select its lease/work.
-The protected `Main.qml` path currently has no `ChatSession` UI or per-chat
-native scheduling transport. A `session_client` Python subprocess would have
-a different PID from the registered display and is not a valid workaround.
-Neither `AIOS_PRINCIPAL` nor its storage identity supplies authorization or
-lease material. `Backend::run` launches ordinary desktop workers/tool hosts and
-`Backend::persist` writes shared desktop conversation storage; enabling that
-chat path under a protected display would violate owner isolation.
+`Main.qml` opens protected chats only through
+`SessionControl::createProtectedChat()`. `ProtectedChat.h` retains the captured
+lease/work, broker-issued chat ID, and a distinct per-chat association key as
+private native state; none are QML properties or method parameters. Calls use
+only fixed `chat_open`, `chat_send`, `chat_poll`, `chat_stop`, and `chat_close`
+broker actions. The broker accepts them only from the registered display PID
+and requires the exact current lease/work/chat/key generation.
 
-The dependent protected-chat prerequisite must implement broker-owned encrypted
-conversation persistence, protected foreground worker/tool-host launch, a fixed
-per-chat scheduling relay held in the registered native display process, native
-lease/work binding and session generations, privacy/expiry cancellation, and
-protected display integration. It must prove cross-owner/scope isolation and
-in-flight response revocation before enabling protected model/chat scheduling.
-The broker adapter and dedicated native configuration in this layer do not
-provide a protected foreground chat or complete that prerequisite.
+The broker launches `aios.protected_chat` inside the owner encrypted workspace
+with `AIOS_PRINCIPAL`. It starts the ordinary worker and tool host there, so
+provider configuration, application data, MCP configuration, browser state and
+tool outputs remain inside encrypted storage or ephemeral process memory.
+Messages are persisted through the broker-owned encrypted journal, not
+`core.py` desktop conversation history. The supervisor exposes one private
+`scheduled_jobs` relay to its tool host and no broker socket, lease, work,
+owner, PID, or generic JSON passthrough. Privacy loss invalidates native
+callbacks, clears and closes the window, kills the complete process cgroup, and
+rejects stale or cross-chat replies. Protected chat currently omits attachment
+and voice capture controls; those inputs never fall back to desktop processing.
 During isolated scheduler startup the broker can return `unavailable` with
 "Protected scheduling is starting; retry shortly". The native editor retries
 health at most ten times at one-second intervals, never replays mutations,

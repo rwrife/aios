@@ -21,11 +21,16 @@ CHAT_MESSAGE_LIMIT = 32768
 CHAT_POLL_LIMIT = 256
 
 
+class TurnStopped(Exception):
+    pass
+
+
 class ProtectedChat:
     def __init__(self, sessions):
         self.sessions = sessions
         self.owner, self.lease, self.work = sessions.owner, sessions.lease, sessions.work
         self.id = str(uuid.uuid4())
+        self.key = str(uuid.uuid4())
         self.scope = str(uuid.uuid4())
         self.process = sessions.isolation.chat(self.scope, sessions.root, sessions.uid)
         self.frame = bytearray()
@@ -145,6 +150,9 @@ class ProtectedChat:
                 self.busy = False
                 if not isinstance(event.get('text'), str):
                     raise RuntimeError('Invalid protected chat error')
+            elif kind == 'progress':
+                if not isinstance(event.get('text'), str):
+                    raise RuntimeError('Invalid protected chat progress')
             else:
                 raise RuntimeError('Invalid protected chat event')
             released.append(event)
@@ -196,7 +204,7 @@ def _relay_request(server, events, control):
                 connection.sendall(raw)
                 return
             if command.get('action') == 'stop':
-                raise InterruptedError
+                raise TurnStopped
             raise ValueError('Invalid protected relay response')
 
 
@@ -273,7 +281,12 @@ def serve():
                     while not done:
                         for key, _ in poll.select(.1):
                             if key.data == 'relay':
-                                _relay_request(relay_server, event, command)
+                                try:
+                                    _relay_request(relay_server, event, command)
+                                except TurnStopped:
+                                    cleanup_turn()
+                                    event({'type': 'error', 'text': 'Stopped'})
+                                    done = True
                                 continue
                             if key.data == 'control':
                                 control = command()

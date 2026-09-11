@@ -61,10 +61,10 @@ mark-read request; listing the inbox alone must never acknowledge results.
 Report invalid, unavailable, conflict, quota_exceeded and needs_user_action
 honestly. For oversized readbacks use a smaller page or the native view.
 Missing/changed provider settings need user repair; never silently switch
-models or fall back to a paid route. Protected scheduling is currently
-unavailable to this model tool pending the protected foreground-chat relay.
-The separately authorized native configuration is not a model tool route;
-never use a principal descriptor, sign-in status, or desktop storage as a
+models or fall back to a paid route. In a protected foreground chat, use the
+same tool normally: AIOS routes it through that chat's fixed broker-authorized
+relay. A bare protected process remains unavailable. Never use a principal
+descriptor, sign-in status, desktop scheduler, or desktop storage as a
 workaround. Authentication stays in the native UI, never in prompts.
 
 Jobs run while AIOS is running, not while powered off; no hardware wake.

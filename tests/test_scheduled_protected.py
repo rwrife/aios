@@ -389,23 +389,24 @@ class ProtectedSchedulingTests(unittest.TestCase):
                 'action': 'health', key: 'untrusted'}}, 1000, 42)
             self.assertEqual(response['status'], 'invalid')
 
-    def chat_request(self, action, chat=None, **fields):
+    def chat_request(self, action, chat=None, key=None, **fields):
         request = {'action': action, 'lease': self.sessions.lease, 'scope': self.sessions.work,
                    **fields}
         if chat is not None:
             request['chat'] = chat
+            request['key'] = key
         return request
 
     def test_protected_chat_streams_persists_and_reopens_only_same_work(self):
         opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
-        chat = opened['chat']
+        chat, key = opened['chat'], opened['key']
         self.assertEqual(opened['history']['messages'], [])
         self.service.dispatch(self.chat_request(
-            'chat_send', chat, content='PRIVATE CHAT PROMPT'), 1000, 42)
+            'chat_send', chat, key, content='PRIVATE CHAT PROMPT'), 1000, 42)
         deadline = time.monotonic() + 5
         reply = {'events': []}
         while time.monotonic() < deadline:
-            reply = self.service.dispatch(self.chat_request('chat_poll', chat), 1000, 42)
+            reply = self.service.dispatch(self.chat_request('chat_poll', chat, key), 1000, 42)
             if any(item['type'] == 'done' for item in reply['events']):
                 break
             time.sleep(.02)
@@ -417,7 +418,7 @@ class ProtectedSchedulingTests(unittest.TestCase):
                           {'id': self.sessions.history()['messages'][-1]['id'],
                            'created': self.sessions.history()['messages'][-1]['created'],
                            'role': 'assistant', 'content': 'PRIVATE REPLY'}])
-        self.service.dispatch(self.chat_request('chat_close', chat), 1000, 42)
+        self.service.dispatch(self.chat_request('chat_close', chat, key), 1000, 42)
         reopened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
         self.assertEqual([item['content'] for item in reopened['history']['messages']],
                          ['PRIVATE CHAT PROMPT', 'PRIVATE REPLY'])
@@ -426,16 +427,16 @@ class ProtectedSchedulingTests(unittest.TestCase):
     def test_protected_chat_scheduler_relay_and_stale_scope_rejection(self):
         self.call('health')
         opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
-        chat = opened['chat']
-        self.service.dispatch(self.chat_request('chat_send', chat, content='SCHEDULE'), 1000, 42)
+        chat, key = opened['chat'], opened['key']
+        self.service.dispatch(self.chat_request('chat_send', chat, key, content='SCHEDULE'), 1000, 42)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            reply = self.service.dispatch(self.chat_request('chat_poll', chat), 1000, 42)
+            reply = self.service.dispatch(self.chat_request('chat_poll', chat, key), 1000, 42)
             if any(item['type'] == 'done' for item in reply['events']):
                 break
             time.sleep(.05)
         self.assertEqual(self.sessions.history()['messages'][-1]['content'], 'ok')
-        stale = self.chat_request('chat_poll', chat)
+        stale = self.chat_request('chat_poll', chat, key)
         process = self.sessions.chats[chat].process
         scope = self.sessions.chats[chat].scope
         self.sessions._shield()
@@ -447,8 +448,8 @@ class ProtectedSchedulingTests(unittest.TestCase):
 
     def test_protected_chat_rejects_cross_pid_chat_and_generation(self):
         opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
-        chat = opened['chat']
-        request = self.chat_request('chat_poll', chat)
+        chat, key = opened['chat'], opened['key']
+        request = self.chat_request('chat_poll', chat, key)
         with self.assertRaises(PermissionError):
             self.service.dispatch(request, 1000, 43)
         old_lease, old_work = self.sessions.lease, self.sessions.work
@@ -460,6 +461,11 @@ class ProtectedSchedulingTests(unittest.TestCase):
                 {**request, 'lease': old_lease, 'scope': self.sessions.work}):
             with self.assertRaises(PermissionError):
                 self.service.dispatch(changed, 1000, 42)
+        first = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        second = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        with self.assertRaises(PermissionError):
+            self.service.dispatch(
+                self.chat_request('chat_poll', first['chat'], second['key']), 1000, 42)
 
     def test_chat_protocol_is_fixed_and_bounded(self):
         base = self.chat_request('chat_open')
@@ -470,7 +476,7 @@ class ProtectedSchedulingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode(json.dumps({'action': 'chat_send', 'lease': self.sessions.lease,
                                'scope': self.sessions.work, 'chat': str(uuid.uuid4()),
-                               'content': 'x', 'request': {}}))
+                               'key': str(uuid.uuid4()), 'content': 'x', 'request': {}}))
 
 
 class ProtectedIsolationContractTests(unittest.TestCase):
@@ -513,8 +519,41 @@ class ProtectedIsolationContractTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 isolation.scheduled(scope, root, 4321)
 
+    def test_chat_adapter_requires_ready_private_display(self):
+        isolation = LinuxIsolation.__new__(LinuxIsolation)
+        owner = str(uuid.uuid4())
+        root = Path('owner-workspace')
+        isolation.config = {'principals': {owner: {'uid': 1234}},
+                            'wayland_sockets': {'1234': '/private/display'}}
+        isolation.mounts = {owner: root}
+        isolation.ready_displays = set()
+        with patch.object(isolation, '_spawn') as spawn, patch('os.path.ismount', return_value=True), \
+                patch.object(Path, 'is_socket', return_value=True), \
+                patch.object(Path, 'stat', return_value=Mock(st_uid=1234)):
+            with self.assertRaises(PermissionError):
+                isolation.chat(str(uuid.uuid4()), root, 1234)
+            isolation.ready_displays.add(1234)
+            scope = str(uuid.uuid4())
+            isolation.chat(scope, root, 1234)
+            spawn.assert_called_once_with(
+                scope, root, 1234, ['/usr/bin/python3', '-m', 'aios.protected_chat'],
+                Path('/private/display'), scheduled=True)
+
 
 class ProtectedPipeProtocolTests(unittest.TestCase):
+    def test_relay_stop_is_turn_cancellation_not_session_eof(self):
+        from aios.protected_chat import TurnStopped, _relay_request
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.recv.side_effect = [
+            json.dumps({'action': 'scheduled_jobs',
+                        'request': {'action': 'health'}}).encode() + b'\n']
+        server = Mock()
+        server.accept.return_value = connection, None
+        with self.assertRaises(TurnStopped):
+            _relay_request(server, Mock(), lambda: {'action': 'stop'})
+
     def test_malformed_control_frames_and_eof_never_dispatch(self):
         from aios.scheduled_protected import serve
         for frame in (b'', b'{"tick":1}\n', b'{"tick":false}\n',

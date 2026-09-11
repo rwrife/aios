@@ -7,6 +7,7 @@ import json
 import http.server
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
 import threading
@@ -445,6 +446,83 @@ print(json.dumps(results))
         sessions.activate_verified(owner, '123456', 'Reopened work')
         self.assertEqual(call('read_result', run_id=run['id'])['result'], 'Saved background answer')
         self.assertEqual(call('read_result', run_id=waiting_run['id'])['state'], 'cancelled')
+
+    def test_protected_chat_runs_and_schedules_inside_encrypted_workspace(self):
+        from aios import core
+        from aios.sessiond import Service
+        from aios.sessions import Sessions
+        from test_identity_sessions import MemoryStore
+        from test_scheduler import Provider
+
+        provider = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+        provider.daemon_threads = True
+        provider.requests, provider.on_request = [], None
+        thread = threading.Thread(target=provider.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.addCleanup(provider.server_close)
+        self.addCleanup(provider.shutdown)
+        self.config.update(volume_store=str(self.root / 'volumes'), workspace_size_mib=64,
+                           display_isolation_validated=True)
+        self.adapter.config_path = self.root / 'config.json'
+        sessions = Sessions(self.adapter, MemoryStore())
+        self.addCleanup(sessions.suspend)
+        owner = sessions.enroll('Protected chat fixture', '123456', True, None)['identity']
+        sessions.activate_verified(owner, '123456', 'Private conversation')
+        root, uid, work = sessions.root, sessions.uid, sessions.work
+        config_path = root / 'artifacts' / '.aios' / 'config' / 'config.json'
+        core.write_json(config_path, {
+            'mode': 'remote', 'url': f'http://127.0.0.1:{provider.server_port}/v1',
+            'model': 'test-model', 'api_key': 'CHAT-KERNEL-PRIVATE-CREDENTIAL'})
+        for path in [root / 'artifacts' / '.aios', *(root / 'artifacts' / '.aios').rglob('*')]:
+            os.chown(path, uid, uid)
+        display_path = self.root / 'private-wayland'
+        display = socket.socket(socket.AF_UNIX)
+        display.bind(str(display_path))
+        os.chown(display_path, uid, uid)
+        self.addCleanup(display.close)
+        self.config.setdefault('wayland_sockets', {})[str(uid)] = str(display_path)
+        self.adapter.ready_displays.add(uid)
+        service = Service(sessions, 1000, 1001, personal_enabled=True)
+        service.dispatch({'action': 'display_attest', 'platform': 'eglfs', 'embedded': True},
+                         1000, 42)
+
+        def request(action, chat=None, key=None, **fields):
+            value = {'action': action, 'lease': sessions.lease, 'scope': sessions.work,
+                     **fields}
+            if chat is not None:
+                value.update(chat=chat, key=key)
+            return service.dispatch(value, 1000, 42)
+
+        opened = request('chat_open')
+        chat, key = opened['chat'], opened['key']
+        request('chat_send', chat, key, content='SCHEDULE a protected health check')
+        deadline = time.monotonic() + 20
+        events = []
+        while time.monotonic() < deadline:
+            reply = request('chat_poll', chat, key)
+            events.extend(reply['events'])
+            if any(item['type'] == 'done' for item in events):
+                break
+            service.tick()
+            time.sleep(.05)
+        self.assertIn('Protected chat scheduled result',
+                      sessions.history()['messages'][-1]['content'])
+        self.assertTrue(any(body.get('tools') for body in provider.requests))
+        chat_scope = sessions.chats[chat].scope
+        process = sessions.chats[chat].process
+        sessions._shield()
+        self.assertIsNotNone(process.poll())
+        self.assertFalse((self.adapter.cgroups / chat_scope).exists())
+        sessions.suspend()
+        encrypted = Path(self.config['principals'][owner]['device']).read_bytes()
+        for secret in (b'SCHEDULE a protected health check',
+                       b'Protected chat scheduled result',
+                       b'CHAT-KERNEL-PRIVATE-CREDENTIAL'):
+            self.assertNotIn(secret, encrypted)
+        sessions.activate_verified(owner, '123456', session=work)
+        self.assertIn('Protected chat scheduled result',
+                      sessions.history()['messages'][-1]['content'])
 
     def test_provisioning_creates_only_new_encrypted_images(self):
         owner = str(uuid.uuid4())
