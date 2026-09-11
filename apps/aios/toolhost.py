@@ -462,6 +462,7 @@ class ToolHost:
         threads = []
         for name, closer in (
             ("browser", getattr(self.browser, "close", None)),
+            ("applications", getattr(self.applications, "close", None)),
             ("mcp", getattr(self.mcp, "close", None)),
         ):
             if closer is None:

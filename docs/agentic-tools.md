@@ -181,17 +181,21 @@ The skill permits only the `application` tool and requires this workflow:
    create the native calculator rather than treating the web result as a
    permanent preference.
 4. Create a native calculator with `runtime: "native"` and
-   `template: "calculator"`, publish its summary and keywords, then launch it.
+   `template: "calculator"`, then launch it in the same turn.
    Native creation never uses `read`, `write`, generated HTML, or model-supplied
    native source.
 5. When native support is absent or the requested app type has no advertised
    template, use the web fallback: create a draft, write one self-contained
-   offline `index.html`, publish its metadata and digest, and launch it.
+   offline `index.html`, and launch it in the same turn.
 6. Report success only after launch returns `launched: true`. A
    `launched: false` result is terminal for that attempt: report its safe reason
    without rebuilding, re-publishing, or retrying in a loop.
+7. Publish with a summary and keywords only when the user explicitly requests
+   publication to the reusable cache. Neither native nor web launch requires
+   publication or a follow-up user request. Honor explicit draft-only requests
+   by leaving the app unopened.
 
-Published applications are stored under:
+Draft and published applications are stored under:
 
 ```text
 $XDG_DATA_HOME/aios/applications/<application-id>/
@@ -203,6 +207,18 @@ and template identifiers. Web cache entries contain `index.html` and
 remote scripts, styles, fonts, media, packages, or extra asset files. Search
 ranks exact normalized request matches first, then title and keyword overlap;
 native entries win equal-ranked ties.
+
+Drafts retain `.draft.json` and, for web apps, the editable `index.html`; they
+do not appear in published cache search. Launch prepares a private temporary
+snapshot with the same validated manifest and SHA-256 format used for published
+apps. It does not publish the original or make the draft read-only. The runner
+never receives an unvalidated draft or a mutable draft document.
+
+Each chat's existing tool host owns its launched app processes and temporary
+snapshots across turns. Stopping or closing the chat terminates its app process
+groups (including web runner descendants) and removes snapshots. Other chats'
+apps and the persistent draft/published cache are unaffected. Shutdown cancels
+in-flight readiness waits and rejects subsequent launches.
 
 Native templates are trusted, compiled Qt implementations shipped with AIOS.
 The model selects an advertised template and supplies metadata only; it never

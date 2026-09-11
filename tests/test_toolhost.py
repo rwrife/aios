@@ -54,6 +54,10 @@ class FakeBrowser:
 class FakeApplications:
     def __init__(self):
         self.calls = []
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
 
     def search(self, payload):
         self.calls.append(("search", payload))
@@ -377,21 +381,24 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(len(result["tools"]), MAX_TOOLS)
         self.assertEqual(result["warnings"], warnings + [SAFE_MCP_LIMIT_WARNING])
 
-    def test_close_is_idempotent_and_attempts_browser_and_mcp_once(self):
+    def test_close_is_idempotent_and_attempts_all_adapters_once(self):
         browser = FakeBrowser(close_error=RuntimeError("secret-browser"))
         mcp = FakeMcp(close_error=RuntimeError("secret-mcp"))
-        host = ToolHost(browser=browser, applications=FakeApplications(), mcp=mcp)
+        applications = FakeApplications()
+        host = ToolHost(browser=browser, applications=applications, mcp=mcp)
 
         host.close()
         host.close()
 
         self.assertEqual(browser.close_calls, 1)
         self.assertEqual(mcp.close_calls, 1)
+        self.assertEqual(applications.close_calls, 1)
 
-    def test_close_runs_browser_and_mcp_cleanup_in_parallel_and_joins_both(self):
+    def test_close_runs_all_adapter_cleanup_in_parallel_and_joins_them(self):
         browser = BlockingCloser(0.25)
         mcp = BlockingCloser(0.25)
-        host = ToolHost(browser=browser, applications=FakeApplications(), mcp=mcp)
+        applications = BlockingCloser(0.25)
+        host = ToolHost(browser=browser, applications=applications, mcp=mcp)
 
         started = time.monotonic()
         host.close()
@@ -402,6 +409,8 @@ class ToolHostTests(unittest.TestCase):
         self.assertTrue(mcp.completed.is_set())
         self.assertEqual(browser.close_calls, 1)
         self.assertEqual(mcp.close_calls, 1)
+        self.assertTrue(applications.completed.is_set())
+        self.assertEqual(applications.close_calls, 1)
 
     def test_host_rejects_non_json_and_oversized_results_using_result_envelope(self):
         browser = FakeBrowser(result={"value": object()})
