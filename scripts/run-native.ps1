@@ -54,6 +54,7 @@ try {
         '-m', $memory, '-smp', $cpuCount,
         '-accel', $accelerator, '-cpu', 'max',
         '-boot', 'd', '-cdrom', $IsoPath,
+        '-serial', (Get-Setting 'AIOS_QEMU_SERIAL' 'mon:stdio'),
         '-drive', "if=virtio,file=$($diskPath.Replace(',', ',,')),format=qcow2",
         '-nic', 'user,model=virtio-net-pci',
         '-audiodev', "$audioBackend,id=audio0",
@@ -66,10 +67,9 @@ try {
         $qemuArgs += @('-drive', "if=pflash,format=raw,readonly=on,file=$($env:AIOS_OVMF_CODE.Replace(',', ',,'))")
     }
     if ($env:AIOS_QEMU_HEADLESS -eq '1') {
-        $qemuArgs += @('-display', 'none', '-serial', (Get-Setting 'AIOS_QEMU_SERIAL' 'mon:stdio'))
+        $qemuArgs += @('-display', 'none')
     } else {
         $qemuArgs += @('-display', 'sdl,full-screen=off')
-        if ($env:AIOS_QEMU_SERIAL) { $qemuArgs += @('-serial', $env:AIOS_QEMU_SERIAL) }
     }
     if ($dry) {
         # Print a copyable PowerShell command, without creating a disk or starting QEMU.
@@ -82,6 +82,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Could not create VM disk: $diskPath" }
     }
     Write-Host "Booting $IsoPath as $vmName"
+    Write-Host 'Live desktop startup can take several minutes. Boot progress is sent to the serial console.'
     & $qemu @qemuArgs
     exit $LASTEXITCODE
 } catch {
