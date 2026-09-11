@@ -193,5 +193,8 @@ Installer: `doas /usr/local/sbin/aios-install`. It requires selecting an unused
 whole disk and typing its exact erase confirmation. Use a disposable VM disk
 until the release QA matrix has been completed.
 
-Run backend and source validation with `bash scripts/test.sh`. Image CI is
-available through the Validate workflow's manual dispatch.
+Run backend and source validation with `bash scripts/test.sh`. On Windows,
+`.\scripts\test.ps1` runs those checks plus the isolated QML, native application,
+and identity display tests. Use `-Distro Debian` if the test environment is in
+another WSL distribution. Image CI is available through the Validate workflow's
+manual dispatch.

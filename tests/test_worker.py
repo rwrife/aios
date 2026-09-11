@@ -146,11 +146,12 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_build_packages_examples_and_skills_at_exact_paths_without_nesting(self):
         source = self.read("scripts/build-apps.sh")
+        tests = self.read("scripts/test-identity-display.sh")
         self.assertIn('rm -rf "$DEST/usr/local/share/aios/examples"', source)
         self.assertIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"', source)
         self.assertIn('rm -rf "$DEST/usr/local/share/aios/skills"', source)
         self.assertIn('cp -R "$ROOT/apps/skills" "$DEST/usr/local/share/aios/skills"', source)
-        self.assertIn('AIOS_APP_HOST_TEST_BINARY="$SHELL_BUILD/aios-app-host"', source)
+        self.assertIn('AIOS_APP_HOST_TEST_BINARY=/tmp/display-shell/aios-app-host', tests)
         self.assertNotIn('cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/"', source)
         self.assertEqual(source.count('rm -rf "$DEST/usr/local/share/aios/'), 2)
         self.assertTrue((ROOT / "apps/skills/application-builder/SKILL.md").is_file())

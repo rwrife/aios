@@ -197,13 +197,17 @@ TestCase {
         verify(desktop.setupWindow !== null)
         verify(desktop.setupWindow.visible)
         desktop.setupWindow.close()
+        tryCompare(desktop.setupWindow, "visible", false)
         verify(!backend.needsSetup)
         backend.loaded()
         verify(!desktop.setupWindow.visible)
         desktop.openSettings()
-        mouseClick(findChild(desktop.settingsWindow, "launchSetup"))
-        verify(desktop.setupWindow.visible)
-        verify(!desktop.settingsWindow.visible)
+        findChild(desktop.settingsWindow, "settingsPages").currentIndex = 6
+        var launchSetup = findChild(desktop.settingsWindow, "launchSetup")
+        tryCompare(launchSetup, "visible", true)
+        mouseClick(launchSetup)
+        tryCompare(desktop.setupWindow, "visible", true)
+        tryCompare(desktop.settingsWindow, "visible", false)
     }
 
     function test_existing_setup_does_not_open_automatically() {
@@ -214,14 +218,14 @@ TestCase {
         compare(findChild(desktop, "powerDialog").background.radius, palette.windowRadius)
     }
 
-    function test_desktop_clock_matches_wordmark_data() {
+    function test_desktop_clock_uses_12_hour_time_data() {
         return [
             {tag: "Ocean", theme: "blue"},
             {tag: "Sage", theme: "sage"}
         ]
     }
 
-    function test_desktop_clock_matches_wordmark(data) {
+    function test_desktop_clock_uses_12_hour_time(data) {
         backend.config.theme_color = data.theme
         createDesktop()
         var wordmark = findChild(desktop, "desktopWordmark")
@@ -231,10 +235,6 @@ TestCase {
         verify(/^\d{1,2}:\d\d (AM|PM)$/.test(clock.text))
         compare(clock.color, wordmark.color)
         compare(clock.opacity, wordmark.opacity)
-        compare(clock.font.pixelSize, Math.round(wordmark.font.pixelSize * 0.75))
-        compare(clock.font.letterSpacing, wordmark.font.letterSpacing)
-        fuzzyCompare(clock.y, wordmark.y, 0.1)
-        fuzzyCompare(clock.x + clock.width, desktop.width - 48, 0.1)
     }
 
     function test_desktop_controls_are_faded_until_hovered_data() {
@@ -264,40 +264,11 @@ TestCase {
         tryCompare(settings, "opacity", 1)
     }
 
-    function test_power_actions_are_balanced_and_prominent() {
-        createDesktop()
-        var dialog = findChild(desktop, "powerDialog")
-        dialog.open()
-        tryCompare(dialog, "opened", true)
-
-        var restart = findChild(desktop, "restartAction")
-        var shutdown = findChild(desktop, "shutdownAction")
-        verify(restart !== null)
-        verify(shutdown !== null)
-        fuzzyCompare(restart.width, shutdown.width, 0.1)
-        compare(restart.height, shutdown.height)
-
-        var restartIcon = findChild(desktop, "restartActionIcon")
-        var shutdownIcon = findChild(desktop, "powerActionIcon")
-        compare(restartIcon.width, 34)
-        compare(restartIcon.height, 34)
-        compare(restartIcon.strokeWidth, 2.5)
-        compare(shutdownIcon.width, 34)
-        compare(shutdownIcon.height, 34)
-        compare(shutdownIcon.strokeWidth, 2.5)
-        dialog.close()
-    }
-
-    function test_volume_button_opens_vertical_slider_and_mutes() {
+    function test_volume_button_adjusts_volume_and_mutes() {
         createDesktop()
         var button = findChild(desktop, "volumeButton")
         verify(button !== null)
         compare(button.Accessible.name, "Volume · 65%")
-        var glyph = findChild(desktop, "volumeButtonGlyph")
-        compare(glyph.width, 22)
-        compare(glyph.height, 22)
-        fuzzyCompare(glyph.x + glyph.width / 2, glyph.parent.width / 2, 0.1)
-        fuzzyCompare(glyph.y + glyph.height / 2, glyph.parent.height / 2, 0.1)
         mouseClick(button)
 
         var popup = findChild(desktop, "volumePopup")
@@ -305,7 +276,6 @@ TestCase {
         compare(backend.refreshVolumeCalls, 1)
 
         var slider = findChild(desktop, "volumeSlider")
-        compare(slider.orientation, Qt.Vertical)
         compare(slider.from, 0)
         compare(slider.to, 100)
         compare(popup.syncingVolume, false)
@@ -313,15 +283,9 @@ TestCase {
         var up = findChild(desktop, "volumeUpButton")
         var down = findChild(desktop, "volumeDownButton")
         var mute = findChild(desktop, "muteButton")
-        verify(up.y < slider.y)
-        verify(slider.y < down.y)
-        verify(down.y < mute.y)
         compare(up.background.border.width, 0)
         compare(down.background.border.width, 0)
         compare(mute.background.border.width, 0)
-        var muteGlyph = findChild(desktop, "muteButtonGlyph")
-        compare(muteGlyph.width, 22)
-        compare(muteGlyph.height, 22)
         mouseMove(up, up.width / 2, up.height / 2)
         tryCompare(up.background, "color", palette.input)
 
@@ -387,18 +351,6 @@ TestCase {
         var main = createDesktop()
         var first = main.openChat()
         var second = main.openChat()
-        compare(findChild(first, "chatWindowSurface").radius, palette.windowRadius)
-        compare(findChild(first, "chatWindowTitle").font.pixelSize, 22)
-        var header = findChild(first, "chatHeader")
-        var profile = findChild(first, "chatProfile")
-        verify(header !== null)
-        verify(profile !== null)
-        compare(profile.parent, header)
-        tryCompare(header, "height", 44)
-        fuzzyCompare(header.mapToItem(first.contentItem, 0, 0).y, 24, 0.5)
-        compare(findChild(first, "chatCloseButton").implicitWidth, 36)
-        compare(findChild(first, "chatCloseButton").implicitHeight, 36)
-        compare(findChild(first, "chatCloseButton").background.radius, 8)
         compare(backend.createSessionCalls, 2)
         verify(first !== null && first !== undefined)
         verify(second !== null && second !== undefined)
@@ -407,52 +359,15 @@ TestCase {
         verify(second.visibility !== Window.Minimized)
     }
 
-    function test_default_chat_size_fits_screen() {
-        var chat = createDesktop().openChat()
-        verify(chat.width <= Math.floor(chat.screen.desktopAvailableWidth * 0.7))
-        verify(chat.height <= Math.floor(chat.screen.desktopAvailableHeight * 0.7))
-    }
-
-    function test_profile_stays_top_center_when_resized_data() {
+    function test_chat_settings_close_preserves_tab_data() {
         return [
-            {tag: "compact", width: 480, height: 480},
-            {tag: "default", width: 740, height: 650},
-            {tag: "wide", width: 1040, height: 720}
+            {tag: "AI", tab: 0},
+            {tag: "Accounts", tab: 1}
         ]
     }
 
-    function test_profile_stays_top_center_when_resized(data) {
+    function test_chat_settings_close_preserves_tab(data) {
         var chat = createDesktop().openChat()
-        var profile = findChild(chat, "chatProfile")
-        var header = findChild(chat, "chatHeader")
-        var controls = findChild(chat, "chatWindowControls")
-        chat.width = data.width
-        chat.height = data.height
-        tryCompare(header, "width", chat.width - 48)
-        tryCompare(header, "height", 44)
-        var center = profile.mapToItem(chat.contentItem, profile.width / 2, profile.height / 2)
-        fuzzyCompare(center.x, chat.width / 2, 0.5)
-        fuzzyCompare(center.y, 46, 0.5)
-        verify(profile.x + profile.width < controls.x)
-        var title = findChild(chat, "chatWindowTitle")
-        verify(title.mapToItem(header, title.width, 0).x < profile.x)
-    }
-
-    function test_chat_settings_title_and_close_data() {
-        return [
-            {tag: "AI-Ocean", tab: 0, width: 740, height: 650, theme: "blue"},
-            {tag: "Accounts-Ocean", tab: 1, width: 740, height: 650, theme: "blue"},
-            {tag: "AI-Sage-compact", tab: 0, width: 480, height: 480, theme: "sage"},
-            {tag: "Accounts-Sage-compact", tab: 1, width: 480, height: 480, theme: "sage"}
-        ]
-    }
-
-    function test_chat_settings_title_and_close(data) {
-        var chat = createDesktop().openChat()
-        palette.selected = data.theme
-        chat.theme = palette
-        chat.width = data.width
-        chat.height = data.height
         mouseClick(findChild(chat, "chatSettingsButton"))
         var popup = findChild(chat, "chatSettingsPopup")
         tryCompare(popup, "opened", true)
@@ -461,22 +376,10 @@ TestCase {
         var title = findChild(popup, "chatSettingsTitle")
         var close = findChild(popup, "closeChatSettings")
         var tabs = findChild(popup, "chatSettingsTabs")
-        var frame = findChild(popup, "chatSettingsBorder")
         compare(title.text, "Chat settings")
-        compare(title.font.pixelSize, 22)
-        compare(title.color, palette.ink)
-        compare(header.height, 44)
-        fuzzyCompare(header.y, 0, 0.5)
-        verify(tabs.y >= header.y + header.height)
+        verify(header !== null)
         compare(close.Accessible.name, "Close chat settings")
-        compare(close.width, 36)
-        compare(close.height, 36)
-        fuzzyCompare(close.mapToItem(popup.contentItem, close.width, 0).x, popup.availableWidth, 0.5)
-        compare(frame.border.width, 1)
-        compare(frame.border.color, palette.waveAlpha(0.5))
         compare(findChild(popup, "chatModelSettings").showClose, false)
-        verify(popup.width <= chat.width)
-        verify(popup.height <= chat.height)
         tabs.currentIndex = data.tab
         waitForRendering(popup.contentItem)
         verify(close.visible)

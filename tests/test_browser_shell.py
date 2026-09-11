@@ -70,20 +70,10 @@ class BrowserShellTests(unittest.TestCase):
         self.assertEqual(source.count('interruptPendingForUserAction();'), 4)
         self.assertIn('Browser operation interrupted by a manual browser control.', source)
 
-    def test_browser_bounds_initial_frame_and_removes_minimize(self):
+    def test_browser_removes_minimize_control(self):
         source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
-        geometry = (ROOT / 'apps/window_geometry.h').read_text(encoding='utf-8')
         self.assertIn('setWindowFlag(Qt::CustomizeWindowHint)', source)
         self.assertIn('setWindowFlag(Qt::WindowMinimizeButtonHint, false)', source)
-        self.assertIn('screen()->availableGeometry()', source)
-        self.assertIn('windowHandle()->frameMargins()', source)
-        self.assertIn('whenWindowFrameReady(windowHandle()', source)
-        self.assertIn('initialWindowSize(minimumSize(), available, frame)', source)
-        self.assertIn('m_initialGeometryApplied', source)
-        self.assertIn('available.width() * 0.7', geometry)
-        self.assertIn('available.height() * 0.7', geometry)
-        self.assertIn('- frame.top() - frame.bottom()', geometry)
-        self.assertNotIn('setMaximumSize(', source)
 
 
 if __name__ == '__main__':

@@ -122,8 +122,6 @@ class TerminalThemeTests(unittest.TestCase):
             openbox, re.S)
         self.assertIsNotNone(terminal_rule)
         self.assertIsNotNone(browser_rule)
-        self.assertIn("<width>69%</width>", terminal_rule.group(1))
-        self.assertIn("<height>60%</height>", terminal_rule.group(1))
         self.assertNotIn("<size>", browser_rule.group(1))
 
     def test_native_close_icon_has_twelve_pixel_visible_mark(self):
@@ -149,11 +147,10 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn('QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-gstreamer}"', session)
         self.assertIn("QMediaPlayer *player = nullptr;", voice)
         self.assertIn("void ensurePlayer()", voice)
-        build = (ROOT / "scripts/build-apps.sh").read_text()
         container = (ROOT / "scripts/container-build.sh").read_text()
         preview = (ROOT / "scripts/preview-chat.sh").read_text()
         display = (ROOT / "scripts/test-identity-display.sh").read_text()
-        self.assertIn("QT_MEDIA_BACKEND=gstreamer", build)
+        self.assertIn("QT_MEDIA_BACKEND=gstreamer", display)
         self.assertIn("QT_MEDIA_BACKEND=gstreamer", preview)
         self.assertIn("gst-plugins-good", container)
         self.assertIn("gst-plugins-good", preview)

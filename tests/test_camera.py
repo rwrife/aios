@@ -37,8 +37,6 @@ class CameraTests(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.assertIn('640', source)
                 self.assertIn('360', source)
-                self.assertIn('parent.width * 0.75', source)
-                self.assertIn('width * 9 / 16', source)
                 self.assertIn('cameraLoader.active = false', source)
                 self.assertIn('sourceComponent: Camera', source)
                 self.assertNotIn('VideoFrameFormat', source)

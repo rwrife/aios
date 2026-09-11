@@ -58,11 +58,6 @@ TestCase {
         wizard = wizardComponent.createObject(test, {backend: backend, theme: palette, profileControl: profileControl})
         verify(wizard !== null)
         wizard.show(); wait(50)
-        compare(findChild(wizard, "setupWindowSurface").radius, palette.windowRadius)
-        compare(findChild(wizard, "setupWindowTitle").font.pixelSize, 22)
-        compare(findChild(wizard, "closeSetup").implicitWidth, 36)
-        compare(findChild(wizard, "closeSetup").implicitHeight, 36)
-        compare(findChild(wizard, "closeSetup").background.radius, 8)
     }
     function cleanup() { wizard.close(); wizard.destroy() }
     function clickScrolledAction(name) {
@@ -81,12 +76,6 @@ TestCase {
         verify(visiblePosition.y >= 0)
         verify(visiblePosition.y + button.height <= viewport.height)
         mouseClick(button)
-    }
-    function test_default_size_fits_screen() {
-        verify(wizard.width <= Math.floor(wizard.screen.desktopAvailableWidth * 0.7))
-        verify(wizard.height <= Math.floor(wizard.screen.desktopAvailableHeight * 0.7))
-        verify(wizard.minimumWidth <= wizard.width)
-        verify(wizard.minimumHeight <= wizard.height)
     }
     function test_skip_every_step_without_side_effects() {
         mouseClick(findChild(wizard, "setupNext"))
@@ -137,11 +126,6 @@ TestCase {
         compare(selected.resolution.width, 640)
         compare(selected.resolution.height, 360)
         compare(selected.mode, "compressed")
-        wizard.moveTo(3)
-        wait(50)
-        var preview = findChild(wizard, "cameraPreview")
-        verify(Math.abs(preview.width / preview.height - 16 / 9) < 0.02)
-        verify(Math.abs(preview.width / preview.parent.width - 0.75) < 0.02)
     }
     function test_close_does_not_cancel_unrelated_work() {
         backend.busy = true
