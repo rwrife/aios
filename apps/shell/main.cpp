@@ -125,7 +125,13 @@ class Backend : public QObject {
     Q_PROPERTY(bool muted READ muted NOTIFY volumeChanged)
     Q_PROPERTY(bool volumeAvailable READ volumeAvailable NOTIFY volumeChanged)
     Q_PROPERTY(QVariantMap systemInfo READ systemInfo CONSTANT)
+    Q_PROPERTY(QVariantMap clockState READ clockState NOTIFY clockChanged)
+    Q_PROPERTY(bool clockBusy READ clockBusy NOTIFY clockChanged)
+    Q_PROPERTY(QString clockNotice READ clockNotice NOTIFY clockChanged)
 public:
+    QVariantMap clockState() const { return m_clockState; }
+    bool clockBusy() const { return m_clockBusy; }
+    QString clockNotice() const { return m_clockNotice; }
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
     QVariantMap localModels() const { return m_localModels; }
@@ -324,6 +330,7 @@ public:
         runVolumeCommand({"set-sink-mute", "@DEFAULT_SINK@", muted ? "1" : "0"});
     }
     Q_INVOKABLE void openSystemSettings(const QString &section) {
+        if (section == "date_time") { emit (owner ? owner : this)->settingsRequested(section); return; }
         QString program;
         QStringList args;
         if (section == "sound") program = "pavucontrol";
@@ -342,6 +349,48 @@ public:
             if (code) { m_status = "Power action failed. Use the recovery terminal."; emit changed(); } p->deleteLater();
         });
         p->start("doas", {"-n", "/sbin/" + action});
+    }
+    Q_INVOKABLE void clockRequest(const QString &value = QString()) {
+        if (m_clockBusy) return;
+        m_clockBusy = true;
+        emit clockChanged();
+        auto process = new QProcess(this);
+        tieToDesktop(*process);
+        auto env = QProcessEnvironment::systemEnvironment();
+        env.insert("PYTHONPATH", env.value("AIOS_PYTHONPATH", "/usr/local/share/aios"));
+        process->setProcessEnvironment(env);
+        QJsonObject request{{"action", value.isEmpty() ? "read" : "set"}};
+        if (!value.isEmpty()) request.insert("value", value);
+        connect(process, &QProcess::started, this, [process, request] {
+            process->write(QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n');
+            process->closeWriteChannel();
+        });
+        connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error) {
+            if (error != QProcess::FailedToStart) return;
+            m_clockBusy = false;
+            m_clockState.clear();
+            m_clockNotice = "Guest clock adapter could not start.";
+            emit clockChanged();
+            process->deleteLater();
+        });
+        connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+                [this, process](int code, QProcess::ExitStatus status) {
+            const auto reply = QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+            m_clockBusy = false;
+            if (code != 0 || status != QProcess::NormalExit || reply.contains("error") || reply.isEmpty()) {
+                m_clockState.clear();
+                m_clockNotice = reply.value("error").toString("Clock operation failed. Refresh before retrying; a change may already have applied.");
+            } else {
+                m_clockState = (reply.contains("state") ? reply.value("state").toObject() : reply).toVariantMap();
+                m_clockNotice = reply.value("notice").toString();
+            }
+            emit clockChanged();
+            process->deleteLater();
+        });
+        QTimer::singleShot(10000, process, [process] {
+            if (process->state() != QProcess::NotRunning) process->kill();
+        });
+        process->start("python3", {"-m", "aios.machine_clock"});
     }
     Q_INVOKABLE void configure(const QVariantMap &values) {
         if (m_busy || m_configuring) return;
@@ -398,7 +447,12 @@ signals:
     void transcribed(const QString &text);
     void volumeChanged();
     void authenticationRequested();
+    void settingsRequested(const QString &section);
+    void clockChanged();
 private:
+    QVariantMap m_clockState;
+    bool m_clockBusy = false;
+    QString m_clockNotice;
     QLocalServer desktopControls;
     QString authenticationState = "unavailable";
     void startDesktopControls() {
@@ -442,6 +496,12 @@ private:
                         else if (section == "display") program = "arandr";
                         else if (section == "network") { program = "aios-terminal"; args = {"-title", "AIOS Network & Wi-Fi", "-e", "nmtui"}; }
                         if (!program.isEmpty()) reply = {{"result", QJsonObject{{"opened", QProcess::startDetached(program, args)}}}};
+                        else if (section == "date_time") {
+                            if (qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET")) {
+                                emit (owner ? owner : this)->settingsRequested(section);
+                                reply = {{"result", QJsonObject{{"requested", true}}}};
+                            } else reply = {{"error", "Date & Time settings are unavailable on the protected desktop."}};
+                        }
                     } else if (action == "authenticate" && request.size() == 1) {
                         authenticationState = "unavailable";
                         emit authenticationRequested();

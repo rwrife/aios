@@ -102,6 +102,12 @@ TestCase {
         property var setMutedCalls: []
         signal configured()
         signal loaded()
+        signal settingsRequested(string section)
+        property var clockState: ({})
+        property bool clockBusy: false
+        property string clockNotice: ""
+        signal clockChanged()
+        function clockRequest(value) {}
         signal changed()
         property bool needsSetup: false
         function setupPending() { return needsSetup }

@@ -4,21 +4,21 @@ import os
 import re
 import subprocess
 
-from . import core, session_client
+from . import core, machine_clock, session_client
 
 
 TOOL = {
     "type": "function",
     "function": {
         "name": "os_settings",
-        "description": "Read/change OS volume, mute, theme and reduced motion; open settings or request native user sign-in. Read first; authenticate opens trusted UI, never accepts credentials. Check authentication_status afterwards.",
+        "description": "Read/change OS volume, mute, theme, reduced motion and guest machine date_time; open settings or request native sign-in. Read date_time with action read and setting date_time; set requires an ISO date-time with explicit offset (2000-2099). Manual clock changes require stopped time-sync daemons; results report hardware-clock persistence. Read first; authenticate opens trusted UI, never accepts credentials. Check authentication_status afterwards.",
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["read", "set", "open", "authenticate", "authentication_status"]},
-                "setting": {"type": "string", "enum": ["volume", "muted", "theme_color", "reduced_motion"]},
-                "value": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 100}, {"type": "boolean"}, {"type": "string", "enum": list(core.THEME_COLORS)}]},
-                "section": {"type": "string", "enum": ["sound", "display", "network"]},
+                "setting": {"type": "string", "enum": ["volume", "muted", "theme_color", "reduced_motion", "date_time"]},
+                "value": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 100}, {"type": "boolean"}, {"type": "string", "enum": list(core.THEME_COLORS)}, {"type": "string", "maxLength": 25, "pattern": "^" + machine_clock.DATETIME_PATTERN + "$"}]},
+                "section": {"type": "string", "enum": ["sound", "display", "network", "date_time"]},
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -61,6 +61,8 @@ def _read():
 
 
 def act(arguments):
+    if arguments == {"action": "read", "setting": "date_time"}:
+        return machine_clock.request_clock({"action": "read"})
     action = arguments.get("action")
     fields = {"read": {"action"}, "set": {"action", "setting", "value"}, "open": {"action", "section"}, "authenticate": {"action"}, "authentication_status": {"action"}}
     if action not in fields or set(arguments) != fields[action]:
@@ -71,11 +73,13 @@ def act(arguments):
         return _desktop(action)
     if action == "open":
         section = arguments["section"]
-        if section not in ("sound", "display", "network"):
+        if section not in ("sound", "display", "network", "date_time"):
             raise ValueError("Unknown settings section.")
         return _desktop("open", section=section)
     setting, value = arguments["setting"], arguments["value"]
-    if setting == "volume" and type(value) is int and 0 <= value <= 100:
+    if setting == "date_time":
+        return machine_clock.request_clock({"action": "set", "value": value})
+    elif setting == "volume" and type(value) is int and 0 <= value <= 100:
         _audio("set-sink-volume", "@DEFAULT_SINK@", str(value) + "%")
     elif setting == "muted" and type(value) is bool:
         _audio("set-sink-mute", "@DEFAULT_SINK@", "1" if value else "0")
@@ -123,7 +127,9 @@ def main():
                     raise ValueError("Invalid arguments.")
                 result = act(arguments)
                 response["result"] = {"content": [{"type": "text", "text": json.dumps(result)}], "isError": False}
-            except (ValueError, RuntimeError, OSError, TypeError, KeyError):
+            except (ValueError, RuntimeError) as exc:
+                response["result"] = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
+            except (OSError, TypeError, KeyError):
                 response["result"] = {"content": [{"type": "text", "text": "OS operation failed or is unavailable."}], "isError": True}
         elif method == "ping":
             response["result"] = {}
