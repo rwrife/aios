@@ -122,7 +122,7 @@ Window {
     RowLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
         ColumnLayout {
-            Layout.preferredWidth: 170; Layout.minimumWidth: Math.max(170, setupAction.implicitWidth); Layout.fillHeight: true; spacing: 6
+            Layout.preferredWidth: 170; Layout.minimumWidth: 170; Layout.fillHeight: true; spacing: 6
             WindowTitle {
                 objectName: "settingsWindowTitle"
                 theme: settings.theme
@@ -154,14 +154,6 @@ Window {
                         }
                     }
                 }
-            }
-            Action {
-                id: setupAction
-                objectName: "launchSetup"
-                text: "Run setup wizard"
-                Accessible.name: "Run setup wizard"
-                Layout.fillWidth: true
-                onClicked: { settings.close(); settings.setupRequested() }
             }
             Note { text: backend.config.live ? "Live session\nChanges are lost after reboot." : "This computer"; font.pixelSize: 11 }
         }
@@ -395,6 +387,14 @@ Window {
                             InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
                             InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
                         }
+                    }
+                    Action {
+                        id: setupAction
+                        objectName: "launchSetup"
+                        text: "Run setup wizard"
+                        Accessible.name: "Run setup wizard"
+                        Layout.fillWidth: true
+                        onClicked: { settings.close(); settings.setupRequested() }
                     }
                     Item { Layout.fillHeight: true }
                 }
