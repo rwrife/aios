@@ -203,8 +203,8 @@ TestCase {
         verify(!desktop.setupWindow.visible)
         desktop.openSettings()
         mouseClick(findChild(desktop.settingsWindow, "launchSetup"))
-        verify(desktop.setupWindow.visible)
-        verify(!desktop.settingsWindow.visible)
+        tryCompare(desktop.setupWindow, "visible", true)
+        tryCompare(desktop.settingsWindow, "visible", false)
     }
 
     function test_existing_setup_does_not_open_automatically() {
