@@ -213,7 +213,15 @@ TestCase {
         compare(findChild(desktop, "powerDialog").background.radius, palette.windowRadius)
     }
 
-    function test_desktop_clock_matches_wordmark() {
+    function test_desktop_clock_matches_wordmark_data() {
+        return [
+            {tag: "Ocean", theme: "blue"},
+            {tag: "Sage", theme: "sage"}
+        ]
+    }
+
+    function test_desktop_clock_matches_wordmark(data) {
+        backend.config.theme_color = data.theme
         createDesktop()
         var wordmark = findChild(desktop, "desktopWordmark")
         var clock = findChild(desktop, "desktopClock")
@@ -228,7 +236,15 @@ TestCase {
         fuzzyCompare(clock.x + clock.width, desktop.width - 48, 0.1)
     }
 
-    function test_desktop_controls_are_faded_until_hovered() {
+    function test_desktop_controls_are_faded_until_hovered_data() {
+        return [
+            {tag: "Ocean", theme: "blue"},
+            {tag: "Sage", theme: "sage"}
+        ]
+    }
+
+    function test_desktop_controls_are_faded_until_hovered(data) {
+        backend.config.theme_color = data.theme
         createDesktop()
         var settings = findChild(desktop, "desktopSettingsButton")
         var terminal = findChild(desktop, "desktopTerminalButton")
