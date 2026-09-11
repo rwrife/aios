@@ -13,6 +13,8 @@ Window {
     property var profileControl: null
     property bool ownsProfileControl: false
     property bool osAuthenticationCompleted: false
+    readonly property bool protectedMode: session.protectedMode === true
+    readonly property var effectiveConfig: protectedMode ? session.config : backend.config
     title: "AIOS Chat"
     visible: true
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
@@ -35,6 +37,8 @@ Window {
     Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
     Connections {
         target: chat.session
+        ignoreUnknownSignals: true
+        function onInvalidated() { chat.close() }
         function onAuthenticationRequested() {
             if (!chat.profileControl) return
             chat.osAuthenticationCompleted = false
@@ -63,7 +67,11 @@ Window {
     function submit() {
         if (session.busy || session.recording) return;
         if (!composer.text.trim() && !session.attachments.length) return;
-        if (backend.config.mode !== "remote" && !backend.config.model_path) { options.open(); return }
+        if (effectiveConfig.mode !== "remote" && effectiveConfig.mode !== "chatgpt"
+                && !effectiveConfig.model_path) {
+            if (!protectedMode) options.open()
+            return
+        }
         conversation.cancelFlick(); conversation.followLatest = true
         session.send(composer.text); composer.clear(); conversation.scrollToLatest()
     }
@@ -115,7 +123,7 @@ Window {
                 objectName: "chatWindowControls"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                WindowControlButton { objectName: "chatSettingsButton"; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
+                WindowControlButton { objectName: "chatSettingsButton"; visible: !chat.protectedMode; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
                 WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
                 WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
             }
@@ -212,9 +220,9 @@ Window {
             }
             RowLayout {
                 id: tools; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 8; spacing: 3
-                QuietButton { text: "+"; tip: "Attach text, source code or PDF"; enabled: !session.busy && !session.recording; onClicked: attachmentDialog.open() }
+                QuietButton { visible: !chat.protectedMode; text: "+"; tip: "Attach text, source code or PDF"; enabled: !session.busy && !session.recording; onClicked: attachmentDialog.open() }
                 VoiceButton {
-                    theme: chat.theme; active: session.recording; enabled: !session.busy
+                    visible: !chat.protectedMode; theme: chat.theme; active: session.recording; enabled: !session.busy
                     onClicked: {
                         if (!session.recording && backend.config.voice_mode !== "local" && !backend.config.voice_url) { modelSettings.currentTab = 1; options.open() }
                         else session.setVoiceActive(!session.recording)
@@ -225,7 +233,7 @@ Window {
                 QuietButton { text: session.busy ? "■" : "↑"; tip: session.busy ? "Stop" : "Send message"; enabled: session.busy || (!session.recording && (composer.text.trim().length > 0 || session.attachments.length > 0)); onClicked: session.busy ? session.stop() : chat.submit() }
             }
         }
-        Text { visible: backend.config.live === true; text: "Live session · Chats are lost after reboot"; color: theme.muted; opacity: 0.5; font.pixelSize: 10 }
+        Text { visible: !chat.protectedMode && backend.config.live === true; text: "Live session · Chats are lost after reboot"; color: theme.muted; opacity: 0.5; font.pixelSize: 10 }
     }
     FileDialog {
         id: attachmentDialog; title: "Attach a file"; fileMode: FileDialog.OpenFile

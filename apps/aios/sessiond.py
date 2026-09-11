@@ -38,6 +38,11 @@ FIELDS = {
     'verify': ('challenge', 'pin', 'confirmed'), 'github_profile': ('token',),
     'evidence': ('tracks',), 'simulate': ('state',),
     'scheduled_jobs': ('lease', 'scope', 'request'),
+    'chat_open': ('lease', 'scope'),
+    'chat_send': ('lease', 'scope', 'chat', 'content'),
+    'chat_poll': ('lease', 'scope', 'chat'),
+    'chat_stop': ('lease', 'scope', 'chat'),
+    'chat_close': ('lease', 'scope', 'chat'),
 }
 
 
@@ -136,15 +141,26 @@ class Service:
         elif uid != self.shell_uid:
             raise PermissionError("Only the trusted shell can request sessions")
         s = self.sessions
-        if action == 'scheduled_jobs':
+        if action == 'scheduled_jobs' or action.startswith('chat_'):
             if (not self._can_personal() or self.peer_pid is None
                     or self.peer_pid != self.display_pid):
-                raise PermissionError('Protected scheduling requires the registered trusted display')
+                raise PermissionError('Protected chat requires the registered trusted display')
+        if action == 'scheduled_jobs':
             from .scheduling import SchedulingError
             try:
                 return s.scheduled_request(request['lease'], request['scope'], request['request'])
             except SchedulingError as error:
                 return {'status': error.code, 'error': str(error)}
+        if action == 'chat_open':
+            return s.chat_open(request['lease'], request['scope'])
+        if action == 'chat_send':
+            return s.chat_send(request['lease'], request['scope'], request['chat'], request['content'])
+        if action == 'chat_poll':
+            return s.chat_poll(request['lease'], request['scope'], request['chat'])
+        if action == 'chat_stop':
+            return s.chat_stop(request['lease'], request['scope'], request['chat'])
+        if action == 'chat_close':
+            return s.chat_close(request['lease'], request['scope'], request['chat'])
         if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
             if action not in ('status', 'suspend', 'evidence', 'display_attest'):
                 raise PermissionError('Personal requests require the registered display process')

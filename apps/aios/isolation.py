@@ -182,6 +182,20 @@ class LinuxIsolation:
                            ['/usr/bin/python3', '-m', 'aios.scheduled_protected'],
                            scheduled=True)
 
+    def chat(self, scope, root, uid):
+        """Fixed broker-only protected foreground chat adapter."""
+        owners = [owner for owner, entry in self.config['principals'].items()
+                  if entry['uid'] == uid and self.mounts.get(owner) == root]
+        endpoint = self.config.get('wayland_sockets', {}).get(str(uid))
+        if len(owners) != 1 or not os.path.ismount(root) or uid not in self.ready_displays:
+            raise PermissionError('An authorized protected display workspace is required')
+        display = Path(endpoint) if endpoint else None
+        if display is None or not display.is_socket() or display.stat().st_uid != uid:
+            raise PermissionError('Protected chat requires the private display')
+        return self._spawn(scope, root, uid,
+                           ['/usr/bin/python3', '-m', 'aios.protected_chat'],
+                           display, scheduled=True)
+
     @staticmethod
     def _directory_fd(path):
         path = Path(path)

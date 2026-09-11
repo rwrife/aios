@@ -21,6 +21,7 @@ from test_identity_sessions import Clock, MemoryStore, evidence
 
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'protected_scheduler_process.py'
+CHAT_FIXTURE = Path(__file__).parent / 'fixtures' / 'protected_chat_process.py'
 
 
 class PipeIsolation(SimulatorIsolation):
@@ -32,6 +33,13 @@ class PipeIsolation(SimulatorIsolation):
     def scheduled(self, scope, root, uid):
         process = subprocess.Popen(
             [sys.executable, str(FIXTURE.resolve()), str(root), root.name, scope],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.processes[scope] = process
+        return process
+
+    def chat(self, scope, root, uid):
+        process = subprocess.Popen(
+            [sys.executable, str(CHAT_FIXTURE.resolve())],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.processes[scope] = process
         return process
@@ -380,6 +388,89 @@ class ProtectedSchedulingTests(unittest.TestCase):
             response = self.service.dispatch({**request, 'request': {
                 'action': 'health', key: 'untrusted'}}, 1000, 42)
             self.assertEqual(response['status'], 'invalid')
+
+    def chat_request(self, action, chat=None, **fields):
+        request = {'action': action, 'lease': self.sessions.lease, 'scope': self.sessions.work,
+                   **fields}
+        if chat is not None:
+            request['chat'] = chat
+        return request
+
+    def test_protected_chat_streams_persists_and_reopens_only_same_work(self):
+        opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        chat = opened['chat']
+        self.assertEqual(opened['history']['messages'], [])
+        self.service.dispatch(self.chat_request(
+            'chat_send', chat, content='PRIVATE CHAT PROMPT'), 1000, 42)
+        deadline = time.monotonic() + 5
+        reply = {'events': []}
+        while time.monotonic() < deadline:
+            reply = self.service.dispatch(self.chat_request('chat_poll', chat), 1000, 42)
+            if any(item['type'] == 'done' for item in reply['events']):
+                break
+            time.sleep(.02)
+        self.assertEqual([item['type'] for item in reply['events']], ['token', 'done'])
+        self.assertEqual(self.sessions.history()['messages'][-2:],
+                         [{'id': self.sessions.history()['messages'][-2]['id'],
+                           'created': self.sessions.history()['messages'][-2]['created'],
+                           'role': 'user', 'content': 'PRIVATE CHAT PROMPT'},
+                          {'id': self.sessions.history()['messages'][-1]['id'],
+                           'created': self.sessions.history()['messages'][-1]['created'],
+                           'role': 'assistant', 'content': 'PRIVATE REPLY'}])
+        self.service.dispatch(self.chat_request('chat_close', chat), 1000, 42)
+        reopened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        self.assertEqual([item['content'] for item in reopened['history']['messages']],
+                         ['PRIVATE CHAT PROMPT', 'PRIVATE REPLY'])
+        self.assertFalse((core.data_dir() / 'conversation.json').exists())
+
+    def test_protected_chat_scheduler_relay_and_stale_scope_rejection(self):
+        self.call('health')
+        opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        chat = opened['chat']
+        self.service.dispatch(self.chat_request('chat_send', chat, content='SCHEDULE'), 1000, 42)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            reply = self.service.dispatch(self.chat_request('chat_poll', chat), 1000, 42)
+            if any(item['type'] == 'done' for item in reply['events']):
+                break
+            time.sleep(.05)
+        self.assertEqual(self.sessions.history()['messages'][-1]['content'], 'ok')
+        stale = self.chat_request('chat_poll', chat)
+        process = self.sessions.chats[chat].process
+        scope = self.sessions.chats[chat].scope
+        self.sessions._shield()
+        self.assertIsNotNone(process.poll())
+        self.assertIn(scope, self.isolation.stopped)
+        self.assertEqual(self.sessions.chats, {})
+        with self.assertRaises(PermissionError):
+            self.service.dispatch(stale, 1000, 42)
+
+    def test_protected_chat_rejects_cross_pid_chat_and_generation(self):
+        opened = self.service.dispatch(self.chat_request('chat_open'), 1000, 42)
+        chat = opened['chat']
+        request = self.chat_request('chat_poll', chat)
+        with self.assertRaises(PermissionError):
+            self.service.dispatch(request, 1000, 43)
+        old_lease, old_work = self.sessions.lease, self.sessions.work
+        self.sessions.suspend()
+        self.activate(self.a)
+        for changed in (
+                {**request, 'lease': old_lease, 'scope': old_work},
+                {**request, 'lease': self.sessions.lease, 'scope': old_work},
+                {**request, 'lease': old_lease, 'scope': self.sessions.work}):
+            with self.assertRaises(PermissionError):
+                self.service.dispatch(changed, 1000, 42)
+
+    def test_chat_protocol_is_fixed_and_bounded(self):
+        base = self.chat_request('chat_open')
+        self.assertEqual(decode(json.dumps(base)), base)
+        for key in ('owner', 'pid', 'socket', 'command'):
+            with self.assertRaises(ValueError):
+                decode(json.dumps({**base, key: 'untrusted'}))
+        with self.assertRaises(ValueError):
+            decode(json.dumps({'action': 'chat_send', 'lease': self.sessions.lease,
+                               'scope': self.sessions.work, 'chat': str(uuid.uuid4()),
+                               'content': 'x', 'request': {}}))
 
 
 class ProtectedIsolationContractTests(unittest.TestCase):

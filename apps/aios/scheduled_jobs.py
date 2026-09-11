@@ -110,6 +110,25 @@ def request(value, timeout=10):
     try:
         from .toolhost import _read_socket_line
 
+        relay = os.environ.get('AIOS_PROTECTED_CHAT_SOCKET')
+        if relay:
+            validate_request(value)
+            raw = encode({'action': 'scheduled_jobs', 'request': value}, REQUEST_LIMIT)
+            with socket.socket(socket.AF_UNIX) as client:
+                deadline = time.monotonic() + timeout
+                client.settimeout(timeout)
+                client.connect(relay)
+                same_user(client)
+                client.sendall(raw)
+                reply = json.loads(_read_socket_line(
+                    client, RESPONSE_LIMIT, deadline,
+                    incomplete_error='Invalid protected scheduling response'))
+            if not isinstance(reply, dict) or reply.get('status') not in STATUSES:
+                raise UnavailableError('Invalid protected scheduling response')
+            expected = {'status', 'result'} if reply['status'] == 'ok' else {'status', 'error'}
+            if set(reply) != expected:
+                raise UnavailableError('Invalid protected scheduling response')
+            return reply
         desktop_only()
         if os.environ.get('AIOS_SESSION_SOCKET') or os.environ.get('AIOS_SESSION_ID'):
             raise UnavailableError('Protected scheduling requires a broker-authorized per-chat route')

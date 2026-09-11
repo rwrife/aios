@@ -52,17 +52,21 @@ Window {
         return null
     }
     function openChat() {
-        if (sessionControlApi.enabled)
-            return null
         var restored = restoreMinimizedChat()
         if (restored)
             return restored
+        var chatSession = sessionControlApi.enabled
+                ? sessionControlApi.createProtectedChat()
+                : backendApi.createSession()
+        if (!chatSession)
+            return null
         var window = chatComponent.createObject(desktop, {
             backend: backendApi,
-            session: backendApi.createSession(),
+            session: chatSession,
             theme: theme,
-            profileControl: sessionControlApi.chatProfile(),
-            ownsProfileControl: true
+            profileControl: sessionControlApi.enabled
+                    ? sessionControlApi : sessionControlApi.chatProfile(),
+            ownsProfileControl: !sessionControlApi.enabled
         })
         if (!window)
             return null
