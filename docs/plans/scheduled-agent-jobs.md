@@ -1,7 +1,48 @@
 # Scheduled agent jobs and orb attention
 
-Status: proposed implementation plan; this PR adds no runtime behavior.
+Status: milestone 1 implemented as an internal core; scheduling is not yet
+exposed to users and no background workers are started.
 Baseline: `main` at `6986a2d` (2026-09-10).
+
+## Implementation progress
+
+Milestone 1 adds `apps/aios/scheduling.py` and `scheduled_store.py`, with
+display-independent tests in `tests/test_scheduling.py` and
+`tests/test_scheduled_store.py`. The store supports normalized job snapshots,
+revision-checked edits, pause/resume, transactional occurrence claims, manual
+request deduplication, bounded execution policies, missed-run coalescing,
+terminal results/outbox commits, explicit recovery, and retention. Ownership
+comes from the process OS user, not a greeting profile or request field.
+Protected process contexts explicitly report unavailable.
+
+CronSim 2.6 is pinned by wheel hash in `apps/requirements.txt`. It has no
+runtime dependencies and uses the BSD-3-Clause license (reviewed for
+redistribution; retain its license and disclaimer, without endorsement).
+The image staging step retains the wheel's `cronsim-2.6.dist-info/LICENSE`.
+The adapter uses its numeric field parser only: AIOS supplies DOM/DOW OR
+matching and `zoneinfo` round trips to skip gaps and select the first fold.
+Alpine includes `tzdata`. Search is bounded to eight years, including the
+eight-year leap-day gap around 2100; timestamp support is 1970 through 2199.
+Missed counts are calculated by calendar day rather than replaying each minute.
+An occurrence dispatched within its scheduled minute is on time; a later
+one-shot is recorded as missed. Resuming never catches up paused occurrences.
+
+The SQLite schema/version upgrade is atomic. Job watermarks survive run-history
+pruning so clock rollback cannot reclaim recurring occurrences. Manual request
+receipts survive result retention until the job is purged; retrying a pruned
+result returns unavailable instead of running again. Unread results are never
+automatically pruned. The database is capped at 100 MiB, with a dispatch reserve
+for active-run completion; storage exceptions propagate to the future service.
+
+Milestones 2-5 remain pending. The core records provider/model/capability
+bindings but cannot authorize or execute them. The service must enforce
+singleton ownership, validate those bindings against live configuration, use
+monotonic deadlines and bounded timer rechecks, supervise isolated workers, and
+stop processes before recording cancellation/deletion or restart recovery.
+Outbox storage is ready for the later notification bridge; quiet-hours,
+actionable-only filtering, and snooze are saved policy, not active delivery.
+No scheduling tool, skill, settings UI, orb changes, or protected-workspace
+adapter is enabled yet.
 
 ## Outcome
 

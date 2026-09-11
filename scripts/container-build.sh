@@ -3,7 +3,7 @@ set -eu
 apk add --no-cache abuild apk-tools alpine-conf busybox fakeroot xorriso squashfs-tools \
   mtools grub grub-efi syslinux git bash coreutils tar findutils build-base cmake ninja \
   qt6-qtbase-dev qt6-qtdeclarative-dev qt6-qtmultimedia-dev qt6-qtmultimedia-gstreamer gst-plugins-good qt6-qtwebengine-dev \
-  curl-dev linux-headers python3 font-dejavu
+  curl-dev linux-headers python3 py3-pip font-dejavu
 case "${AIOS_BUILD_CACHE_NAMESPACE:-}" in
   *[!A-Za-z0-9._-]*|'') echo 'Invalid AIOS build cache namespace' >&2; exit 1 ;;
 esac

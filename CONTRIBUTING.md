@@ -98,8 +98,13 @@ Only the x86_64 build profile is currently validated.
 Run the source and backend checks:
 
 ```sh
+python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt
 bash scripts/test.sh
 ```
+
+Use a Python virtual environment if your distribution manages the system
+interpreter. Scheduling uses the system IANA time-zone database (`tzdata` on
+Linux); the Alpine image includes it.
 
 Windows contributors can open the configured distribution, change to the
 repository's mounted Windows path, and run the same checks:
