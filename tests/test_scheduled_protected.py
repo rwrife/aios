@@ -333,6 +333,8 @@ class ProtectedSchedulingTests(unittest.TestCase):
             self.assertIsNotNone(process.poll())
             self.assertIn(scope, self.isolation.stopped)
             self.assertIsNone(self.sessions.scheduled)
+            status = self.service.dispatch({'action': 'status'}, 1000, 42)
+            self.assertIsNone(status['session'])
             with self.assertRaises(PermissionError):
                 self.call('health')
         self.sessions.suspend()
