@@ -99,7 +99,7 @@ Rectangle {
             onClicked: panel.scheduledJobsRequested()
         }
         Label {
-            text: "Protected chat scheduling is not available yet. Use the native configuration for this workspace."
+            text: "Protected scheduled results stay visible only while this owner and workspace remain authorized."
             textFormat: Text.PlainText; color: "#bde4e6"; wrapMode: Text.Wrap; Layout.fillWidth: true
         }
         Label { text: control.error; color: "#e8bdbd"; wrapMode: Text.Wrap; Layout.fillWidth: true }

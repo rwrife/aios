@@ -16,7 +16,7 @@ from .scheduling import (
 )
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ACTIVE = ('queued', 'running')
 SCHEMA = (
     '''CREATE TABLE jobs (
@@ -53,9 +53,21 @@ SCHEMA = (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id TEXT NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
         owner TEXT NOT NULL, outcome TEXT NOT NULL, created TEXT NOT NULL,
-        acknowledged TEXT)''',
+        acknowledged TEXT, notified TEXT,
+        deliverable INTEGER NOT NULL DEFAULT 1 CHECK(deliverable IN (0,1)))''',
     '''CREATE INDEX unread_results ON outbox(owner, acknowledged, sequence)''',
 )
+MIGRATIONS = {
+    1: (
+        'ALTER TABLE outbox ADD COLUMN notified TEXT',
+        'ALTER TABLE outbox ADD COLUMN deliverable INTEGER NOT NULL DEFAULT 1 '
+        'CHECK(deliverable IN (0,1))',
+        '''UPDATE outbox SET deliverable=0 WHERE outcome='unchanged' AND EXISTS (
+            SELECT 1 FROM runs WHERE runs.id=outbox.run_id
+            AND json_extract(runs.snapshot,'$.notification.mode')='actionable')''',
+        'PRAGMA user_version=2',
+    ),
+}
 
 
 def identifier(value):
@@ -101,12 +113,20 @@ class ScheduledStore:
             # DDL and the version marker commit together, including under first-open races.
             with self._transaction():
                 version = self.db.execute('PRAGMA user_version').fetchone()[0]
-                if version not in (0, SCHEMA_VERSION):
+                if version < 0 or version > SCHEMA_VERSION:
                     raise UnavailableError('Unsupported scheduler database version')
                 if version == 0:
                     for statement in SCHEMA:
                         self.db.execute(statement)
                     self.db.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
+                else:
+                    while version < SCHEMA_VERSION:
+                        migration = MIGRATIONS.get(version)
+                        if migration is None:
+                            raise UnavailableError('Unsupported scheduler database version')
+                        for statement in migration:
+                            self.db.execute(statement)
+                        version = self.db.execute('PRAGMA user_version').fetchone()[0]
             page_size = self.db.execute('PRAGMA page_size').fetchone()[0]
             self.db.execute(f'PRAGMA max_page_count={MAX_STORE_BYTES // page_size}')
         except (sqlite3.Error, SchedulingError):
@@ -309,7 +329,9 @@ class ScheduledStore:
 
     def get_run(self, run_id):
         identifier(run_id)
-        row = self.db.execute('SELECT * FROM runs WHERE id=? AND owner=?',
+        row = self.db.execute('''SELECT r.*,o.outcome FROM runs r
+            LEFT JOIN outbox o ON o.run_id=r.id AND o.owner=r.owner
+            WHERE r.id=? AND r.owner=?''',
                               (run_id, self.owner)).fetchone()
         if row is None:
             raise UnavailableError('Run unavailable')
@@ -324,10 +346,13 @@ class ScheduledStore:
         if before is not None:
             integer(before, 'run cursor', 1, 2 ** 63 - 1)
         # Bodies and snapshots are fetched individually, not multiplied by page size.
-        return [dict(row) for row in self.db.execute('''SELECT sequence,id,job_id,revision,
-            scheduled_at,trigger,state,started,ended,missed_count FROM runs
-            WHERE owner=? AND job_id=? AND (? IS NULL OR sequence<?)
-            ORDER BY sequence DESC LIMIT ?''', (self.owner, job_id, before, before, limit))]
+        return [dict(row) for row in self.db.execute('''SELECT r.sequence,r.id,r.job_id,
+            r.revision,r.scheduled_at,r.trigger,r.state,r.started,r.ended,r.missed_count,
+            o.outcome FROM runs r LEFT JOIN outbox o
+            ON o.run_id=r.id AND o.owner=r.owner
+            WHERE r.owner=? AND r.job_id=? AND (? IS NULL OR r.sequence<?)
+            ORDER BY r.sequence DESC LIMIT ?''',
+            (self.owner, job_id, before, before, limit))]
 
     def start(self, run_id):
         with self._transaction():
@@ -362,8 +387,16 @@ class ScheduledStore:
         self.db.execute('''UPDATE runs SET state=?,ended=?,result=?,error=?,usage=? WHERE id=?''',
                         (state, now, result, error, encode(usage or {}), run_id))
         # Persist before any future notification bridge can observe the result.
-        self.db.execute('''INSERT INTO outbox(run_id,owner,outcome,created) VALUES (?,?,?,?)''',
-                        (run_id, self.owner, outcome or state, now))
+        saved_outcome = outcome or state
+        notification = run['snapshot'].get('notification', {'mode': 'all'})
+        deliverable = not (
+            state == 'succeeded'
+            and notification.get('mode') == 'actionable'
+            and saved_outcome == 'unchanged'
+        )
+        self.db.execute('''INSERT INTO outbox
+            (run_id,owner,outcome,created,deliverable) VALUES (?,?,?,?,?)''',
+            (run_id, self.owner, saved_outcome, now, int(deliverable)))
 
     def finish(self, run_id, state, result='', error='', usage=None, outcome=None):
         if state not in ('succeeded', 'failed', 'needs_user_action'):
@@ -413,9 +446,56 @@ class ScheduledStore:
     def unread(self, limit=50, after=0):
         integer(limit, 'page limit', 1, 100)
         integer(after, 'outbox cursor', 0, 2 ** 63 - 1)
-        return [dict(row) for row in self.db.execute('''SELECT * FROM outbox
-            WHERE owner=? AND acknowledged IS NULL AND sequence>? ORDER BY sequence LIMIT ?''',
-            (self.owner, after, limit))]
+        rows = self.db.execute('''SELECT o.*,r.job_id,r.state,r.scheduled_at,r.started,r.ended,
+            r.snapshot FROM outbox o JOIN runs r ON r.id=o.run_id
+            WHERE o.owner=? AND o.acknowledged IS NULL AND o.deliverable=1
+                AND o.sequence>? ORDER BY o.sequence DESC LIMIT ?''',
+            (self.owner, after, limit)).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            snapshot = json.loads(item.pop('snapshot'))
+            item['title'] = snapshot.get('title', 'Scheduled result')
+            item['notification'] = snapshot.get('notification', {'mode': 'all'})
+            item['suppressed_until'] = self._suppressed_until(item['notification'])
+            result.append(item)
+        return result
+
+    def _suppressed_until(self, notification):
+        now = self.clock.now()
+        candidate = now
+        snooze = notification.get('snooze_until')
+        if snooze:
+            instant = parse_timestamp(snooze)
+            if instant > now:
+                candidate = instant
+        quiet = notification.get('quiet_hours')
+        if quiet:
+            local = candidate.astimezone(zone(quiet['zone']))
+            start_hour, start_minute = (int(part) for part in quiet['start'].split(':'))
+            end_hour, end_minute = (int(part) for part in quiet['end'].split(':'))
+            start = local.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+            end = local.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+            if start < end:
+                active = start <= local < end
+            else:
+                active = local >= start or local < end
+                if local >= start:
+                    end += timedelta(days=1)
+            if active and local < start:
+                start -= timedelta(days=1)
+            if active:
+                candidate = end.astimezone(now.tzinfo)
+        return timestamp(candidate) if candidate > now else None
+
+    def mark_notified(self, run_id):
+        with self._transaction():
+            self.get_run(run_id)
+            changed = self.db.execute('''UPDATE outbox SET notified=coalesce(notified,?)
+                WHERE run_id=? AND owner=? AND acknowledged IS NULL AND deliverable=1''',
+                (self._now(), run_id, self.owner))
+            if changed.rowcount != 1:
+                raise ConflictError('Only unread feedback can be marked notified')
 
     def acknowledge(self, run_id):
         with self._transaction():
@@ -429,12 +509,13 @@ class ScheduledStore:
         """Keep unread results, plus at most 1,000 terminal runs younger than 30 days."""
         cutoff = timestamp(self.clock.now() - timedelta(days=30))
         with self._transaction():
-            rows = self.db.execute('''SELECT r.id,r.ended,o.acknowledged FROM runs r
+            rows = self.db.execute('''SELECT r.id,r.ended,o.acknowledged,o.deliverable FROM runs r
                 JOIN outbox o ON o.run_id=r.id WHERE r.owner=? ORDER BY r.sequence DESC''',
                 (self.owner,)).fetchall()
             removed = 0
             for index, row in enumerate(rows):
-                if row['acknowledged'] is not None and (index >= 1000 or row['ended'] < cutoff):
+                retention_eligible = row['acknowledged'] is not None or not row['deliverable']
+                if retention_eligible and (index >= 1000 or row['ended'] < cutoff):
                     self.db.execute('DELETE FROM runs WHERE id=?', (row['id'],))
                     removed += 1
             self.db.execute('''DELETE FROM jobs WHERE owner=? AND deleted=1

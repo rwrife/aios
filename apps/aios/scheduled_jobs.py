@@ -33,6 +33,9 @@ ACTIONS = {
     'acknowledge_result': (('run_id',), ()),
     'unread': ((), ('limit', 'after')),
 }
+NATIVE_ACTIONS = {
+    'mark_notified': (('run_id',), ()),
+}
 
 
 def runtime_dir():
@@ -72,9 +75,10 @@ def validate_request(value):
     if not isinstance(value, dict) or not isinstance(value.get('action'), str):
         raise SchedulingError('Invalid scheduling request')
     action = value['action']
-    if action not in ACTIONS:
+    actions = {**ACTIONS, **NATIVE_ACTIONS}
+    if action not in actions:
         raise SchedulingError('Unknown scheduling action')
-    required, optional = ACTIONS[action]
+    required, optional = actions[action]
     fields(value, ('action', *required), optional)
     for name in ('job_id', 'run_id', 'request_id'):
         if name in value:

@@ -8,6 +8,11 @@ Button {
     // Future audio/wake-word integration can drive these without changing the renderer.
     property real activityLevel: 0
     property bool awakened: false
+    property string attentionState: "idle"
+    property int unreadCount: 0
+    property int pulseSerial: 0
+    readonly property int attentionPulseCycles: 3
+    readonly property int attentionPulseDuration: 6000
     property real phase: 0
     readonly property real energy: Math.max(0, Math.min(1, activityLevel))
     property real brightness: hovered || visualFocus || down || awakened ? 1 : energy
@@ -15,8 +20,16 @@ Button {
     onBrightnessChanged: surface.requestPaint()
     implicitWidth: 136; implicitHeight: 136
     padding: 0
-    Accessible.name: "Start a new chat"
-    Accessible.description: "Open a new conversation"
+    Accessible.name: unreadCount > 0 ? "Open scheduled results" : "Start a new chat"
+    Accessible.description: unreadCount > 0
+        ? unreadCount + (attentionState === "action-needed"
+            ? (unreadCount === 1 ? " scheduled result needs attention"
+                                 : " scheduled results need attention")
+            : (unreadCount === 1 ? " unread scheduled result" : " unread scheduled results"))
+        : "Open a new conversation"
+    ToolTip.visible: hovered || activeFocus
+    ToolTip.text: unreadCount > 0 ? "Open scheduled results" : "Start a new chat"
+    ToolTip.delay: activeFocus ? 0 : 700
     background: Item {}
     contentItem: Canvas {
         id: surface
@@ -73,6 +86,53 @@ Button {
                 c.beginPath(); c.arc(cx,cy,width*0.46,0,Math.PI*2);
                 c.strokeStyle=orb.theme.accent; c.lineWidth=1.5; c.stroke();
             }
+            if (orb.attentionState === "unread" || orb.attentionState === "action-needed") {
+                c.beginPath(); c.arc(cx,cy,width*0.42,0,Math.PI*2);
+                c.strokeStyle=orb.theme.accent; c.globalAlpha=1; c.lineWidth=1.5; c.stroke();
+            } else if (orb.attentionState === "running") {
+                c.beginPath(); c.arc(cx,cy,width*0.40,0,Math.PI*2);
+                c.strokeStyle=orb.theme.wave; c.globalAlpha=0.7; c.lineWidth=1; c.stroke();
+            }
+        }
+    }
+    Rectangle {
+        id: pulseContour
+        anchors.centerIn: parent
+        width: parent.width * 0.84
+        height: width
+        radius: width / 2
+        color: "transparent"
+        border.width: 2
+        border.color: orb.theme.accent
+        opacity: 0
+        visible: !orb.reducedMotion
+    }
+    SequentialAnimation {
+        id: attentionPulse
+        loops: orb.attentionPulseCycles
+        NumberAnimation { target: pulseContour; property: "opacity"; from: 0; to: 0.9; duration: 500 }
+        PauseAnimation { duration: 1000 }
+        NumberAnimation { target: pulseContour; property: "opacity"; from: 0.9; to: 0; duration: 500 }
+    }
+    Rectangle {
+        visible: orb.unreadCount > 0
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.top: parent.top
+        anchors.topMargin: 14
+        implicitWidth: Math.max(24, countText.implicitWidth + 12)
+        implicitHeight: 24
+        radius: 12
+        color: orb.theme.panel
+        border.width: 1
+        border.color: orb.theme.accent
+        Text {
+            id: countText
+            anchors.centerIn: parent
+            text: orb.unreadCount > 99 ? "99+" : orb.unreadCount
+            color: orb.theme.accent
+            font.family: "DejaVu Sans"
+            font.pixelSize: 12
         }
     }
     Timer {
@@ -85,5 +145,12 @@ Button {
     onReducedMotionChanged: surface.requestPaint()
     onActivityLevelChanged: surface.requestPaint()
     onAwakenedChanged: surface.requestPaint()
+    onAttentionStateChanged: surface.requestPaint()
+    onPulseSerialChanged: {
+        attentionPulse.stop()
+        pulseContour.opacity = 0
+        if (!reducedMotion && unreadCount > 0)
+            attentionPulse.start()
+    }
     Connections { target: orb.theme; ignoreUnknownSignals: true; function onPaletteIndexChanged() { surface.requestPaint() } }
 }

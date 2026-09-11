@@ -82,11 +82,20 @@ survive reconnect and result retention; retries never create another run.
 In-flight runs retain the original immutable snapshot when the job is edited.
 
 Page jobs with the last `id` as `after`; page runs with the last `sequence`
-as `before`; page unread with the last `sequence` as `after`. Unread results
-are durable, not ephemeral notification events: reconcile from sequence zero
-on reconnect and deduplicate by run ID. `read_result` does not acknowledge.
+as `before`. Unread pages contain sequences newer than `after`, ordered
+newest-first; use `after=0` for a bounded reconciliation of the newest durable
+feedback, or a saved high-water sequence for forward polling. Unread results
+are durable, not ephemeral notification events: reconcile from zero on
+reconnect and deduplicate by run ID. `read_result` does not acknowledge.
 Only acknowledge after presenting a result or an explicit mark-read request;
 opening/listing the inbox alone never marks all results read.
+
+Unread native rows include bounded job title, job/run IDs, outcome, state,
+scheduled/start/end times, the saved notification policy, a computed
+`suppressed_until`, and the durable `notified` receipt; prompt and result bodies
+still require `read_result`. Actionable-only successful `unchanged` runs remain
+in history but do not enter unread feedback. Missing/invalid outcomes, failures,
+interruptions, missed runs, and needs-user-action results remain deliverable.
 
 Job configuration follows `scheduling.validate_job`: title, prompt, schedule
 `{kind:"once"|"cron",value,zone}`, execution
@@ -173,6 +182,7 @@ The QML-facing methods are fixed:
 | `listRuns(job, limit=20, before=0)` | `list_runs`; zero omits the cursor |
 | `readResult(run)` | `read_result` |
 | `acknowledgeResult(run)` | `acknowledge_result` |
+| `markNotified(run)` | Native-only `mark_notified`; persists orb attention |
 | `unread(limit=50, after=0)` | `unread` |
 
 Every method above is asynchronous: it immediately returns a correlation ID,
@@ -248,6 +258,23 @@ health at most ten times at one-second intervals, never replays mutations,
 preserves pending forms, and reconciles current revisions after recovery.
 Preserve a manual run's durable request UUID and original revision rather than
 creating a second run request.
+
+`ScheduledFeedback.qml` is the reconnecting shell consumer. It polls health and
+the newest bounded 50-row unread page, deduplicates by run ID, orders by outbox
+sequence, and never treats an ephemeral completion signal as the source of
+truth. Before starting one coalesced orb pulse it persists `mark_notified` for
+each eligible run, so reconnect and shell restart do not replay attention.
+Quiet hours and snooze leave that receipt unset until their computed release;
+reduced motion never starts the pulse.
+
+`ScheduledResultWindow.qml` opens without acknowledging the inbox. Rendering
+one saved result or choosing **Mark read** acknowledges only that run. **New
+chat** creates a fresh chat. **Follow up** creates a fresh chat with a bounded,
+unsent draft containing the saved title/task/context/result; it does not replay
+tools or start a model call. In protected mode both feedback and follow-up use
+the current owner/work authorization. Privacy loss closes the result window
+and clears titles, bodies, counts, running state, and orb attention immediately;
+there is no desktop fallback or shared protected-result cache.
 
 `tests/scheduled_jobs_control.cpp` supports `--live-service` to exercise the
 compiled Qt bridge against a running real scheduler. The optional

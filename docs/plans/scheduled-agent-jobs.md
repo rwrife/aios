@@ -1,10 +1,9 @@
 # Scheduled agent jobs and orb attention
 
-Status: milestones 1-2 implemented as the core and isolated execution service.
-Milestone 3 ordinary desktop and dedicated native protected configuration are
-implemented. The dependent protected foreground-chat prerequisite is now
-implemented, including trusted protected model scheduling. Feedback/orb UI and
-full image validation remain later dependent layers.
+Status: milestones 1-4 implemented through durable scheduling, isolated
+execution, ordinary/protected configuration, protected foreground chat, and
+reliable saved-result feedback/orb attention. Full installed-image validation
+remains the final dependent layer.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -72,9 +71,9 @@ deterministic provider processes, isolated browser/MCP fixture subprocesses,
 cleanup, timeouts, crashes, credentials, revocation, idempotency and snapshots.
 Native shell compilation and the real Alpine/browser/model hardware acceptance
 remain in the batched image gate; this layer does not build an ISO or claim
-live provider account coverage. Outbox storage is ready for the notification
-bridge; quiet-hours, actionable-only filtering, and snooze remain saved policy,
-not active delivery. Orb delivery remains a later layer.
+live provider account coverage. Milestone 4 activates the durable outbox,
+quiet-hours, actionable-only filtering, snooze release, and orb delivery;
+installed-image/provider/hardware acceptance remains the final layer.
 
 Milestone 3 ships the `scheduled_jobs` structured tool, `scheduled-jobs` skill,
 and native Settings > Scheduled jobs configuration/history window. All use the
@@ -127,6 +126,36 @@ no-follow pinned descriptors, validate encrypted-device/owner/private-mode
 identity, and expose only a root-controlled alias to the unprivileged sandbox.
 Mutable ancestors, path replacement and scope traversal are rejected. Failed
 mount, cgroup-limit setup and sandbox startup clean up the alias and descriptors.
+
+Milestone 4 adds a versioned outbox migration with deliverable/notified state,
+bounded unread summaries, and native-only persisted attention receipts.
+Actionable-only unchanged successes remain available in job history without
+creating unread feedback; missing/invalid outcomes and all safe errors remain
+visible. Quiet hours and snooze report a release instant but do not remove or
+acknowledge feedback.
+
+The shell reconciles the newest 50 durable unread rows at startup and every
+five seconds, deduplicating/reordering by run ID and outbox sequence so a large
+old backlog cannot starve fresh attention. Ordinary feedback uses
+the global desktop client. Protected feedback automatically creates a separate
+lease/work-bound client only for the currently authorized owner and clears it,
+the result window, counts, running state, and attention on privacy loss.
+Reconnect never relies on a transient completion signal and notified runs do
+not replay pulses.
+
+The orb now has an attention state independent of chat activity:
+idle/running/unread/action-needed, with unread/action-needed precedence. New
+eligible feedback coalesces into one three-cycle/six-second accent contour
+pulse, followed by a steady accent contour and bounded count; reduced motion
+uses the steady state only. Orb activation opens the current safe-context
+inbox while feedback exists and otherwise preserves chat restore/new behavior.
+
+The dedicated saved-result window does not acknowledge on inbox open. Rendering
+one result or choosing Mark read acknowledges only that run. New chat creates a
+fresh empty chat; Follow up creates a fresh ordinary or protected chat with a
+bounded unsent draft copied from the immutable job snapshot and saved result.
+It never replays tools or automatically starts a model call, and protected
+follow-up has no desktop fallback.
 
 ### Milestone 3 validation and kernel reproduction
 

@@ -51,8 +51,8 @@ Window {
         }
         return null
     }
-    function openChat() {
-        var restored = restoreMinimizedChat()
+    function openChat(initialDraft, forceNew) {
+        var restored = forceNew ? null : restoreMinimizedChat()
         if (restored)
             return restored
         var chatSession = sessionControlApi.enabled
@@ -66,7 +66,8 @@ Window {
             theme: theme,
             profileControl: sessionControlApi.enabled
                     ? sessionControlApi : sessionControlApi.chatProfile(),
-            ownsProfileControl: !sessionControlApi.enabled
+            ownsProfileControl: !sessionControlApi.enabled,
+            initialDraft: initialDraft || ""
         })
         if (!window)
             return null
@@ -80,6 +81,75 @@ Window {
     property var settingsWindow: null
     property var scheduledJobsWindow: null
     property var protectedScheduledJobsWindow: null
+    property var scheduledResultsWindow: null
+    property var protectedFeedback: null
+    property alias desktopFeedbackController: desktopFeedback
+    readonly property var currentFeedback: sessionControlApi.enabled ? protectedFeedback : desktopFeedback
+    function createProtectedFeedback() {
+        if (!sessionControlApi.enabled || sessionControlApi.shield || !displayBridgeApi.enabled
+                || !sessionControlApi.personalAvailable
+                || sessionControlApi.authority === "anonymous" || protectedFeedback)
+            return
+        var api = sessionControlApi.createScheduledJobs()
+        if (!api)
+            return
+        var created = feedbackComponent.createObject(desktop, {
+            jobsApi: api, active: true, reducedMotion: desktop.reducedMotion
+        })
+        if (!created) {
+            api.dispose()
+            return
+        }
+        protectedFeedback = created
+        created.apiInvalidated.connect(function() {
+            if (desktop.protectedFeedback !== created)
+                return
+            desktop.clearProtectedFeedback()
+            protectedFeedbackRetry.restart()
+        })
+    }
+    function clearProtectedFeedback() {
+        if (scheduledResultsWindow && scheduledResultsWindow.feedback === protectedFeedback) {
+            scheduledResultsWindow.close()
+            scheduledResultsWindow.destroy()
+            scheduledResultsWindow = null
+        }
+        if (!protectedFeedback)
+            return
+        var api = protectedFeedback.jobsApi
+        protectedFeedback.active = false
+        protectedFeedback.destroy()
+        protectedFeedback = null
+        if (api)
+            api.dispose()
+    }
+    function openScheduledResults() {
+        var feedback = currentFeedback
+        if (!feedback || feedback.unreadCount < 1)
+            return
+        if (scheduledResultsWindow
+                && (scheduledResultsWindow.feedback !== feedback
+                    || scheduledResultsWindow.jobsApi !== feedback.jobsApi)) {
+            scheduledResultsWindow.close()
+            scheduledResultsWindow.destroy()
+            scheduledResultsWindow = null
+        }
+        if (!scheduledResultsWindow) {
+            scheduledResultsWindow = resultComponent.createObject(desktop, {
+                jobsApi: feedback.jobsApi, feedback: feedback, theme: theme
+            })
+            scheduledResultsWindow.newChatRequested.connect(function() {
+                desktop.openChat("", true)
+            })
+            scheduledResultsWindow.followUpRequested.connect(function(draft) {
+                if (!sessionControlApi.enabled || protectedFeedback === feedback)
+                    desktop.openChat(draft, true)
+            })
+        }
+        scheduledResultsWindow.show()
+        scheduledResultsWindow.raise()
+        scheduledResultsWindow.requestActivate()
+    }
     function openProtectedScheduledJobs() {
         if (!sessionControlApi.enabled || sessionControlApi.shield || !displayBridgeApi.enabled) return
         if (protectedScheduledJobsWindow && protectedScheduledJobsWindow.visible) {
@@ -104,6 +174,19 @@ Window {
         if (scheduledJobsWindow) { scheduledJobsWindow.show(); scheduledJobsWindow.raise(); scheduledJobsWindow.requestActivate() }
     }
     Component { id: scheduledJobsComponent; ScheduledJobsWindow {} }
+    Component { id: feedbackComponent; ScheduledFeedback {} }
+    Component { id: resultComponent; ScheduledResultWindow {} }
+    Timer {
+        id: protectedFeedbackRetry
+        interval: 1000
+        onTriggered: desktop.createProtectedFeedback()
+    }
+    ScheduledFeedback {
+        id: desktopFeedback
+        jobsApi: desktop.scheduledJobsApi
+        active: !desktop.sessionControlApi.enabled
+        reducedMotion: desktop.reducedMotion
+    }
     property var setupWindow: null
     function openSetup() {
         if (sessionControlApi.enabled) return
@@ -195,6 +278,19 @@ Window {
         x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi
         onScheduledJobsRequested: desktop.openProtectedScheduledJobs()
     }
+    Connections {
+        target: sessionControlApi
+        function onChanged() {
+            if (sessionControlApi.enabled && !sessionControlApi.shield
+                    && displayBridgeApi.enabled && sessionControlApi.personalAvailable
+                    && sessionControlApi.authority !== "anonymous")
+                desktop.createProtectedFeedback()
+            else if (sessionControlApi.enabled)
+                desktop.clearProtectedFeedback()
+        }
+        function onUnlocked() { desktop.createProtectedFeedback() }
+        function onPrivacyLost() { desktop.clearProtectedFeedback() }
+    }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
     SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }
@@ -210,10 +306,14 @@ Window {
     }
     ChatOrb {
         id: launcher
+        objectName: "chatOrb"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom; anchors.bottomMargin: 8
         theme: theme; reducedMotion: desktop.reducedMotion
-        onClicked: desktop.openChat()
+        attentionState: desktop.currentFeedback ? desktop.currentFeedback.attentionState : "idle"
+        unreadCount: desktop.currentFeedback ? desktop.currentFeedback.unreadCount : 0
+        pulseSerial: desktop.currentFeedback ? desktop.currentFeedback.pulseSerial : 0
+        onClicked: unreadCount > 0 ? desktop.openScheduledResults() : desktop.openChat("", false)
     }
     Row {
         anchors.right: parent.right; anchors.rightMargin: 32; anchors.verticalCenter: launcher.verticalCenter; spacing: 12

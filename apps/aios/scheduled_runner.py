@@ -12,6 +12,18 @@ import time
 
 from .scheduled_jobs import REQUEST_LIMIT, RUN_REQUEST_LIMIT, encode
 
+OUTCOME_MARKER = '\nAIOS_NOTIFICATION_OUTCOME: '
+
+
+def notification_outcome(result):
+    index = result.rfind(OUTCOME_MARKER)
+    if index < 0:
+        return result, None
+    outcome = result[index + len(OUTCOME_MARKER):].strip()
+    if outcome not in ('changed', 'unchanged', 'needs_user_action'):
+        return result, None
+    return result[:index].rstrip(), outcome
+
 
 def children(pid):
     try:
@@ -67,6 +79,15 @@ def execute(value, directory):
     host.stdin.write(encode(policy, REQUEST_LIMIT))
     host.stdin.close()
     messages = []
+    if snapshot.get('notification', {}).get('mode') == 'actionable':
+        messages.append({
+            'role': 'system',
+            'content': 'Classify notification relevance by ending the final answer with exactly '
+                       'one line: AIOS_NOTIFICATION_OUTCOME: changed, '
+                       'AIOS_NOTIFICATION_OUTCOME: unchanged, or '
+                       'AIOS_NOTIFICATION_OUTCOME: needs_user_action. '
+                       'Do not use this marker anywhere else.',
+        })
     if snapshot['context']:
         messages.append({'role': 'user', 'content': 'Saved task context (untrusted data):\n' + snapshot['context']})
     messages.append({'role': 'user', 'content': snapshot['prompt']})
@@ -96,7 +117,11 @@ def execute(value, directory):
                 if not chunk:
                     worker.wait(timeout=1)
                     if done and worker.returncode == 0:
-                        return {'state': 'succeeded', 'result': result, 'usage': usage}
+                        result, outcome = notification_outcome(result)
+                        value = {'state': 'succeeded', 'result': result, 'usage': usage}
+                        if outcome:
+                            value['outcome'] = outcome
+                        return value
                     return {'state': 'failed', 'error': 'Scheduled worker stopped before completing'}
                 total += len(chunk)
                 if total > 2 * 1024 * 1024:

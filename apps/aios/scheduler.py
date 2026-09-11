@@ -198,6 +198,9 @@ class Scheduler:
         if action == 'acknowledge_result':
             self.store.acknowledge(**args)
             return {'acknowledged': True}
+        if action == 'mark_notified':
+            self.store.mark_notified(**args)
+            return {'notified': True}
         if action == 'unread':
             return self.store.unread(**args)
         raise SchedulingError('Unknown scheduling action')

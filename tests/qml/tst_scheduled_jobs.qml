@@ -188,10 +188,11 @@ TestCase {
         compare(Object.keys(window.result).length, 0)
         verify(!window.visible)
     }
-    function test_history_read_does_not_acknowledge_without_action() {
+    function test_history_view_acknowledges_exact_rendered_result() {
         window.loadJob(sample()); window.inspectRun("run-one")
         reply(latest(), {id: "run-one", state: "succeeded", result: "<b>plain text</b>"})
-        compare(latest().action, "read_result")
+        compare(latest().action, "acknowledge_result")
+        compare(latest().args.run, "run-one")
         compare(field("scheduledResult").text, "<b>plain text</b>")
         compare(field("scheduledResult").textFormat, TextEdit.PlainText)
     }
