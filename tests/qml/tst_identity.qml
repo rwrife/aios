@@ -80,6 +80,20 @@ TestCase {
     Component { id: accountsComponent; AccountSettings {} }
     Component { id: themeComponent; Theme {} }
 
+    function test_scheduled_jobs_entry_obeys_privacy_gate() {
+        control.shield = true
+        control.personalAvailable = true
+        var panel = createTemporaryObject(statusComponent, test, {control: control})
+        var button = findChild(panel, "protectedScheduledJobs")
+        verify(!button.enabled)
+        control.shield = false
+        verify(button.enabled)
+        verify(button.Accessible.description.indexOf("authorized private workspace") >= 0)
+        control.personalAvailable = false
+        verify(!button.enabled)
+        control.personalAvailable = true
+    }
+
     function test_new_account_hover_and_focus_colors_data() {
         return [{tag: "Ocean", selected: "blue"}, {tag: "Sage", selected: "sage"}]
     }

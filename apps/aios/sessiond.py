@@ -20,6 +20,7 @@ from .sessions import Sessions
 
 
 LIMIT = 65536
+SCHEDULED_LIMIT = 128 * 1024 + 1024
 FIELDS = {
     'status': (), 'anonymous': (), 'suspend': (), 'cancel_challenge': (),
     'activate': ('title', 'session'), 'launch': ('app', 'arguments'),
@@ -36,6 +37,7 @@ FIELDS = {
     'request_capability': ('operation', 'resource'),
     'verify': ('challenge', 'pin', 'confirmed'), 'github_profile': ('token',),
     'evidence': ('tracks',), 'simulate': ('state',),
+    'scheduled_jobs': ('lease', 'scope', 'request'),
 }
 
 
@@ -121,6 +123,10 @@ class Service:
         self.sessions.tick()
         if self.sessions.root is not None and time.monotonic() - self.last_shell > 3:
             self.sessions.suspend()
+        start = (self.personal_enabled and self.display_pid is not None and
+                 (not getattr(self.sessions.isolation, 'requires_display', False) or
+                  (self.display_platform == 'eglfs' and self.embedded_shell)))
+        self.sessions.scheduled_tick(start=start)
 
     def _dispatch(self, request, uid):
         action = request['action']
@@ -130,6 +136,15 @@ class Service:
         elif uid != self.shell_uid:
             raise PermissionError("Only the trusted shell can request sessions")
         s = self.sessions
+        if action == 'scheduled_jobs':
+            if (not self._can_personal() or self.peer_pid is None
+                    or self.peer_pid != self.display_pid):
+                raise PermissionError('Protected scheduling requires the registered trusted display')
+            from .scheduling import SchedulingError
+            try:
+                return s.scheduled_request(request['lease'], request['scope'], request['request'])
+            except SchedulingError as error:
+                return {'status': error.code, 'error': str(error)}
         if s.owner and getattr(s.isolation, 'requires_display', False) and self.peer_pid != self.display_pid:
             if action not in ('status', 'suspend', 'evidence', 'display_attest'):
                 raise PermissionError('Personal requests require the registered display process')
@@ -261,22 +276,27 @@ def serve(path, service, socket_group=None):
                 with connection:
                     connection.settimeout(.2)
                     descriptor = None
+                    scheduled_response = False
                     try:
                         pid, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                         if uid not in (service.shell_uid, service.identity_uid):
                             raise PermissionError("Unauthorized peer")
                         data = bytearray()
                         deadline = time.monotonic() + .2
-                        while b'\n' not in data and len(data) <= LIMIT:
+                        while b'\n' not in data and len(data) <= SCHEDULED_LIMIT:
                             if time.monotonic() >= deadline:
                                 raise ValueError("Request timeout")
-                            chunk = connection.recv(min(4096, LIMIT + 1 - len(data)))
+                            chunk = connection.recv(min(4096, SCHEDULED_LIMIT + 1 - len(data)))
                             if not chunk:
                                 break
                             data.extend(chunk)
-                        if len(data) > LIMIT or not data.endswith(b'\n') or data.count(b'\n') != 1:
+                        if len(data) > SCHEDULED_LIMIT or not data.endswith(b'\n') or data.count(b'\n') != 1:
                             raise ValueError("Invalid request frame")
-                        result = service.dispatch(decode(data), uid, pid)
+                        value = decode(data)
+                        scheduled_response = value['action'] == 'scheduled_jobs'
+                        if not scheduled_response and len(data) > LIMIT:
+                            raise ValueError("Invalid request frame")
+                        result = service.dispatch(value, uid, pid)
                         from .display import DescriptorReply
                         if isinstance(result, DescriptorReply):
                             descriptor, result = result.descriptor, result.result
@@ -287,7 +307,7 @@ def serve(path, service, socket_group=None):
                         response = {'ok': False, 'error': 'Service unavailable'}
                     try:
                         encoded = json.dumps(response, ensure_ascii=False).encode() + b'\n'
-                        if len(encoded) > 262144:
+                        if len(encoded) > (2 * 1024 * 1024 + 1024 if scheduled_response else 262144):
                             encoded = b'{"ok":false,"error":"Response exceeds transport limit"}\n'
                         if descriptor is not None:
                             sent = connection.sendmsg([encoded], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,

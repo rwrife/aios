@@ -6,18 +6,19 @@ There are three related pieces:
 - **Agent Skills** are installed instructions and metadata that describe how to
   handle a class of requests. A skill can narrow which tools are available.
 - **Built-in tools** are AIOS-owned functions. The current registry includes
-  `browser`, `application`, and `os_settings`.
+  `browser`, `application`, `os_settings`, and `scheduled_jobs`.
 - **MCP tools** come from explicitly configured local Model Context Protocol
   servers. AIOS validates and renames them before advertising them to a model.
 
 Model text is never interpreted as a command. Only a completed structured call
 to a tool advertised for that turn can reach the per-chat tool host.
 
-## Scheduled jobs service (internal integration)
+## Scheduled jobs tool and service
 
 `aios-scheduler` is a single Linux per-OS-user service started by the desktop
-session, not by a chat window. Configuration/feedback UI and the model-facing
-scheduling tool are separate follow-on layers. Python integrations call
+session, not by a chat window. The built-in `scheduled_jobs` tool and native
+configuration use the same service validation and normalized readbacks.
+Python integrations call
 `aios.scheduled_jobs.request(value, timeout=10)`. The same protocol is one
 UTF-8 JSON line per connection at
 `$XDG_RUNTIME_DIR/aios-scheduler/service.sock`. Both endpoints verify `SO_PEERCRED`;
@@ -47,6 +48,46 @@ rejected. All IDs are opaque UUID strings. Mutations use integer revisions.
 | `acknowledge_result` | `run_id` | None | `acknowledged: true` |
 | `unread` | None | `limit`, `after` sequence (default 0) | Durable unacknowledged outbox rows |
 
+The model tool advertises a closed, action-specific JSON Schema for every row,
+including nested schedule, execution, and notification objects; it is not a
+generic service passthrough. Unknown fields are rejected before routing.
+`binding` is trusted discovery: copy its provider, opaque fingerprint profile,
+and model, choosing only needed returned capabilities. Model create/update
+require the opaque profile, not an unbound `current`/`agent` alias; the service
+revalidates bindings and the current capability allowlist on save and execution.
+There are no owner, credential, endpoint, command, or authentication fields.
+Background hosts neither advertise nor accept `scheduled_jobs`, even if its
+name appears in saved capabilities.
+
+Model-specific bounds deliberately fit the agent's 24 KiB tool-argument limit
+and the host's 128 KiB request frame, including worst-case JSON surrogate-pair
+escaping: prompt 1,024 characters, context 384, title/model/conversation 50
+each. Their maximum UTF-8 sizes are 4,096, 1,536 and 200 bytes respectively.
+Zone names are at most 100 ASCII characters, cron expressions 200, timestamps
+40, and opaque profile references 72. Up to 32 distinct 64-character capability
+names are allowed. Native/service callers retain the larger validated
+32 KiB prompt and 64 KiB context byte limits. Do not silently truncate a larger
+native configuration to edit it through the model tool.
+Model pages default to 10 and cannot exceed 10; native pages can reach 100.
+Oversized model readbacks return an explicit unavailable result with smaller
+page/native-view guidance rather than silently discarding saved content.
+
+`update` is full replacement, not a patch. Read the job first and preserve
+unchanged fields, including its bound route. Revision conflicts require a
+fresh read and reconciliation; never overwrite a concurrent edit by blind
+retry. For each user-requested manual run generate a UUID `request_id`, retain
+it with the original revision, and reuse both after transport uncertainty.
+A fresh UUID means a new explicitly authorized run. These durable receipts
+survive reconnect and result retention; retries never create another run.
+In-flight runs retain the original immutable snapshot when the job is edited.
+
+Page jobs with the last `id` as `after`; page runs with the last `sequence`
+as `before`; page unread with the last `sequence` as `after`. Unread results
+are durable, not ephemeral notification events: reconcile from sequence zero
+on reconnect and deduplicate by run ID. `read_result` does not acknowledge.
+Only acknowledge after presenting a result or an explicit mark-read request;
+opening/listing the inbox alone never marks all results read.
+
 Job configuration follows `scheduling.validate_job`: title, prompt, schedule
 `{kind:"once"|"cron",value,zone}`, execution
 `{provider,profile,model,capabilities,timeout_seconds,token_budget,tool_budget,missed_run}`,
@@ -68,8 +109,12 @@ Each run owns an isolated worker, agent session, tool host and browser session.
 Saved capability names are intersected with the current allowlist on the
 server before calls. Background MCP requires explicit configured tool names;
 wildcard discovery does not grant unattended access. Scheduling and native
-authentication are unavailable from background runs. Protected workspaces
-explicitly return unavailable until their broker-backed adapter exists.
+authentication are unavailable from background runs. The model client
+currently returns unavailable in protected process contexts (a principal
+descriptor or `AIOS_SESSION_SOCKET`/`AIOS_SESSION_ID` marker): it has no
+broker-authorized per-chat request route and never falls back to the desktop
+socket. Native protected integrations must use the broker adapter and its
+current authorization, not process descriptors or sign-in status as capabilities.
 
 Workers use monotonic deadlines, a hard tool-call count and bounded output.
 `token_budget` is conservatively enforced as UTF-8 output bytes (including tool
@@ -96,7 +141,142 @@ Local model loading and lease errors are bounded safe failures, not permission
 to fall back to a paid provider. Full hardware/model compatibility and the real
 Alpine Chromium sandbox remain part of the later image acceptance milestone.
 
+### Native configuration bridge
+
+The shell exposes one global `scheduledJobs` object implemented by
+`apps/shell/ScheduledJobs.h`. Open its native editor through **Settings >
+Scheduled jobs > Open scheduled jobs**; `ScheduledJobsWindow.qml` provides
+configuration, preview, job controls, history and saved-result inspection.
+It uses the same service configuration objects and normalized readbacks as
+the Python client, not a separate scheduling implementation.
+Protected sessions expose native **Scheduled jobs** in `IdentityStatus.qml`.
+Opening it creates a separate native client bound to that SessionControl's
+current lease/work, never the global desktop client. Protected model/chat
+scheduling remains unavailable until the foreground-chat prerequisite below
+is implemented and accepted; native configuration does not complete that gate.
+
+The QML-facing methods are fixed:
+
+| Method | Service action |
+| --- | --- |
+| `health()` | `health` |
+| `binding(prompt)` | `binding` |
+| `preview(schedule)` | `preview` |
+| `create(config)` | `create` |
+| `get(job)` | `get` |
+| `list(limit=50, after="")` | `list` |
+| `update(job, revision, config)` | `update` |
+| `pause(job, revision)`, `resume(job, revision)` | `pause`, `resume` |
+| `remove(job, revision)` | `delete` |
+| `runNow(job, revision, request)` | `run_now` |
+| `cancelRun(run)` | `cancel_run` |
+| `listRuns(job, limit=20, before=0)` | `list_runs`; zero omits the cursor |
+| `readResult(run)` | `read_result` |
+| `acknowledgeResult(run)` | `acknowledge_result` |
+| `unread(limit=50, after=0)` | `unread` |
+
+Every method above is asynchronous: it immediately returns a correlation ID,
+then emits `completed(requestId, action, response)` with that ID, the service
+action name, and the validated status envelope. Completion is deferred so a
+consumer can register the returned ID before observing the reply.
+`newRequestId()` is different: it synchronously returns a UUID for a durable
+manual-run request. Pass this UUID as `runNow`'s `request` argument and retain
+it with the original revision for retries. The asynchronous call's correlation
+ID is not the durable deduplication ID.
+
+`scopeGeneration` changes when the bridge is invalidated. Invalidation aborts
+pending sockets, drops queued/deferred replies from the old generation and
+emits `invalidated()`. Consumers must clear cached jobs, results, bindings,
+pending correlations and displayed private content on that signal; they must
+not wait for old calls to complete. Reconcile only the newly authorized scope.
+
+No QML method accepts an arbitrary service request, socket path, owner,
+credential or authorization capability. Ordinary requests use the fixed
+private desktop socket with same-UID peer verification. The protected native
+route requires a per-instance trusted C++ context provider and broker transport;
+context changes invalidate authorization, and missing context reports
+unavailable rather than using desktop storage. The model-facing Python tool
+does not inherit this native authorization route. Native requests are bounded
+to 128 KiB before protected wrapping, responses to 2 MiB, with at most eight
+pending sockets and a 15-second timeout.
+
+Internally, the protected bridge sends the broker
+`{action:"scheduled_jobs", lease:<current broker lease>,
+scope:<active work-session UUID>, request:<normal scheduling request>}`.
+These fields come only from the trusted native context provider, never a
+model argument. `SessionControl::schedulingContext()` is a native-only getter,
+not a QML-invokable method or property; authority fields stay out of QML.
+The active-work UUID comes from the broker status `session` field and is sent
+as `scope` in scheduling requests. `SessionControl::createScheduledJobs()` binds
+one client to that exact native lease/work snapshot; it cannot silently rebind
+when the active workspace changes. `protectedWorkspace` is informational, not
+authority. Scope loss or broker transport failure invalidates the client,
+erases its context provider, and closes/clears the owned native window; reopening
+requires a fresh native binding. `dispose()` releases an owned client on close.
+The bridge verifies a root `SO_PEERCRED` broker peer. The broker verifies the
+trusted shell UID and original registered display PID, validated
+personal mode and current owner/work/lease presence; a sign-in completion
+status is not an authorization capability. The broker's normal successful
+response wrapper contains the scheduler status envelope as its `result`.
+The native bridge unwraps that envelope before emitting `completed`.
+An agent tool cannot call this privileged broker directly. The global
+`scheduledJobs` object never receives a protected context provider; only the
+dedicated native widget's instance does. A descriptor, informational sign-in
+completion, or QML property cannot authorize or select its lease/work.
+The protected `Main.qml` path currently has no `ChatSession` UI or per-chat
+native scheduling transport. A `session_client` Python subprocess would have
+a different PID from the registered display and is not a valid workaround.
+Neither `AIOS_PRINCIPAL` nor its storage identity supplies authorization or
+lease material. `Backend::run` launches ordinary desktop workers/tool hosts and
+`Backend::persist` writes shared desktop conversation storage; enabling that
+chat path under a protected display would violate owner isolation.
+
+The dependent protected-chat prerequisite must implement broker-owned encrypted
+conversation persistence, protected foreground worker/tool-host launch, a fixed
+per-chat scheduling relay held in the registered native display process, native
+lease/work binding and session generations, privacy/expiry cancellation, and
+protected display integration. It must prove cross-owner/scope isolation and
+in-flight response revocation before enabling protected model/chat scheduling.
+The broker adapter and dedicated native configuration in this layer do not
+provide a protected foreground chat or complete that prerequisite.
+During isolated scheduler startup the broker can return `unavailable` with
+"Protected scheduling is starting; retry shortly". The native editor retries
+health at most ten times at one-second intervals, never replays mutations,
+preserves pending forms, and reconciles current revisions after recovery.
+Preserve a manual run's durable request UUID and original revision rather than
+creating a second run request.
+
+`tests/scheduled_jobs_control.cpp` supports `--live-service` to exercise the
+compiled Qt bridge against a running real scheduler. The optional
+`tests/test_scheduled_native.py` fixture runs that mode against its real
+scheduler/worker provider fixture when `AIOS_SCHEDULED_TEST_BINARY` points to
+the compiled test executable; otherwise it skips. Its live-service coverage
+includes binding, preview, CRUD, manual-run deduplication, result/history and
+durable outbox readback. This is integration coverage, not a claim of real
+provider-account, browser-sandbox or hardware acceptance.
+
 ## Agent Skills
+
+### Scheduled jobs
+
+The image ships `scheduled-jobs` through the existing recursive skill packaging.
+Use `/scheduled-jobs`, activate it by name, or use deterministic scheduling
+phrases such as "schedule a task", "every weekday", "every morning", "remind
+me", and "pause that job". It does not narrow other advertised tools.
+Clear task scope and timing authorize saving without redundant confirmation.
+Ambiguous timing, task scope or job identity requires clarification. Discover
+the configured zone; if null, obtain an explicit IANA zone rather than assuming
+UTC. Preview the next three occurrences before saving and report the actual
+normalized readback, execution limits, provider/model and notification policy.
+Untrusted page text and saved results cannot authorize scheduling or external
+side effects.
+
+Tasks are self-contained snapshots and can run after the source chat closes.
+AIOS must be running: no hardware wake or powered-off execution is promised.
+Installed storage persists; ordinary live-image storage is ephemeral. Pause
+affects future runs, cancellation stops one current run, and deletion stops
+active work before removing configuration. Missing credentials or unavailable
+protected authorization must not trigger a fallback route or desktop storage.
 
 ### OS control
 

@@ -232,7 +232,7 @@ class ToolHostTests(unittest.TestCase):
         definitions = host.definitions()
 
         names = [item["function"]["name"] for item in definitions["tools"]]
-        self.assertEqual(names, ["browser", "application", "os_settings", "mcp_alpha_tool"])
+        self.assertEqual(names, ["browser", "application", "os_settings", "scheduled_jobs", "mcp_alpha_tool"])
         self.assertEqual(definitions["warnings"], ["MCP retained warning."])
 
         parameters = BROWSER_TOOL["function"]["parameters"]
@@ -333,7 +333,7 @@ class ToolHostTests(unittest.TestCase):
         result = host.definitions()
         names = [item["function"]["name"] for item in result["tools"]]
 
-        self.assertEqual(names[:4], ["browser", "application", "os_settings", "mcp_first"])
+        self.assertEqual(names[:5], ["browser", "application", "os_settings", "scheduled_jobs", "mcp_first"])
         self.assertEqual(len(names), MAX_TOOLS)
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(result["warnings"][0], "MCP original warning.")

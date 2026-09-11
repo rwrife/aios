@@ -105,6 +105,22 @@ TestCase {
         verify(window.minimumHeight <= window.height)
         window.close()
     }
+    function test_scheduled_jobs_settings_entry_is_reachable() {
+        var window = createTemporaryObject(settingsComponent, test, {
+            backend: backend, theme: palette, profileControl: profileControl
+        })
+        window.show()
+        var pages = findChild(window, "settingsPages")
+        compare(window.sections[8], "Scheduled jobs")
+        pages.currentIndex = 8
+        var button = findChild(window, "openScheduledJobs")
+        verify(button.visible)
+        var requested = false
+        window.scheduledJobsRequested.connect(function() { requested = true })
+        mouseClick(button)
+        verify(requested)
+        window.close()
+    }
     function test_setup_action_keeps_full_label(data) {
         var window = settingsComponent.createObject(test, {
             backend: backend, theme: palette, width: data.width, height: 620

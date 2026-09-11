@@ -57,7 +57,8 @@ def execute(value, directory):
     environment = {**os.environ, 'TMPDIR': str(directory),
                    'AIOS_BROWSER_SESSION': 'scheduled-' + value['id']}
     # A scheduled context has no interactive authentication or chat socket.
-    for name in ('AIOS_PRINCIPAL', 'AIOS_DESKTOP_CONTROL_SOCKET', 'AIOS_BROWSER_SOCKET'):
+    for name in ('AIOS_DESKTOP_CONTROL_SOCKET', 'AIOS_BROWSER_SOCKET',
+                 'AIOS_SESSION_SOCKET', 'AIOS_SESSION_ID'):
         environment.pop(name, None)
     tool_socket = str(directory / 'tools.sock')
     host = subprocess.Popen([sys.executable, '-m', 'aios.toolhost', tool_socket, '--background'],

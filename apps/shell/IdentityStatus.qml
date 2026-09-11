@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Rectangle {
     id: panel
     required property var control
+    signal scheduledJobsRequested()
     width: 340; height: column.implicitHeight + 32
     radius: 12; color: "#172633"; border.color: "#52616c"
     EnrollmentFlow { id: enrollment; control: panel.control }
@@ -90,6 +91,17 @@ Rectangle {
             Button { text: "Document"; onClicked: { documentName.text = "Resume.txt"; documentDialog.open(); } }
         }
         Button { text: "Protected account"; onClicked: control.protectedResource() }
+        Button {
+            objectName: "protectedScheduledJobs"
+            text: "Scheduled jobs"
+            enabled: !control.shield && control.personalAvailable
+            Accessible.description: "Configure scheduled jobs in the current authorized private workspace."
+            onClicked: panel.scheduledJobsRequested()
+        }
+        Label {
+            text: "Protected chat scheduling is not available yet. Use the native configuration for this workspace."
+            textFormat: Text.PlainText; color: "#bde4e6"; wrapMode: Text.Wrap; Layout.fillWidth: true
+        }
         Label { text: control.error; color: "#e8bdbd"; wrapMode: Text.Wrap; Layout.fillWidth: true }
     }
 }

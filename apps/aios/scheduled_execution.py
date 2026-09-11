@@ -42,7 +42,8 @@ def _reference(profile, provider, model, destination):
 
 
 def bind(execution, *, require_credentials=False):
-    desktop_only()
+    # In a broker sandbox core.load_config is owner-scoped. This is storage
+    # routing, not authorization: only the broker admits protected requests.
     config = core.load_config()
     profile = execution['profile'].split('@', 1)[0]
     try:
@@ -74,7 +75,6 @@ def bind(execution, *, require_credentials=False):
 def binding(prompt):
     """Resolve the existing initial-skill routing without starting tools."""
     from .agent import select_provider
-    desktop_only()
     catalog = skills.load_skills()
     active = skills.initial_skills(catalog, prompt)
     preferred = any(skill.model == 'remote-preferred' for skill in active)

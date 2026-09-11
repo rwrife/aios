@@ -31,6 +31,7 @@ class Sessions:
         self.manual_until = 0
         self.pending_restoration = []
         self.enrollment_blocked = False
+        self.scheduled = None
         self._reconcile_enrollment()
 
     def _reconcile_enrollment(self):
@@ -88,6 +89,51 @@ class Sessions:
         self.verified_until = 0
         self.manual_owner = None
         self.manual_until = 0
+        self._stop_scheduled()
+
+    def _stop_scheduled(self):
+        scheduled, self.scheduled = self.scheduled, None
+        if scheduled is not None:
+            try:
+                scheduled.close()
+            except Exception:
+                self.fault = True
+                raise
+
+    def scheduled_request(self, lease, scope, request):
+        from .scheduled_jobs import validate_request
+        from .scheduled_protected import ProtectedScheduler, Starting
+        self._present()
+        if self.work is None or (lease, scope) != (self.lease, self.work):
+            raise PermissionError('Protected scheduling scope expired')
+        validate_request(request)
+        try:
+            if self.scheduled is None:
+                self.scheduled = ProtectedScheduler(self)
+            return self.scheduled.request(request)
+        except Starting:
+            raise
+        except Exception:
+            self._stop_scheduled()
+            raise
+
+    def scheduled_tick(self, *, start=False):
+        if (self.scheduled is None and start and self.owner and self.work
+                and hasattr(self.isolation, 'scheduled')):
+            from .scheduled_protected import ProtectedScheduler
+            try:
+                self._present()
+            except PermissionError:
+                return
+            self.scheduled = ProtectedScheduler(self)
+        if self.scheduled is not None:
+            try:
+                self.scheduled.tick()
+            except PermissionError:
+                self._stop_scheduled()
+            except Exception:
+                self._stop_scheduled()
+                raise
 
     def tick(self):
         if not self.enrollment_blocked:

@@ -26,6 +26,7 @@
 #include "voice.h"
 #include "CameraDevice.h"
 #include "SessionControl.h"
+#include "ScheduledJobs.h"
 #include "DisplayBridge.h"
 #ifdef AIOS_EMBEDDED_DISPLAY
 #include "PrivateCompositor.h"
@@ -640,6 +641,10 @@ int main(int argc, char **argv) {
     app.setQuitOnLastWindowClosed(false);
     Backend backend;
     SessionControl sessionControl;
+    ScheduledJobs scheduledJobs;
+    // The global client is desktop-only. Protected native widgets obtain a
+    // separate lease/work-bound instance from SessionControl.
+    QObject::connect(&sessionControl, &SessionControl::privacyLost, &scheduledJobs, &ScheduledJobs::invalidate);
     DisplayBridge displayBridge;
     QObject::connect(&sessionControl, &SessionControl::displayRequested, &app, [&] {
         if (!displayBridge.enabled()) sessionControl.displayFailed();
@@ -650,6 +655,7 @@ int main(int argc, char **argv) {
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
     engine.rootContext()->setContextProperty("sessionControl", &sessionControl);
+    engine.rootContext()->setContextProperty("scheduledJobs", &scheduledJobs);
     engine.rootContext()->setContextProperty("displayBridge", &displayBridge);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.load(QUrl("qrc:/Main.qml"));

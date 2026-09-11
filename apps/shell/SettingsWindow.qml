@@ -14,6 +14,7 @@ Window {
     property var selectedCameraDevice: devices.defaultVideoInput
     readonly property var activeCamera: cameraLoader.item
     signal setupRequested()
+    signal scheduledJobsRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
     width: WindowSizing.extent(820, Screen.width, Screen.desktopAvailableWidth)
@@ -71,7 +72,7 @@ Window {
         border.color: theme.line
     }
     // Add a section here and its page to the StackLayout below.
-    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
+    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts", "Scheduled jobs"]
     component Action: Button {
         id: control
         hoverEnabled: true
@@ -357,36 +358,46 @@ Window {
                     }
                     Item { Layout.fillHeight: true }
                 }
+                ColumnLayout {
+                    spacing: 16
+                    Note { text: "Build and system information for this computer." }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: aboutDetails.implicitHeight + 32
+                        color: theme.input; radius: 8
+                        ColumnLayout {
+                            id: aboutDetails
+                            anchors.fill: parent; anchors.margins: 16; spacing: 12
+                            InfoRow { label: "AIOS version"; value: backend.systemInfo.version; fieldName: "aboutVersion" }
+                            InfoRow { label: "Build"; value: backend.systemInfo.build; fieldName: "aboutBuild" }
+                            InfoRow { label: "Commit"; value: backend.systemInfo.commit; fieldName: "aboutCommit" }
+                            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
+                            InfoRow { label: "Operating system"; value: backend.systemInfo.os; fieldName: "aboutOs" }
+                            InfoRow { label: "Kernel"; value: backend.systemInfo.kernel; fieldName: "aboutKernel" }
+                            InfoRow { label: "Architecture"; value: backend.systemInfo.architecture; fieldName: "aboutArchitecture" }
+                            InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
+                            InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+                AccountSettings { id: accountsPage; control: settings.profileControl }
+                ColumnLayout {
+                    spacing: 16
+                    Note { text: "Save tasks to run once or on a recurring schedule. Review timing, model bindings, saved results and active runs." }
+                    Action {
+                        objectName: "openScheduledJobs"
+                        text: "Open scheduled jobs"
+                        onClicked: settings.scheduledJobsRequested()
+                    }
+                    Note { text: "Jobs belong to the OS user, not the greeting profile. They run only while AIOS is on." }
+                    Item { Layout.fillHeight: true }
+                }
             }
             Note { text: backend.status; visible: pages.currentIndex !== 0 && text.length > 0; font.pixelSize: 11 }
         }
     }
     MediaDevices { id: devices }
-    AccountSettings { id: accountsPage; parent: pages; control: settings.profileControl }
-    ColumnLayout {
-        parent: pages
-        spacing: 16
-        Note { text: "Build and system information for this computer." }
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: aboutDetails.implicitHeight + 32
-            color: theme.input; radius: 8
-            ColumnLayout {
-                id: aboutDetails
-                anchors.fill: parent; anchors.margins: 16; spacing: 12
-                InfoRow { label: "AIOS version"; value: backend.systemInfo.version; fieldName: "aboutVersion" }
-                InfoRow { label: "Build"; value: backend.systemInfo.build; fieldName: "aboutBuild" }
-                InfoRow { label: "Commit"; value: backend.systemInfo.commit; fieldName: "aboutCommit" }
-                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
-                InfoRow { label: "Operating system"; value: backend.systemInfo.os; fieldName: "aboutOs" }
-                InfoRow { label: "Kernel"; value: backend.systemInfo.kernel; fieldName: "aboutKernel" }
-                InfoRow { label: "Architecture"; value: backend.systemInfo.architecture; fieldName: "aboutArchitecture" }
-                InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
-                InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
-            }
-        }
-        Item { Layout.fillHeight: true }
-    }
     WindowBorder { theme: settings.theme }
     Camera {
         id: camera

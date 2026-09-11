@@ -16,6 +16,7 @@ Window {
     color: theme.night
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
+    property var scheduledJobsApi: typeof scheduledJobs === "undefined" ? null : scheduledJobs
     property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
     property var minimizedChats: []
     readonly property int minimizedChatCount: minimizedChats.length
@@ -73,6 +74,32 @@ Window {
         return window
     }
     property var settingsWindow: null
+    property var scheduledJobsWindow: null
+    property var protectedScheduledJobsWindow: null
+    function openProtectedScheduledJobs() {
+        if (!sessionControlApi.enabled || sessionControlApi.shield || !displayBridgeApi.enabled) return
+        if (protectedScheduledJobsWindow && protectedScheduledJobsWindow.visible) {
+            protectedScheduledJobsWindow.raise(); protectedScheduledJobsWindow.requestActivate()
+            return
+        }
+        if (protectedScheduledJobsWindow) protectedScheduledJobsWindow.destroy()
+        var api = sessionControlApi.createScheduledJobs()
+        if (!api) return
+        protectedScheduledJobsWindow = scheduledJobsComponent.createObject(desktop, {
+            jobsApi: api, theme: theme, ownsJobsApi: true
+        })
+        if (!protectedScheduledJobsWindow) { api.dispose(); return }
+        protectedScheduledJobsWindow.show()
+        protectedScheduledJobsWindow.raise()
+        protectedScheduledJobsWindow.requestActivate()
+    }
+    function openScheduledJobs() {
+        if (!scheduledJobsApi || sessionControlApi.enabled) return
+        if (!scheduledJobsWindow)
+            scheduledJobsWindow = scheduledJobsComponent.createObject(desktop, {jobsApi: scheduledJobsApi, theme: theme})
+        if (scheduledJobsWindow) { scheduledJobsWindow.show(); scheduledJobsWindow.raise(); scheduledJobsWindow.requestActivate() }
+    }
+    Component { id: scheduledJobsComponent; ScheduledJobsWindow {} }
     property var setupWindow: null
     function openSetup() {
         if (sessionControlApi.enabled) return
@@ -89,7 +116,10 @@ Window {
         if (!settingsWindow) settingsWindow = settingsComponent.createObject(desktop, {backend: backendApi, theme: theme, profileControl: sessionControlApi})
         if (settingsWindow) { settingsWindow.show(); settingsWindow.raise(); settingsWindow.requestActivate() }
     }
-    Component { id: settingsComponent; SettingsWindow { onSetupRequested: desktop.openSetup() } }
+    Component { id: settingsComponent; SettingsWindow {
+        onSetupRequested: desktop.openSetup()
+        onScheduledJobsRequested: desktop.openScheduledJobs()
+    } }
     property real phase: 0
     NumberAnimation on phase { from: 0; to: Math.PI * 2; duration: 48000; loops: Animation.Infinite; running: !desktop.reducedMotion && desktop.visible }
     onReducedMotionChanged: waves.requestPaint()
@@ -157,7 +187,10 @@ Window {
             else setSource("")
         }
     }
-    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    IdentityStatus {
+        x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi
+        onScheduledJobsRequested: desktop.openProtectedScheduledJobs()
+    }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
     SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }

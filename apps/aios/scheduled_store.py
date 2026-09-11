@@ -72,10 +72,15 @@ def encode(value):
 
 
 class ScheduledStore:
-    def __init__(self, root=None, clock=None):
-        if principals.current() is not None:
+    def __init__(self, root=None, clock=None, *, protected=False):
+        principal = principals.current()
+        if principal is not None and not protected:
             raise UnavailableError('Scheduling is unavailable in protected workspaces')
+        if protected and (principal is None or not principal.owner or root is not None):
+            raise UnavailableError('Protected storage requires the broker owner workspace')
         self.owner = f'uid:{os.getuid()}' if hasattr(os, 'getuid') else f'user:{getpass.getuser()}'
+        if protected:
+            self.owner = principal.owner
         self.clock = clock or Clock()
         self.root = Path(root) if root is not None else core.data_dir() / 'scheduled'
         if self.root.is_symlink():
