@@ -143,6 +143,7 @@ TestCase {
         backend.createSessionCalls = 0
         backend.configureCalls = []
         palette.selected = "blue"
+        backend.config.theme_color = "blue"
         backend.volume = 65
         backend.muted = false
         backend.volumeAvailable = true
