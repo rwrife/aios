@@ -112,9 +112,11 @@ def _definition_name(definition: Any) -> str | None:
 
 
 def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> list[dict[str, Any]]:
+    from .scheduled_tool import definition as scheduling_definition
+
     tools = []
     names = set()
-    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL):
+    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL, scheduling_definition()):
         name = _definition_name(definition)
         if name is None or name in names:
             raise RuntimeError("Built-in tool definitions are invalid.")
@@ -416,7 +418,8 @@ class ToolHost:
         if self.background is not None:
             from .scheduled_execution import permitted_capabilities
             allowed = set(self.background['capabilities']) & set(permitted_capabilities()['capabilities'])
-            tools = [tool for tool in tools if tool['function']['name'] in allowed]
+            tools = [tool for tool in tools if tool['function']['name'] in allowed
+                     and tool['function']['name'] != 'scheduled_jobs']
             # Never advertise native sign-in to an unattended agent.
             tools = json.loads(_json_dumps(tools))
             for tool in tools:
@@ -437,7 +440,8 @@ class ToolHost:
         if self.background is not None:
             from .scheduled_execution import permitted_capabilities
             allowed = set(self.background['capabilities']) & set(permitted_capabilities()['capabilities'])
-            if name not in allowed or arguments.get('action') in ('authenticate', 'authentication_status'):
+            if (name == 'scheduled_jobs' or name not in allowed
+                    or arguments.get('action') in ('authenticate', 'authentication_status')):
                 raise ValueError('This capability is unavailable to background jobs.')
             if name == 'os_settings' and arguments.get('action') not in ('read', 'set'):
                 raise ValueError('This OS operation requires an interactive chat.')
@@ -450,6 +454,9 @@ class ToolHost:
             result = self._call_application(arguments)
         elif name == "os_settings":
             result = os_settings.act(arguments)
+        elif name == "scheduled_jobs":
+            from . import scheduled_jobs
+            result = scheduled_jobs.act(arguments)
         elif name in self._advertised_mcp:
             result = self.mcp.call(name, arguments)
         else:

@@ -1,8 +1,10 @@
 # Scheduled agent jobs and orb attention
 
 Status: milestones 1-2 implemented as the core and isolated execution service.
-Configuration, feedback UI, protected-workspace support, and image validation
-remain pending in the following dependent layers.
+Milestone 3 ordinary desktop and dedicated native protected configuration are
+implemented. Protected model/chat scheduling remains disabled pending the
+dedicated protected foreground-chat prerequisite.
+Feedback/orb UI and full image validation remain later dependent layers.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -72,8 +74,93 @@ Native shell compilation and the real Alpine/browser/model hardware acceptance
 remain in the batched image gate; this layer does not build an ISO or claim
 live provider account coverage. Outbox storage is ready for the notification
 bridge; quiet-hours, actionable-only filtering, and snooze remain saved policy,
-not active delivery. No scheduling tool, skill, settings UI, orb changes, or
-protected-workspace adapter is enabled yet.
+not active delivery. Orb delivery remains a later layer.
+
+Milestone 3 ships the `scheduled_jobs` structured tool, `scheduled-jobs` skill,
+and native Settings > Scheduled jobs configuration/history window. All use the
+same validated scheduler API and readbacks. The model schemas enforce
+conservative character/page limits that fit the existing 24 KiB argument
+transport even with escaped non-BMP text; the native client retains the service
+byte limits. Forms preserve unsaved edits across errors/conflicts, require a
+next-three preview before saving, explicitly bind configured task models, and
+keep run-now request UUIDs across ambiguous retries.
+
+`ScheduledJobs.h` exposes fixed asynchronous methods, correlated completions,
+and generation invalidation for later feedback/inbox reuse. The native editor
+supports title/prompt, once/daily/weekly/numeric cron, explicit IANA zone,
+binding/capability readback, notification mode, paginated jobs/history,
+pause/resume/delete/run-now/stop, saved result inspection and acknowledgement.
+It has been compiled in Alpine with the embedded display both off and on;
+headless QML/native tests and Ocean/generated-Sage Xvfb screenshots cover this
+configuration surface. A compiled Qt client also exercised the real scheduler,
+worker and deterministic provider for CRUD, preview, run deduplication,
+persisted results, history and outbox acknowledgement.
+
+Protected model/chat scheduling is **not enabled** by this layer. Investigation found
+that `Main.openChat` refuses protected sessions, while `Backend::run` and
+`Backend::persist` remain ordinary desktop process/storage paths. The embedded
+display hosts fixed native clients, not a protected foreground ChatSession.
+Adding a scheduling action to the existing desktop control socket alone would
+not give those chats encrypted persistence or owner-scoped worker execution.
+The parent therefore split a required dependent protected-chat layer before
+feedback and final acceptance. It must supply broker-owned encrypted
+conversation persistence, protected foreground worker/tool-host launch,
+trusted per-chat native relay and session generations, authorization
+expiry/replacement and privacy cancellation, and display integration.
+Protected model calls stay unavailable. Native protected settings instead use
+a dedicated client created by SessionControl and bound to its exact current
+lease/work snapshot in C++; the global desktop client never receives that
+authority. Current broker authorization and registered display PID gate every
+request. Scope/privacy loss or transport failure erases the binding, discards
+in-flight responses and closes/clears the window. Reopening creates a new scoped
+client. No descriptor, greeting profile, or informational sign-in status
+authorizes this route, and native support does not complete the protected
+foreground-chat prerequisite.
+
+The protected adapter runs the same scheduler and worker inside the owner's
+encrypted workspace, using broker-held private pipes rather than a public
+scheduler socket. Authorization heartbeats expire within two seconds; losing
+current authorization cancels its process scope. Artifact bind mounts use
+no-follow pinned descriptors, validate encrypted-device/owner/private-mode
+identity, and expose only a root-controlled alias to the unprivileged sandbox.
+Mutable ancestors, path replacement and scope traversal are rejected. Failed
+mount, cgroup-limit setup and sandbox startup clean up the alias and descriptors.
+
+### Milestone 3 validation and kernel reproduction
+
+The frozen configuration layer passed 185 scheduler/tool/identity integration
+tests, 119 QML tests, native protocol tests, and one compiled Qt-to-real-scheduler
+integration test using an unprivileged Alpine UID and deterministic provider.
+The final shell, profile, scheduled-client and display-input targets compiled
+with the embedded display enabled. Eleven targeted real Alpine kernel tests
+passed; the reproducible full identity harness then passed all 13 tests,
+including encrypted scheduling, durable reopen, authorization cancellation,
+cross-UID isolation, artifact replacement and partial-start cleanup.
+
+From a Linux/WSL checkout, run the existing disposable-container harness:
+
+```sh
+sh scripts/test-identity-linux.sh
+```
+
+It requires Docker with privileged private mount/cgroup namespaces, cgroup v2,
+loop/device-mapper support, and network access to the pinned Alpine image,
+APK repositories and the hash-pinned CronSim wheel. It installs only the
+required test dependencies inside the disposable container and stages the
+real installed Python layout. The repository mount is read-only; encrypted
+images and mount/cgroup fixtures are created only inside the container.
+It does not format an existing host block device or build/boot an ISO.
+
+For the single real protected scheduler scenario, the same script accepts
+standard unittest selectors:
+
+```sh
+sh scripts/test-identity-linux.sh \
+  linux_identity_isolation.KernelIsolationTests.test_protected_scheduler_executes_and_cancels_in_encrypted_workspace
+```
+
+These checks do not replace the later protected foreground-chat, real provider
+account, or final Alpine/QEMU visual and browser-sandbox acceptance gates.
 
 ## Outcome
 
@@ -300,6 +387,11 @@ only the currently authorized owner's unread results after native unlock.
    edits do not mutate in-flight snapshots; capability and provider changes
    cannot silently expand authorization. Add the protected-workspace adapter
    and cross-owner/locked-workspace tests before enabling that mode.
+   **Required dependent prerequisite:** complete protected foreground chat,
+   encrypted conversation persistence and its registered-display scheduling
+   relay before enabling protected model/chat scheduling. The configuration PR
+   completes ordinary desktop setup and dedicated native protected configuration,
+   not this foreground-chat gate.
 4. **Reliable feedback and orb.** Add transactional outbox, reconnecting shell
    bridge, inbox/follow-up flow, acknowledgement, and attention overlay. Gate:
    duplicate/out-of-order events, shell restart, an active chat turn, closed

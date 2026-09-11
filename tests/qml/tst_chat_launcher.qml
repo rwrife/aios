@@ -27,6 +27,13 @@ TestCase {
         signal documentLoaded(string content)
         signal documentSaved()
         function chatProfile() { return sessionControl }
+        property int scheduledClients: 0
+        function createScheduledJobs() {
+            scheduledClients++
+            var client = scheduledClientComponent.createObject(test)
+            privacyLost.connect(client.invalidated)
+            return client
+        }
         function listProfiles() {}
         function dispose() {}
         function setSecureInput(active) { secureInput = active }
@@ -45,6 +52,23 @@ TestCase {
         function protectedResource() {}
     }
 
+    Component {
+        id: scheduledClientComponent
+        QtObject {
+            property bool protectedWorkspace: true
+            signal completed(string requestId, string action, var response)
+            signal invalidated()
+            function health() { return "health" }
+            function dispose() { destroy() }
+        }
+    }
+    QtObject {
+        id: desktopJobs
+        property int calls: 0
+        signal completed(string requestId, string action, var response)
+        signal invalidated()
+        function health() { calls++; return "desktop-health" }
+    }
     Component {
         id: sessionComponent
         QtObject {
@@ -130,6 +154,10 @@ TestCase {
     property var desktop
 
     function init() {
+        sessionControl.enabled = false
+        sessionControl.shield = false
+        sessionControl.scheduledClients = 0
+        desktopJobs.calls = 0
         backend.needsSetup = false
         launcher = null
         desktop = null
@@ -170,6 +198,35 @@ TestCase {
         })
         verify(launcher !== null)
         return launcher
+    }
+
+    function test_scheduled_settings_routes_desktop_and_scoped_instances_separately() {
+        createDesktop()
+        desktop.scheduledJobsApi = desktopJobs
+        desktop.openSettings()
+        desktop.settingsWindow.scheduledJobsRequested()
+        verify(desktop.scheduledJobsWindow !== null)
+        compare(desktop.scheduledJobsWindow.jobsApi, desktopJobs)
+        compare(desktopJobs.calls, 1)
+        desktop.scheduledJobsWindow.close()
+        sessionControl.enabled = true
+        desktop.displayBridgeApi = {enabled: true}
+        desktop.openScheduledJobs()
+        verify(!desktop.scheduledJobsWindow.visible)
+        sessionControl.shield = true
+        desktop.openProtectedScheduledJobs()
+        compare(sessionControl.scheduledClients, 0)
+        sessionControl.shield = false
+        desktop.openProtectedScheduledJobs()
+        compare(sessionControl.scheduledClients, 1)
+        verify(desktop.protectedScheduledJobsWindow.jobsApi !== desktopJobs)
+        verify(desktop.protectedScheduledJobsWindow.ownsJobsApi)
+        sessionControl.privacyLost()
+        verify(!desktop.protectedScheduledJobsWindow.visible)
+        compare(desktop.protectedScheduledJobsWindow.jobsApi, null)
+        desktop.openProtectedScheduledJobs()
+        compare(sessionControl.scheduledClients, 2)
+        desktop.protectedScheduledJobsWindow.close()
     }
 
     function createDesktop() {

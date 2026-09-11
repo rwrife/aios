@@ -10,6 +10,7 @@
 #include <QMediaDevices>
 #include <QPointer>
 #include "ProfilePhoto.h"
+#include "ScheduledJobs.h"
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <algorithm>
@@ -96,6 +97,25 @@ public:
     QVariantList profiles() const { return m_profiles; }
     QString recognitionState() const { return recognitionRoot()->m_recognitionState; }
     QVariantMap recognitionSuggestion() const { return recognitionRoot()->m_recognitionSuggestion; }
+    QJsonObject schedulingContext() const {
+        if (!enabled() || m_shield || !m_embedded || !m_attested || m_lease.isEmpty() || m_scope.isEmpty())
+            return {};
+        return {{"lease", m_lease}, {"scope", m_scope}};
+    }
+    Q_INVOKABLE QObject *createScheduledJobs() {
+        const auto binding = schedulingContext();
+        if (binding.isEmpty()) {
+            m_error = "Unlock an authorized private workspace before opening scheduled jobs.";
+            emit changed();
+            return nullptr;
+        }
+        auto jobs = new ScheduledJobs(this);
+        jobs->setProtectedContextProvider([this, binding] {
+            return schedulingContext() == binding ? binding : QJsonObject{};
+        });
+        connect(this, &SessionControl::privacyLost, jobs, &ScheduledJobs::invalidate);
+        return jobs;
+    }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
     Q_INVOKABLE void deleteAccount(const QString &id, const QString &pin) {
         if (greetingOnly()) call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
@@ -241,7 +261,7 @@ signals:
     void recognitionDataPurged();
     void recognitionDataPurgeFailed(const QString &message);
 private:
-    QString path, demoState, m_error, pendingApp, m_lease, m_authority = "anonymous";
+    QString path, demoState, m_error, pendingApp, m_lease, m_scope, m_authority = "anonymous";
     bool m_embedded = false, m_secureInput = false, m_attested = false, m_personalAvailable = false;
     bool m_shield = true, m_simulator = false;
     QVariantList m_sessions, m_messages;
@@ -459,6 +479,7 @@ private:
         m_before = QJsonValue::Null; m_error.clear();
         pendingApp.clear();
         m_lease.clear();
+        m_scope.clear();
         emit privacyLost(); emit changed();
     }
     void failClosed() {
@@ -510,11 +531,14 @@ private:
                     }
                     m_authority = result.value("authority").toString();
                     const auto nextLease = result.value("lease").toString();
+                    const auto nextScope = result.value("session").toString();
                     if (m_shield || (wasPersonal && m_authority == "anonymous") ||
-                        (!m_lease.isEmpty() && m_lease != nextLease)) {
+                        (!m_lease.isEmpty() && m_lease != nextLease) ||
+                        (!m_scope.isEmpty() && m_scope != nextScope)) {
                         clearPersonal();
                     }
                       m_lease = nextLease;
+                      m_scope = nextScope;
                       m_profile = result.value("profile").toObject().toVariantMap();
                 } else if (action == "search") m_sessions = result.value("sessions").toArray().toVariantList();
                 else if (action == "history") {

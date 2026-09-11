@@ -53,13 +53,26 @@ def configured_zone():
 
 
 class Scheduler:
-    def __init__(self):
+    def __init__(self, *, protected=False):
         if os.getuid() == 0:
             raise UnavailableError('Run the scheduler as the unprivileged desktop user')
-        self.root = protocol.runtime_dir()
+        self.protected = protected
+        if protected:
+            from .principals import current
+            principal = current()
+            if principal is None or not principal.owner:
+                raise UnavailableError('Protected scheduling requires an owner sandbox')
+            self.root = Path('/run/aios-scheduler')
+            self.root.mkdir(mode=0o700, exist_ok=True)
+            self.root.chmod(0o700)
+            info = self.root.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise UnavailableError('Protected runtime is not private')
+        else:
+            self.root = protocol.runtime_dir()
         if ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) != 0:
             raise UnavailableError('Scheduler requires Linux child supervision')
-        self.store = ScheduledStore()
+        self.store = ScheduledStore(protected=protected)
         try:
             self.lease = locked_file(self.store.root / 'service.lock')
         except BlockingIOError:
@@ -77,7 +90,13 @@ class Scheduler:
             # An old run retains its lease until its subreaper has stopped all
             # descendants. Never recover SQLite first and allow duplicate work.
             self.recover_processes()
-            self.store.recover()
+            if protected:
+                # Broker loss always revokes this scope, even if the cgroup
+                # was killed before its pipe supervisor could persist cleanup.
+                for run in self.store.active_runs():
+                    self.store.cancel(run['id'])
+            else:
+                self.store.recover()
         except BaseException:
             self.store.close()
             os.close(self.lease)
@@ -316,7 +335,11 @@ class Scheduler:
         try:
             for run_id in list(self.running):
                 self.stop_run(run_id)
-            self.store.recover()
+            if self.protected:
+                for run in self.store.active_runs():
+                    self.store.cancel(run['id'])
+            else:
+                self.store.recover()
         finally:
             self.store.close()
             os.close(self.lease)

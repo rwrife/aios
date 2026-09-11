@@ -10,7 +10,6 @@ import time
 from .scheduled_execution import desktop_only
 from .scheduling import SchedulingError, UnavailableError, fields, integer, text
 from .scheduled_store import identifier
-from .toolhost import _read_socket_line
 
 REQUEST_LIMIT = 128 * 1024
 RUN_REQUEST_LIMIT = 256 * 1024
@@ -109,7 +108,11 @@ def encode(value, limit):
 def request(value, timeout=10):
     """Return an explicit status envelope. No credentials or ownership arguments."""
     try:
+        from .toolhost import _read_socket_line
+
         desktop_only()
+        if os.environ.get('AIOS_SESSION_SOCKET') or os.environ.get('AIOS_SESSION_ID'):
+            raise UnavailableError('Protected scheduling requires a broker-authorized per-chat route')
         validate_request(value)
         raw = encode(value, REQUEST_LIMIT)
         if not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
@@ -132,3 +135,26 @@ def request(value, timeout=10):
         return {'status': error.code, 'error': str(error)}
     except (OSError, RuntimeError, ValueError):
         return {'status': 'unavailable', 'error': 'Scheduled jobs service is unavailable'}
+
+
+def act(value):
+    """Bound model calls without weakening the shared service's validation."""
+    from .scheduled_tool import validate
+
+    try:
+        validate(value)
+        # Keep headroom for the tool-call envelope in both provider transports.
+        encode(value, 23 * 1024)
+        value = dict(value)
+        if value['action'] in ('list', 'list_runs', 'unread'):
+            value.setdefault('limit', 10)
+        result = request(value)
+        if len(encode(result, RESPONSE_LIMIT)) > 60 * 1024:
+            return {'status': 'unavailable',
+                    'error': 'Readback exceeds the model tool limit; request a smaller page '
+                             'or open the native Scheduled jobs view'}
+        return result
+    except SchedulingError as error:
+        return {'status': error.code, 'error': str(error)}
+    except (ValueError, TypeError, RecursionError):
+        return {'status': 'invalid', 'error': 'Invalid scheduling JSON'}

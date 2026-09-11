@@ -4,12 +4,15 @@ All files are created in this disposable container's /tmp. No host filesystem is
 mounted writable, and no pre-existing block device is formatted.
 """
 import json
+import http.server
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 from aios.isolation import LinuxIsolation
@@ -57,6 +60,13 @@ report = {'uid': os.getuid(), 'secret_env': 'AIOS_TEST_SECRET' in os.environ,
           'host_secret': pathlib.Path(%r).exists(), 'home': pathlib.Path('/home').exists(),
           'broker': pathlib.Path('/run/aios-broker').exists(),
           'network_interfaces': sorted(p.name for p in pathlib.Path('/sys/class/net').glob('*'))}
+report['fds'] = []
+for descriptor in pathlib.Path('/proc/self/fd').iterdir():
+    try:
+        descriptor.readlink()
+        report['fds'].append(int(descriptor.name))
+    except FileNotFoundError:
+        pass
 try:
     connection = socket.create_connection(('1.1.1.1', 443), timeout=.1)
     connection.close()
@@ -80,6 +90,7 @@ while True:
             time.sleep(.02)
         report = json.loads(report_path.read_text())
         self.assertEqual(report['uid'], uid)
+        self.assertTrue(set(report['fds']) <= {0, 1, 2}, report['fds'])
         for field in ('secret_env', 'host_secret', 'home', 'broker', 'network'):
             self.assertFalse(report[field], field)
         group = self.adapter.cgroups / scope
@@ -90,6 +101,188 @@ while True:
         self.assertIsNotNone(process.poll())
         self.assertFalse(group.exists())
 
+    def test_failed_sandbox_start_closes_control_descriptors_and_scope_alias(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        before = set(Path('/proc/self/fd').iterdir())
+        for _ in range(3):
+            scope = str(uuid.uuid4())
+            with self.assertRaisesRegex(RuntimeError, 'failed to start'):
+                self.adapter._spawn(scope, root, uid, ['/bin/false'], scheduled=True)
+            self.assertFalse((self.adapter.cgroups / scope).exists())
+            self.assertFalse((self.adapter.root / scope).exists())
+        scope = str(uuid.uuid4())
+        original = Path.write_text
+        def fail_limits(path, *args, **kwargs):
+            if path == self.adapter.cgroups / scope / 'pids.max':
+                raise OSError('cgroup limit fixture failure')
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'write_text', fail_limits):
+            with self.assertRaisesRegex(OSError, 'cgroup limit fixture'):
+                self.adapter._spawn(scope, root, uid, ['/bin/true'], scheduled=True)
+        self.assertFalse((self.adapter.cgroups / scope).exists())
+        self.assertFalse((self.adapter.root / scope).exists())
+        self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+
+    def test_artifact_binding_rejects_symlinks_wrong_owner_and_non_directories(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        artifacts, saved = root / 'artifacts', root / 'saved-artifacts'
+        before = set(Path('/proc/self/fd').iterdir())
+        for kind in ('symlink', 'wrong-owner', 'file', 'public'):
+            with self.subTest(kind=kind):
+                artifacts.rename(saved)
+                try:
+                    if kind == 'symlink':
+                        artifacts.symlink_to(saved, target_is_directory=True)
+                    elif kind == 'file':
+                        artifacts.write_text('not a directory')
+                    else:
+                        artifacts.mkdir(mode=0o700 if kind == 'wrong-owner' else 0o755)
+                        os.chown(artifacts, uid + 1 if kind == 'wrong-owner' else uid, uid)
+                    scope = str(uuid.uuid4())
+                    with self.assertRaises(OSError):
+                        self.adapter._spawn(scope, root, uid, ['/bin/true'])
+                    self.assertFalse((self.adapter.root / scope).exists())
+                    self.assertFalse((self.adapter.cgroups / scope).exists())
+                    self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+                finally:
+                    if artifacts.is_symlink() or artifacts.is_file():
+                        artifacts.unlink()
+                    else:
+                        artifacts.rmdir()
+                    saved.rename(artifacts)
+        link = self.root / 'workspace-link'
+        link.symlink_to(root, target_is_directory=True)
+        try:
+            with self.assertRaises(OSError):
+                self.adapter._spawn(str(uuid.uuid4()), link, uid, ['/bin/true'])
+        finally:
+            link.unlink()
+        self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+
+    def test_artifact_path_swap_is_pinned_then_rejected_without_launch_or_fd_leak(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        artifacts, saved = root / 'artifacts', root / 'saved-artifacts'
+        (artifacts / 'marker').write_text('original owner directory')
+        before = set(Path('/proc/self/fd').iterdir())
+        scope = str(uuid.uuid4())
+        bind = self.adapter._bind_descriptors
+        pinned = []
+        def swap(source, target):
+            self.assertEqual(os.fstat(source).st_uid, uid)
+            self.assertEqual(os.fstat(target).st_uid, 0)
+            artifacts.rename(saved)
+            artifacts.mkdir(mode=0o700)
+            os.chown(artifacts, uid, uid)
+            (artifacts / 'marker').write_text('replacement directory')
+            bind(source, target)
+            pinned.append((self.adapter.root / scope / 'marker').read_text())
+        try:
+            with patch.object(self.adapter, '_bind_descriptors', side_effect=swap):
+                with self.assertRaisesRegex(PermissionError, 'changed during'):
+                    self.adapter._spawn(scope, root, uid,
+                                        ['/bin/sh', '-c', 'touch /workspace/launched'])
+            self.assertEqual(pinned, ['original owner directory'])
+            self.assertFalse((saved / 'launched').exists())
+            self.assertFalse((artifacts / 'launched').exists())
+            self.assertFalse((self.adapter.root / scope).exists())
+            self.assertFalse((self.adapter.cgroups / scope).exists())
+            self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+        finally:
+            if saved.exists():
+                (artifacts / 'marker').unlink()
+                artifacts.rmdir()
+                saved.rename(artifacts)
+
+    def test_artifact_binding_rejects_foreign_runtime_entry_and_cleans_mount_failure(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        before = set(Path('/proc/self/fd').iterdir())
+        for kind in ('directory', 'wrong-owner', 'file', 'symlink'):
+            scope = str(uuid.uuid4())
+            entry = self.adapter.root / scope
+            if kind == 'symlink':
+                entry.symlink_to(root / 'artifacts', target_is_directory=True)
+            elif kind == 'file':
+                entry.write_text('preexisting node')
+            else:
+                entry.mkdir(mode=0o700)
+                if kind == 'wrong-owner':
+                    os.chown(entry, uid + 1, uid + 1)
+            try:
+                with self.assertRaises(OSError):
+                    self.adapter._spawn(scope, root, uid, ['/bin/true'])
+                self.assertFalse((self.adapter.cgroups / scope).exists())
+            finally:
+                entry.unlink() if kind in ('symlink', 'file') else entry.rmdir()
+        scope = str(uuid.uuid4())
+        with patch.object(self.adapter, '_bind_descriptors', side_effect=OSError('mount fixture failure')):
+            with self.assertRaises(OSError):
+                self.adapter._spawn(scope, root, uid, ['/bin/true'])
+        self.assertFalse((self.adapter.root / scope).exists())
+        self.assertFalse((self.adapter.cgroups / scope).exists())
+        self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+
+    def test_scope_traversal_and_replaceable_runtime_ancestors_are_rejected(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        before = set(Path('/proc/self/fd').iterdir())
+        for scope in ('../escape', '/escape', str(uuid.uuid4()) + '/child',
+                      str(uuid.uuid4()).upper(), '.', ''):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                self.adapter._spawn(scope, root, uid, ['/bin/true'])
+        unsafe = self.root / 'replaceable-parent'
+        unsafe.mkdir(mode=0o777)
+        unsafe.chmod(0o777)
+        runtime = unsafe / 'runtime'
+        runtime.mkdir(mode=0o711)
+        for wrong_owner in (False, True):
+            if wrong_owner:
+                unsafe.chmod(0o700)
+                os.chown(unsafe, uid, uid)
+            with patch.object(self.adapter, 'root', runtime):
+                with self.assertRaisesRegex(PermissionError, 'ancestors'):
+                    self.adapter._spawn(str(uuid.uuid4()), root, uid, ['/bin/true'])
+            self.assertEqual(list(runtime.iterdir()), [])
+        self.assertEqual(set(Path('/proc/self/fd').iterdir()), before)
+
+    def test_owner_cannot_replace_root_artifacts_or_runtime_alias_namespace(self):
+        root, uid = self.adapter.anonymous()
+        self.addCleanup(self.adapter.release, None, root)
+        scope = str(uuid.uuid4())
+        process = self.adapter._spawn(scope, root, uid, ['/bin/sleep', '60'])
+        self.addCleanup(self.adapter.stop, scope)
+        self.assertEqual(root.stat().st_uid, 0)
+        self.assertEqual(self.adapter.root.stat().st_uid, 0)
+        self.assertEqual(root.stat().st_mode & 0o022, 0)
+        self.assertEqual(self.adapter.root.stat().st_mode & 0o022, 0)
+        probe = '''
+import errno, json, os, sys
+root, runtime, scope = sys.argv[1:]
+results = []
+for source, destination in (
+    (root + '/artifacts', root + '/moved-artifacts'),
+    (runtime + '/' + scope, runtime + '/moved-alias')):
+    try:
+        os.rename(source, destination)
+        results.append(False)
+    except OSError as error:
+        results.append(error.errno in (errno.EACCES, errno.EPERM, errno.EBUSY))
+try:
+    os.mkdir(runtime + '/attacker-node')
+    results.append(False)
+except OSError as error:
+    results.append(error.errno in (errno.EACCES, errno.EPERM))
+print(json.dumps(results))
+'''
+        result = subprocess.run(['/usr/bin/python3', '-I', '-c', probe,
+                                 str(root), str(self.adapter.root), scope],
+                                user=uid, group=uid, extra_groups=[], cwd='/',
+                                capture_output=True, text=True, check=True, timeout=5)
+        self.assertEqual(json.loads(result.stdout), [True, True, True])
+        self.assertIsNone(process.poll())
     def test_encrypted_workspace_reopens_durable_journal(self):
         owner = str(uuid.uuid4())
         image = self.root / 'workspace.luks'
@@ -132,12 +325,126 @@ while True:
             journal.close()
             self.assertEqual((root / 'artifacts' / 'Resume.txt').read_text(), 'Durable private resume')
             # A fresh broker also locks a volume left open by its predecessor.
+            scope = str(uuid.uuid4())
+            process = self.adapter._spawn(scope, root, uid, ['/bin/sleep', '60'], diagnostics=True)
             LinuxIsolation(self.config)
+            self.assertIsNotNone(process.wait(timeout=2))
+            self.assertFalse((self.adapter.root / scope).exists())
             self.assertFalse(Path('/dev/mapper', name).exists())
             self.assertFalse(os.path.ismount(root))
         finally:
             if os.path.ismount(root):
                 self.adapter.release(owner, root)
+
+    def test_protected_scheduler_executes_and_cancels_in_encrypted_workspace(self):
+        from aios import core
+        from aios.sessiond import Service
+        from aios.sessions import Sessions
+        from test_identity_sessions import MemoryStore
+        from test_scheduler import Provider
+
+        provider = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+        provider.daemon_threads = True
+        provider.requests, provider.on_request = [], None
+        thread = threading.Thread(target=provider.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.addCleanup(provider.server_close)
+        self.addCleanup(provider.shutdown)
+        self.config.update(volume_store=str(self.root / 'volumes'), workspace_size_mib=64)
+        self.adapter.config_path = self.root / 'config.json'
+        sessions = Sessions(self.adapter, MemoryStore())
+        self.addCleanup(sessions.suspend)
+        owner = sessions.enroll('Protected fixture', '123456', True, None)['identity']
+        sessions.activate_verified(owner, '123456', 'Scheduled private work')
+        root = sessions.root
+        foreign_root, _ = self.adapter.anonymous()
+        try:
+            os.chown(foreign_root / 'artifacts', sessions.uid, sessions.uid)
+            foreign_scope = str(uuid.uuid4())
+            with self.assertRaisesRegex(PermissionError, 'encrypted owner'):
+                self.adapter._spawn(foreign_scope, foreign_root, sessions.uid, ['/bin/true'])
+            self.assertFalse((self.adapter.root / foreign_scope).exists())
+            self.assertFalse((self.adapter.cgroups / foreign_scope).exists())
+        finally:
+            self.adapter.release(None, foreign_root)
+        config_path = root / 'artifacts' / '.aios' / 'config' / 'config.json'
+        core.write_json(config_path, {
+            'mode': 'remote', 'url': f'http://127.0.0.1:{provider.server_port}/v1',
+            'model': 'test-model', 'api_key': 'KERNEL-PRIVATE-CREDENTIAL'})
+        for path in [root / 'artifacts' / '.aios', *(root / 'artifacts' / '.aios').rglob('*')]:
+            os.chown(path, sessions.uid, sessions.uid)
+        service = Service(sessions, 1000, 1001, personal_enabled=True)
+        service.dispatch({'action': 'display_attest', 'platform': 'eglfs', 'embedded': True}, 1000, 42)
+        spawn = self.adapter._spawn
+        diagnostics = patch.object(self.adapter, '_spawn',
+                                   side_effect=lambda *args, **kwargs: spawn(*args, **kwargs, diagnostics=True))
+        diagnostics.start()
+        self.addCleanup(diagnostics.stop)
+
+        def call(action, **fields):
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                response = service.dispatch({
+                    'action': 'scheduled_jobs', 'lease': sessions.lease, 'scope': sessions.work,
+                    'request': {'action': action, **fields}}, 1000, 42)
+                if response.get('error') == 'Protected scheduling is starting; retry shortly':
+                    time.sleep(.05)
+                    continue
+                self.assertEqual(response['status'], 'ok', response)
+                return response['result']
+            self.fail('Protected service failed to initialize')
+
+        job = call('create', config={
+            'title': 'Kernel test', 'prompt': 'KERNEL-PRIVATE-PROMPT',
+            'schedule': {'kind': 'cron', 'value': '0 0 * * *', 'zone': 'UTC'},
+            'execution': {'provider': 'remote', 'profile': 'current', 'model': 'test-model',
+                          'capabilities': [], 'timeout_seconds': 10}})
+        run = call('run_now', job_id=job['id'], expected_revision=job['revision'],
+                   request_id=str(uuid.uuid4()))
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            service.tick()
+            result = call('read_result', run_id=run['id'])
+            if result['state'] not in ('queued', 'running'):
+                break
+            time.sleep(.05)
+        self.assertEqual(result['state'], 'succeeded', result)
+        self.assertEqual(result['result'], 'Saved background answer')
+        self.assertEqual(result['owner'], owner)
+        self.assertNotIn('KERNEL-PRIVATE-CREDENTIAL', json.dumps(result))
+        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual((root / 'artifacts' / '.aios' / 'data' / 'scheduled' /
+                          'jobs.sqlite3').stat().st_mode & 0o777, 0o600)
+        waiting = call('create', config={
+            'title': 'Waiting kernel test', 'prompt': 'HANG KERNEL-PRIVATE-PROMPT',
+            'schedule': {'kind': 'cron', 'value': '0 0 * * *', 'zone': 'UTC'},
+            'execution': {'provider': 'remote', 'profile': 'current', 'model': 'test-model',
+                          'capabilities': [], 'timeout_seconds': 10}})
+        waiting_run = call('run_now', job_id=waiting['id'], expected_revision=waiting['revision'],
+                           request_id=str(uuid.uuid4()))
+        deadline = time.monotonic() + 10
+        while len(provider.requests) < 2 and time.monotonic() < deadline:
+            service.tick()
+            time.sleep(.02)
+        self.assertEqual(len(provider.requests), 2)
+        scheduler_scope = sessions.scheduled.scope
+        process = sessions.scheduled.process
+        group = self.adapter.cgroups / scheduler_scope
+        self.assertGreaterEqual(len((group / 'cgroup.procs').read_text().split()), 3)
+        sessions._shield()
+        self.assertIsNotNone(process.poll())
+        self.assertFalse((self.adapter.cgroups / scheduler_scope).exists())
+        with self.assertRaises(PermissionError):
+            call('read_result', run_id=run['id'])
+        sessions.suspend()
+        image = Path(self.config['principals'][owner]['device'])
+        encrypted = image.read_bytes()
+        for secret in (b'KERNEL-PRIVATE-PROMPT', b'KERNEL-PRIVATE-CREDENTIAL', b'Saved background answer'):
+            self.assertNotIn(secret, encrypted)
+        sessions.activate_verified(owner, '123456', 'Reopened work')
+        self.assertEqual(call('read_result', run_id=run['id'])['result'], 'Saved background answer')
+        self.assertEqual(call('read_result', run_id=waiting_run['id'])['state'], 'cancelled')
 
     def test_provisioning_creates_only_new_encrypted_images(self):
         owner = str(uuid.uuid4())
@@ -168,7 +475,9 @@ while True:
         run('/usr/sbin/adduser', '-D', '-H', '-u', '1000', 'aios')
         package = Path('/usr/local/share/aios')
         package.parent.mkdir(parents=True, exist_ok=True)
-        package.symlink_to('/workspace/apps', target_is_directory=True)
+        if not package.exists():
+            package.symlink_to('/workspace/apps', target_is_directory=True)
+            self.addCleanup(package.unlink)
         wrapper = '/workspace/distro/alpine/overlay/usr/local/bin/aios-identity-setup'
         run('/bin/sh', wrapper)
         config = json.loads(Path('/etc/aios/sessiond.json').read_text())
