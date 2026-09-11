@@ -197,6 +197,7 @@ TestCase {
         verify(desktop.setupWindow !== null)
         verify(desktop.setupWindow.visible)
         desktop.setupWindow.close()
+        tryCompare(desktop.setupWindow, "visible", false)
         verify(!backend.needsSetup)
         backend.loaded()
         verify(!desktop.setupWindow.visible)
