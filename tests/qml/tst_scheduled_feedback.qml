@@ -130,6 +130,30 @@ TestCase {
         compare(feedback.pulseSerial, 0)
     }
 
+    function test_mark_failure_retries_without_replaying_pulse() {
+        feedback.active = true
+        reply(call("health"), {available: true, active_runs: 0})
+        reply(call("unread"), [row("run-one", 1, "succeeded")])
+        var firstMark = call("mark_notified")
+        compare(feedback.pulseSerial, 0)
+        compare(pulses.count, 0)
+
+        api.completed(firstMark.id, firstMark.action, {
+            status: "error", error: "disk failed"
+        })
+        compare(feedback.error, "error: disk failed")
+        feedback.evaluatePulse()
+        var secondMark = call("mark_notified")
+        verify(secondMark.id !== firstMark.id)
+        compare(feedback.pulseSerial, 0)
+        compare(pulses.count, 0)
+
+        reply(secondMark, {notified: true})
+        compare(feedback.entries[0].notified !== null, true)
+        compare(feedback.pulseSerial, 1)
+        compare(pulses.count, 1)
+    }
+
     function test_reduced_motion_and_quiet_release() {
         feedback.reducedMotion = true
         feedback.active = true
@@ -148,6 +172,18 @@ TestCase {
         compare(feedback.attentionState, "unread")
     }
 
+    function test_newest_bounded_page_is_not_starved_by_old_backlog() {
+        feedback.active = true
+        reply(call("health"), {available: true, active_runs: 0})
+        var newest = []
+        for (var sequence = 250; sequence > 200; --sequence)
+            newest.push(row("run-" + sequence, sequence, "succeeded",
+                            "2026-09-11T17:02:00Z"))
+        reply(call("unread"), newest)
+        compare(feedback.entries[0].run_id, "run-250")
+        compare(feedback.entries.length, 50)
+    }
+
     function test_inbox_open_does_not_ack_and_view_acks_one() {
         feedback.entries = [row("run-one", 1, "succeeded"), row("run-two", 2, "failed")]
         window.show()
@@ -164,10 +200,16 @@ TestCase {
         })
         compare(call("acknowledge_result").args.run, "run-one")
         compare(call("list_runs").args.job, "job-one")
+        reply(call("list_runs"), [{
+            state: "needs_user_action", outcome: "needs_user_action",
+            scheduled_at: "2026-09-11T17:00:00Z"
+        }])
         reply(call("acknowledge_result"), {acknowledged: true})
         compare(feedback.unreadCount, 1)
         compare(feedback.entries[0].run_id, "run-two")
         compare(findChild(window, "savedScheduledResult").text, "Saved answer")
+        compare(findChild(window, "scheduledRunHistory").text,
+                "Recent run history: Needs user action 2026-09-11T17:00:00Z")
     }
 
     function test_follow_up_is_bounded_and_privacy_clears_immediately() {

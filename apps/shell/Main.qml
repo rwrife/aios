@@ -83,19 +83,30 @@ Window {
     property var protectedScheduledJobsWindow: null
     property var scheduledResultsWindow: null
     property var protectedFeedback: null
+    property alias desktopFeedbackController: desktopFeedback
     readonly property var currentFeedback: sessionControlApi.enabled ? protectedFeedback : desktopFeedback
     function createProtectedFeedback() {
         if (!sessionControlApi.enabled || sessionControlApi.shield || !displayBridgeApi.enabled
+                || !sessionControlApi.personalAvailable
                 || sessionControlApi.authority === "anonymous" || protectedFeedback)
             return
         var api = sessionControlApi.createScheduledJobs()
         if (!api)
             return
-        protectedFeedback = feedbackComponent.createObject(desktop, {
+        var created = feedbackComponent.createObject(desktop, {
             jobsApi: api, active: true, reducedMotion: desktop.reducedMotion
         })
-        if (!protectedFeedback)
+        if (!created) {
             api.dispose()
+            return
+        }
+        protectedFeedback = created
+        created.apiInvalidated.connect(function() {
+            if (desktop.protectedFeedback !== created)
+                return
+            desktop.clearProtectedFeedback()
+            protectedFeedbackRetry.restart()
+        })
     }
     function clearProtectedFeedback() {
         if (scheduledResultsWindow && scheduledResultsWindow.feedback === protectedFeedback) {
@@ -165,6 +176,11 @@ Window {
     Component { id: scheduledJobsComponent; ScheduledJobsWindow {} }
     Component { id: feedbackComponent; ScheduledFeedback {} }
     Component { id: resultComponent; ScheduledResultWindow {} }
+    Timer {
+        id: protectedFeedbackRetry
+        interval: 1000
+        onTriggered: desktop.createProtectedFeedback()
+    }
     ScheduledFeedback {
         id: desktopFeedback
         jobsApi: desktop.scheduledJobsApi
@@ -266,7 +282,8 @@ Window {
         target: sessionControlApi
         function onChanged() {
             if (sessionControlApi.enabled && !sessionControlApi.shield
-                    && displayBridgeApi.enabled && sessionControlApi.authority !== "anonymous")
+                    && displayBridgeApi.enabled && sessionControlApi.personalAvailable
+                    && sessionControlApi.authority !== "anonymous")
                 desktop.createProtectedFeedback()
             else if (sessionControlApi.enabled)
                 desktop.clearProtectedFeedback()
@@ -289,6 +306,7 @@ Window {
     }
     ChatOrb {
         id: launcher
+        objectName: "chatOrb"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom; anchors.bottomMargin: 8
         theme: theme; reducedMotion: desktop.reducedMotion

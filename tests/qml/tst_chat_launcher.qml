@@ -19,6 +19,7 @@ TestCase {
         property bool personalAvailable: true
         property bool greetingOnly: true
         property bool secureInput: false
+        property bool embeddedDisplay: false
         property var profile: ({})
         property var profiles: []
         property var messages: []
@@ -487,6 +488,40 @@ TestCase {
         tryVerify(function() { return !chat.visible }, 1000)
         sessionControl.enabled = false
         sessionControl.greetingOnly = true
+    }
+
+    function test_protected_feedback_precedes_desktop_and_reconnects_without_fallback() {
+        var main = createDesktop()
+        main.desktopFeedbackController.entries = [{run_id: "ordinary", state: "failed"}]
+        sessionControl.enabled = true
+        sessionControl.greetingOnly = false
+        sessionControl.authority = "user-a"
+        main.displayBridgeApi = {enabled: true}
+        sessionControl.personalAvailable = false
+        sessionControl.changed()
+        compare(main.protectedFeedback, null)
+        compare(sessionControl.scheduledClients, 0)
+        sessionControl.personalAvailable = true
+        sessionControl.changed()
+        tryVerify(function() { return main.protectedFeedback !== null }, 1000)
+        compare(main.currentFeedback, main.protectedFeedback)
+        compare(findChild(main, "chatOrb").unreadCount, 0)
+
+        main.protectedFeedback.entries = [{run_id: "private", state: "failed"}]
+        compare(findChild(main, "chatOrb").unreadCount, 1)
+        var clients = sessionControl.scheduledClients
+        main.protectedFeedback.jobsApi.invalidated()
+        tryVerify(function() {
+            return sessionControl.scheduledClients > clients && main.protectedFeedback !== null
+        }, 2000)
+
+        sessionControl.privacyLost()
+        compare(main.protectedFeedback, null)
+        compare(findChild(main, "chatOrb").unreadCount, 0)
+        sessionControl.enabled = false
+        sessionControl.greetingOnly = true
+        sessionControl.personalAvailable = true
+        sessionControl.authority = "Anonymous"
     }
 
     function test_default_chat_size_fits_screen() {

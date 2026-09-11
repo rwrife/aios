@@ -134,8 +134,9 @@ creating unread feedback; missing/invalid outcomes and all safe errors remain
 visible. Quiet hours and snooze report a release instant but do not remove or
 acknowledge feedback.
 
-The shell reconciles durable unread pages at startup and every five seconds,
-deduplicating/reordering by run ID and outbox sequence. Ordinary feedback uses
+The shell reconciles the newest 50 durable unread rows at startup and every
+five seconds, deduplicating/reordering by run ID and outbox sequence so a large
+old backlog cannot starve fresh attention. Ordinary feedback uses
 the global desktop client. Protected feedback automatically creates a separate
 lease/work-bound client only for the currently authorized owner and clears it,
 the result window, counts, running state, and attention on privacy loss.

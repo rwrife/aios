@@ -296,6 +296,19 @@ class ScheduledStoreTests(unittest.TestCase):
         with self.assertRaises(UnavailableError):
             self.store.get_run(run['id'])
 
+    def test_non_deliverable_results_are_retention_eligible(self):
+        config = job_config()
+        config['notification'] = {'mode': 'actionable'}
+        job = self.store.create(config)
+        run = self.store.run_now(job['id'], 1, str(uuid.uuid4()))
+        self.store.start(run['id'])
+        self.store.finish(run['id'], 'succeeded', result='No changes', outcome='unchanged')
+        self.assertEqual(self.store.unread(), [])
+        self.clock.advance(31 * 86400)
+        self.assertEqual(self.store.prune(), 1)
+        with self.assertRaises(UnavailableError):
+            self.store.get_run(run['id'])
+
     def test_notification_policy_and_persisted_pulse_receipt(self):
         all_job = self.create()
         all_run = self.store.run_now(all_job['id'], 1, str(uuid.uuid4()))
@@ -313,16 +326,20 @@ class ScheduledStoreTests(unittest.TestCase):
         self.store.finish(error_run['id'], 'failed', error='Provider unavailable')
 
         unread = self.store.unread()
-        self.assertEqual([item['run_id'] for item in unread], [all_run['id'], error_run['id']])
-        self.assertEqual(unread[0]['title'], all_job['title'])
-        self.assertIsNone(unread[0]['notified'])
+        self.assertEqual([item['run_id'] for item in unread], [error_run['id'], all_run['id']])
+        self.assertEqual([item['run_id'] for item in self.store.unread(after=unread[1]['sequence'])],
+                         [error_run['id']])
+        self.assertEqual(unread[1]['title'], all_job['title'])
+        self.assertIsNone(unread[1]['notified'])
         self.store.mark_notified(all_run['id'])
         self.store.mark_notified(all_run['id'])
         self.reopen()
         persisted = self.store.unread()
-        self.assertIsNotNone(persisted[0]['notified'])
+        self.assertIsNotNone(persisted[1]['notified'])
         with self.assertRaises(ConflictError):
             self.store.mark_notified(quiet_run['id'])
+        self.assertEqual(self.store.get_run(all_run['id'])['outcome'], 'changed')
+        self.assertEqual(self.store.list_runs(all_job['id'])[0]['outcome'], 'changed')
 
     def test_quiet_hours_and_snooze_report_release_without_hiding_feedback(self):
         config = job_config()
@@ -339,7 +356,26 @@ class ScheduledStoreTests(unittest.TestCase):
         self.clock.advance(3601)
         self.assertIsNone(self.store.unread()[0]['suppressed_until'])
 
+    def test_future_snooze_that_lands_in_quiet_hours_releases_after_quiet(self):
+        config = job_config()
+        config['notification'] = {
+            'mode': 'all',
+            'quiet_hours': {'start': '23:00', 'end': '07:00', 'zone': 'UTC'},
+            'snooze_until': '2026-01-02T01:00:00Z',
+        }
+        job = self.store.create(config)
+        run = self.store.run_now(job['id'], 1, str(uuid.uuid4()))
+        self.complete(run)
+        self.assertEqual(self.store.unread()[0]['suppressed_until'],
+                         '2026-01-02T07:00:00.000000Z')
+
     def test_version_one_outbox_migrates_atomically(self):
+        config = job_config()
+        config['notification'] = {'mode': 'actionable'}
+        job = self.store.create(config)
+        run = self.store.run_now(job['id'], 1, str(uuid.uuid4()))
+        self.store.start(run['id'])
+        self.store.finish(run['id'], 'succeeded', result='No change', outcome='unchanged')
         self.store.close()
         with sqlite3.connect(self.root / 'jobs.sqlite3') as db:
             db.execute('ALTER TABLE outbox DROP COLUMN deliverable')
@@ -350,6 +386,7 @@ class ScheduledStoreTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute('PRAGMA user_version').fetchone()[0], 2)
         self.assertIn('deliverable', columns)
         self.assertIn('notified', columns)
+        self.assertEqual(self.store.unread(), [])
 
     def test_thousand_run_retention_preserves_unread_overflow(self):
         job = self.create()

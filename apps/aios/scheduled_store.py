@@ -62,6 +62,9 @@ MIGRATIONS = {
         'ALTER TABLE outbox ADD COLUMN notified TEXT',
         'ALTER TABLE outbox ADD COLUMN deliverable INTEGER NOT NULL DEFAULT 1 '
         'CHECK(deliverable IN (0,1))',
+        '''UPDATE outbox SET deliverable=0 WHERE outcome='unchanged' AND EXISTS (
+            SELECT 1 FROM runs WHERE runs.id=outbox.run_id
+            AND json_extract(runs.snapshot,'$.notification.mode')='actionable')''',
         'PRAGMA user_version=2',
     ),
 }
@@ -326,7 +329,9 @@ class ScheduledStore:
 
     def get_run(self, run_id):
         identifier(run_id)
-        row = self.db.execute('SELECT * FROM runs WHERE id=? AND owner=?',
+        row = self.db.execute('''SELECT r.*,o.outcome FROM runs r
+            LEFT JOIN outbox o ON o.run_id=r.id AND o.owner=r.owner
+            WHERE r.id=? AND r.owner=?''',
                               (run_id, self.owner)).fetchone()
         if row is None:
             raise UnavailableError('Run unavailable')
@@ -341,10 +346,13 @@ class ScheduledStore:
         if before is not None:
             integer(before, 'run cursor', 1, 2 ** 63 - 1)
         # Bodies and snapshots are fetched individually, not multiplied by page size.
-        return [dict(row) for row in self.db.execute('''SELECT sequence,id,job_id,revision,
-            scheduled_at,trigger,state,started,ended,missed_count FROM runs
-            WHERE owner=? AND job_id=? AND (? IS NULL OR sequence<?)
-            ORDER BY sequence DESC LIMIT ?''', (self.owner, job_id, before, before, limit))]
+        return [dict(row) for row in self.db.execute('''SELECT r.sequence,r.id,r.job_id,
+            r.revision,r.scheduled_at,r.trigger,r.state,r.started,r.ended,r.missed_count,
+            o.outcome FROM runs r LEFT JOIN outbox o
+            ON o.run_id=r.id AND o.owner=r.owner
+            WHERE r.owner=? AND r.job_id=? AND (? IS NULL OR r.sequence<?)
+            ORDER BY r.sequence DESC LIMIT ?''',
+            (self.owner, job_id, before, before, limit))]
 
     def start(self, run_id):
         with self._transaction():
@@ -441,7 +449,7 @@ class ScheduledStore:
         rows = self.db.execute('''SELECT o.*,r.job_id,r.state,r.scheduled_at,r.started,r.ended,
             r.snapshot FROM outbox o JOIN runs r ON r.id=o.run_id
             WHERE o.owner=? AND o.acknowledged IS NULL AND o.deliverable=1
-                AND o.sequence>? ORDER BY o.sequence LIMIT ?''',
+                AND o.sequence>? ORDER BY o.sequence DESC LIMIT ?''',
             (self.owner, after, limit)).fetchall()
         result = []
         for row in rows:
@@ -455,15 +463,15 @@ class ScheduledStore:
 
     def _suppressed_until(self, notification):
         now = self.clock.now()
-        release = None
+        candidate = now
         snooze = notification.get('snooze_until')
         if snooze:
             instant = parse_timestamp(snooze)
             if instant > now:
-                release = instant
+                candidate = instant
         quiet = notification.get('quiet_hours')
         if quiet:
-            local = now.astimezone(zone(quiet['zone']))
+            local = candidate.astimezone(zone(quiet['zone']))
             start_hour, start_minute = (int(part) for part in quiet['start'].split(':'))
             end_hour, end_minute = (int(part) for part in quiet['end'].split(':'))
             start = local.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
@@ -477,9 +485,8 @@ class ScheduledStore:
             if active and local < start:
                 start -= timedelta(days=1)
             if active:
-                quiet_release = end.astimezone(now.tzinfo)
-                release = max(release, quiet_release) if release else quiet_release
-        return timestamp(release) if release else None
+                candidate = end.astimezone(now.tzinfo)
+        return timestamp(candidate) if candidate > now else None
 
     def mark_notified(self, run_id):
         with self._transaction():
@@ -502,12 +509,13 @@ class ScheduledStore:
         """Keep unread results, plus at most 1,000 terminal runs younger than 30 days."""
         cutoff = timestamp(self.clock.now() - timedelta(days=30))
         with self._transaction():
-            rows = self.db.execute('''SELECT r.id,r.ended,o.acknowledged FROM runs r
+            rows = self.db.execute('''SELECT r.id,r.ended,o.acknowledged,o.deliverable FROM runs r
                 JOIN outbox o ON o.run_id=r.id WHERE r.owner=? ORDER BY r.sequence DESC''',
                 (self.owner,)).fetchall()
             removed = 0
             for index, row in enumerate(rows):
-                if row['acknowledged'] is not None and (index >= 1000 or row['ended'] < cutoff):
+                retention_eligible = row['acknowledged'] is not None or not row['deliverable']
+                if retention_eligible and (index >= 1000 or row['ended'] < cutoff):
                     self.db.execute('DELETE FROM runs WHERE id=?', (row['id'],))
                     removed += 1
             self.db.execute('''DELETE FROM jobs WHERE owner=? AND deleted=1

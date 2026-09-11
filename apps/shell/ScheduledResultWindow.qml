@@ -46,6 +46,17 @@ Window {
         value = value || ""
         return value.length > limit ? value.slice(0, limit) + "\n[truncated]" : value
     }
+    function statusLabel(value) {
+        if (!value)
+            return ""
+        value = String(value).replace(/_/g, " ")
+        return value.charAt(0).toUpperCase() + value.slice(1)
+    }
+    function rowStatus(row) {
+        var state = statusLabel(row.state)
+        var outcome = statusLabel(row.outcome)
+        return outcome && outcome !== state ? state + " / " + outcome : state
+    }
     function followUpDraft() {
         if (!result.id)
             return ""
@@ -71,9 +82,12 @@ Window {
         if (request.purpose === "read") {
             result = response.result
             loading = false
-            track(jobsApi.listRuns(result.job_id, 10, 0), "history")
+            track(jobsApi.listRuns(result.job_id, 10, 0), "history",
+                  {job: result.job_id, run: result.id})
             markRead(result.id)
-        } else if (request.purpose === "history") {
+        } else if (request.purpose === "history"
+                   && result.id === request.details.run
+                   && result.job_id === request.details.job) {
             history = response.result || []
         } else if (request.purpose === "acknowledge") {
             feedback.removeRun(request.details.run)
@@ -177,6 +191,7 @@ Window {
             Layout.fillHeight: true
             spacing: 16
             ColumnLayout {
+                Layout.minimumWidth: 192
                 Layout.preferredWidth: Math.min(300, root.width * 0.34)
                 Layout.fillHeight: true
                 ListView {
@@ -209,7 +224,8 @@ Window {
                                 elide: Text.ElideRight
                             }
                             Note {
-                                text: modelData.state + " \u00b7 " + (modelData.ended || modelData.scheduled_at)
+                                text: root.rowStatus(modelData)
+                                    + " \u00b7 " + (modelData.ended || modelData.scheduled_at)
                                 elide: Text.ElideRight
                             }
                             RowLayout {
@@ -253,7 +269,10 @@ Window {
                 }
                 Note {
                     visible: !!result.id
-                    text: result.id ? (result.state + "\nScheduled: " + result.scheduled_at
+                    text: result.id ? (root.statusLabel(result.state)
+                        + (result.outcome && result.outcome !== result.state
+                           ? " / " + root.statusLabel(result.outcome) : "")
+                        + "\nScheduled: " + result.scheduled_at
                         + "\nStarted: " + (result.started || "not started")
                         + "\nFinished: " + (result.ended || "not finished")) : ""
                 }
@@ -291,9 +310,11 @@ Window {
                     }
                 }
                 Note {
+                    objectName: "scheduledRunHistory"
                     visible: history.length > 0
                     text: "Recent run history: " + history.map(function(run) {
-                        return run.state + " " + run.scheduled_at
+                        return root.rowStatus(run) + " "
+                            + (run.scheduled_at || run.ended || "")
                     }).join(" \u00b7 ")
                 }
             }

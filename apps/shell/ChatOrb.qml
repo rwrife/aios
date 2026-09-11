@@ -22,7 +22,10 @@ Button {
     padding: 0
     Accessible.name: unreadCount > 0 ? "Open scheduled results" : "Start a new chat"
     Accessible.description: unreadCount > 0
-        ? unreadCount + (unreadCount === 1 ? " unread scheduled result" : " unread scheduled results")
+        ? unreadCount + (attentionState === "action-needed"
+            ? (unreadCount === 1 ? " scheduled result needs attention"
+                                 : " scheduled results need attention")
+            : (unreadCount === 1 ? " unread scheduled result" : " unread scheduled results"))
         : "Open a new conversation"
     ToolTip.visible: hovered || activeFocus
     ToolTip.text: unreadCount > 0 ? "Open scheduled results" : "Start a new chat"
@@ -86,6 +89,9 @@ Button {
             if (orb.attentionState === "unread" || orb.attentionState === "action-needed") {
                 c.beginPath(); c.arc(cx,cy,width*0.42,0,Math.PI*2);
                 c.strokeStyle=orb.theme.accent; c.globalAlpha=1; c.lineWidth=1.5; c.stroke();
+            } else if (orb.attentionState === "running") {
+                c.beginPath(); c.arc(cx,cy,width*0.40,0,Math.PI*2);
+                c.strokeStyle=orb.theme.wave; c.globalAlpha=0.7; c.lineWidth=1; c.stroke();
             }
         }
     }

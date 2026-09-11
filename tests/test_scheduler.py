@@ -51,9 +51,13 @@ class Provider(http.server.BaseHTTPRequestHandler):
                                      'function': {'name': name, 'arguments': json.dumps(arguments)}}]}
             finish = 'tool_calls'
         else:
-            delta = {'content': ('x' * 40000 if 'OVERSIZED' in prompt else
-                                 'Protected chat scheduled result' if 'SCHEDULE' in prompt
-                                 else 'Saved background answer')}
+            content = ('x' * 40000 if 'OVERSIZED' in prompt else
+                       'Protected chat scheduled result' if 'SCHEDULE' in prompt
+                       else 'Saved background answer')
+            if any('AIOS_NOTIFICATION_OUTCOME' in str(item.get('content', ''))
+                   for item in body['messages'] if item['role'] == 'system'):
+                content += '\nAIOS_NOTIFICATION_OUTCOME: unchanged'
+            delta = {'content': content}
             finish = 'stop'
         event = {'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}
         try:
@@ -149,11 +153,15 @@ class SchedulerProcessTests(unittest.TestCase):
         return result['result']
 
     def job(self, prompt='Summarize the task', **policy):
+        notification = policy.pop('notification', None)
         execution = {'provider': 'remote', 'profile': 'current', 'model': 'test-model',
                      'capabilities': [], 'timeout_seconds': 10, **policy}
-        return self.call('create', config={'title': 'Test job', 'prompt': prompt,
-                         'schedule': {'kind': 'cron', 'value': '0 0 * * *', 'zone': 'UTC'},
-                         'execution': execution})
+        config = {'title': 'Test job', 'prompt': prompt,
+                  'schedule': {'kind': 'cron', 'value': '0 0 * * *', 'zone': 'UTC'},
+                  'execution': execution}
+        if notification:
+            config['notification'] = notification
+        return self.call('create', config=config)
 
     def run_job(self, job):
         return self.call('run_now', job_id=job['id'], expected_revision=job['revision'],
@@ -204,6 +212,12 @@ class SchedulerProcessTests(unittest.TestCase):
         self.assertEqual(self.call('unread'), [])
         self.assertNotIn('fixture-key', json.dumps(result))
         self.assertIn('max_tokens', self.provider.requests[-1])
+
+    def test_actionable_unchanged_outcome_is_saved_without_unread_feedback(self):
+        job = self.job(notification={'mode': 'actionable'})
+        result = self.wait_run(self.run_job(job), 'succeeded')
+        self.assertEqual(result['result'], 'Saved background answer')
+        self.assertEqual(self.call('unread'), [])
 
     def test_missing_credentials_pause_once_and_resume(self):
         job = self.job()

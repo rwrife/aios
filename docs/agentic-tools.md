@@ -82,9 +82,11 @@ survive reconnect and result retention; retries never create another run.
 In-flight runs retain the original immutable snapshot when the job is edited.
 
 Page jobs with the last `id` as `after`; page runs with the last `sequence`
-as `before`; page unread with the last `sequence` as `after`. Unread results
-are durable, not ephemeral notification events: reconcile from sequence zero
-on reconnect and deduplicate by run ID. `read_result` does not acknowledge.
+as `before`. Unread pages contain sequences newer than `after`, ordered
+newest-first; use `after=0` for a bounded reconciliation of the newest durable
+feedback, or a saved high-water sequence for forward polling. Unread results
+are durable, not ephemeral notification events: reconcile from zero on
+reconnect and deduplicate by run ID. `read_result` does not acknowledge.
 Only acknowledge after presenting a result or an explicit mark-read request;
 opening/listing the inbox alone never marks all results read.
 
@@ -258,7 +260,7 @@ Preserve a manual run's durable request UUID and original revision rather than
 creating a second run request.
 
 `ScheduledFeedback.qml` is the reconnecting shell consumer. It polls health and
-up to four 50-row unread pages, deduplicates by run ID, orders by outbox
+the newest bounded 50-row unread page, deduplicates by run ID, orders by outbox
 sequence, and never treats an ephemeral completion signal as the source of
 truth. Before starting one coalesced orb pulse it persists `mark_notified` for
 each eligible run, so reconnect and shell restart do not replay attention.

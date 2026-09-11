@@ -14,7 +14,8 @@ Item {
         var count = 0
         for (var i = 0; i < entries.length; ++i) {
             var state = entries[i].state
-            if (state === "failed" || state === "needs_user_action"
+            if (entries[i].outcome === "needs_user_action"
+                    || state === "failed" || state === "needs_user_action"
                     || state === "interrupted" || state === "missed")
                 ++count
         }
@@ -23,13 +24,13 @@ Item {
     readonly property string attentionState: actionNeededCount > 0 ? "action-needed"
         : unreadCount > 0 ? "unread" : runningCount > 0 ? "running" : "idle"
     property var pending: ({})
-    property var pageRows: []
-    property int pageCount: 0
     property bool reconciling: false
     property var notifyQueue: []
+    property bool pulsePending: false
     property bool marking: false
     signal pulseRequested()
     signal cleared()
+    signal apiInvalidated()
 
     function track(id, purpose) {
         pending[id] = purpose
@@ -39,8 +40,8 @@ Item {
         entries = []
         runningCount = 0
         pending = ({})
-        pageRows = []
         notifyQueue = []
+        pulsePending = false
         marking = false
         reconciling = false
         error = ""
@@ -50,19 +51,13 @@ Item {
         if (!active || !jobsApi || reconciling)
             return
         reconciling = true
-        pageRows = []
-        pageCount = 0
         track(jobsApi.health(), "health")
         track(jobsApi.unread(50, 0), "unread")
     }
-    function nextPage(after) {
-        ++pageCount
-        track(jobsApi.unread(50, after), "unread")
-    }
-    function commitRows() {
+    function commitRows(rows) {
         var byRun = ({})
-        for (var i = 0; i < pageRows.length; ++i) {
-            var row = pageRows[i]
+        for (var i = 0; i < rows.length; ++i) {
+            var row = rows[i]
             var previous = byRun[row.run_id]
             if (!previous || Number(row.sequence) > Number(previous.sequence))
                 byRun[row.run_id] = row
@@ -89,12 +84,14 @@ Item {
         if (!queue.length)
             return
         notifyQueue = queue
+        pulsePending = true
         markNext()
     }
     function markNext() {
         if (!active || !jobsApi || !notifyQueue.length) {
             marking = false
-            if (active) {
+            if (pulsePending && active) {
+                pulsePending = false
                 ++pulseSerial
                 if (!reducedMotion)
                     pulseRequested()
@@ -123,6 +120,7 @@ Item {
             if (purpose === "notified") {
                 marking = false
                 notifyQueue = []
+                pulsePending = false
             }
             return
         }
@@ -131,11 +129,7 @@ Item {
             runningCount = Number(response.result.active_runs || 0)
         } else if (purpose === "unread") {
             var rows = response.result || []
-            pageRows = pageRows.concat(rows)
-            if (rows.length === 50 && pageCount < 3)
-                nextPage(rows[rows.length - 1].sequence)
-            else
-                commitRows()
+            commitRows(rows)
         } else if (purpose === "notified") {
             var completed = notifyQueue[0]
             var updated = []
@@ -179,6 +173,7 @@ Item {
         }
         function onInvalidated() {
             feedback.clearPrivateState()
+            feedback.apiInvalidated()
         }
     }
     Timer {
