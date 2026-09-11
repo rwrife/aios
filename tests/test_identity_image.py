@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'posix', 'Alpine image generation requires Linux')
 class IdentityImageTests(unittest.TestCase):
+    def test_installer_uses_iso_repository_and_restores_remote_sources(self):
+        installer = (ROOT / 'distro/alpine/overlay/usr/local/sbin/aios-install').read_text()
+        self.assertIn('/media/cdrom/apks', installer)
+        self.assertIn('APKINDEX.tar.gz', installer)
+        self.assertIn("printf '%s\\n' \"$media_repo\" > /etc/apk/repositories", installer)
+        self.assertIn('cp "$repositories" "$mountdir/etc/apk/repositories"', installer)
+
     def test_live_profile_and_boot_gate_match_current_capacity(self):
         result = subprocess.run(
             ['sh', '-c',
