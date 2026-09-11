@@ -6,6 +6,9 @@ BUILD=${BUILD_DIR:-$ROOT/distro/alpine/.work/apps}
 DEST=${DESTDIR:-$ROOT/distro/alpine/.work/stage}
 SHELL_BUILD=${AIOS_SHELL_BUILD_DIR:-$BUILD/shell}
 mkdir -p "$BUILD" "$SHELL_BUILD" "$DEST/usr/local/bin" "$DEST/usr/local/share/aios"
+python3 -m pip install --disable-pip-version-check --no-compile --no-deps \
+  --only-binary=:all: --require-hashes --upgrade \
+  --target "$DEST/usr/local/share/aios" -r "$ROOT/apps/requirements.txt"
 python3 "$ROOT/scripts/stage-codex.py" "$BUILD" "$DEST"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_MEDIA_BACKEND=gstreamer \
   /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"

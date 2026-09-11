@@ -60,10 +60,12 @@ class IdentityImageTests(unittest.TestCase):
                     self.assertEqual((policy.uid, policy.gid, policy.mode), (0, 0, 0o644))
                 self.assertEqual('bubblewrap' in world, enabled)
                 self.assertEqual('cryptsetup' in world, enabled)
+                self.assertIn('tzdata', world)
                 self.assertFalse(any(line.startswith('# Optional') for line in world))
                 result = subprocess.run(['sh', '-c',
                     'profile_standard() { :; }; . "$1"; profile_aios; printf "%s" "$apks"',
                     'sh', str(ROOT / 'distro/alpine/profiles/mkimg.aios.sh')],
                     env=env, check=True, capture_output=True, text=True)
                 self.assertEqual('bubblewrap' in result.stdout.split(), enabled)
+                self.assertIn('tzdata', result.stdout.split())
                 self.assertNotIn('Optional', result.stdout.split())

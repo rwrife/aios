@@ -1,0 +1,2 @@
+# BSD-3-Clause, dependency-free. Keep the wheel's dist-info license in the image.
+cronsim==2.6 --hash=sha256:5e153ff8ed64da7ee8d5caac470dbeda8024ab052c3010b1be149772b4801835
