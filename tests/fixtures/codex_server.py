@@ -19,7 +19,7 @@ TOOL_SEQUENCES = {
     'unknown-generic': [('shell', {'command': 'whoami'})],
     'generic-error': [('application', {'action': 'search', 'query': 'secret'})],
     'activate-narrow': [
-        ('activate_skill', {'name': 'application-builder'}),
+        ('activate_skill', {'name': 'application-reader'}),
         ('browser', {'action': 'snapshot'}),
     ],
     'call-limit': [('application', {'action': 'search', 'query': str(index)})

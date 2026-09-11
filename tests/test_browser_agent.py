@@ -566,7 +566,7 @@ class BrowserAgentTests(unittest.TestCase):
 
         with patch("aios.agent.core.request", side_effect=request), patch(
             "aios.agent.toolhost.call",
-            side_effect=[{"matches": []}, {"id": "draft-1"}, {"launched": True}],
+            side_effect=[{"matches": []}, {"id": "draft-1"}, {"launched": True, "id": "draft-1"}],
         ) as call:
             events = list(agent.openai_chat(session))
 
@@ -1103,7 +1103,7 @@ class BrowserAgentTests(unittest.TestCase):
         list_tools.return_value = {"tools": [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)], "warnings": []}
         catalog = [
             Skill(
-                name="application-builder",
+                name="application-reader",
                 description="Build apps.",
                 instructions="Applications only.",
                 allowed_tools=("application",),
@@ -1117,7 +1117,7 @@ class BrowserAgentTests(unittest.TestCase):
             bodies.append(clone(body))
             if len(bodies) == 1:
                 return stream([
-                    {"tool_calls": [{"index": 0, "id": "activate", "function": {"name": "activate_skill", "arguments": "{\"name\":\"application-builder\"}"}}]},
+                    {"tool_calls": [{"index": 0, "id": "activate", "function": {"name": "activate_skill", "arguments": "{\"name\":\"application-reader\"}"}}]},
                     {"tool_calls": [{"index": 1, "id": "browse", "function": {"name": "browser", "arguments": "{\"action\":\"snapshot\"}"}}]},
                 ], "tool_calls")
             return stream([{"content": "Done."}])
@@ -1126,7 +1126,7 @@ class BrowserAgentTests(unittest.TestCase):
             events = list(agent.openai_chat(session))
         call.assert_not_called()
         tool_messages = [message for message in bodies[1]["messages"] if message["role"] == "tool"]
-        self.assertEqual(json.loads(tool_messages[0]["content"]), {"activated": "application-builder"})
+        self.assertEqual(json.loads(tool_messages[0]["content"]), {"activated": "application-reader"})
         self.assertIn("unavailable", json.loads(tool_messages[1]["content"])["error"])
         self.assertEqual(events[-1], {"type": "token", "text": "Done."})
 

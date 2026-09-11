@@ -441,7 +441,7 @@ class SubscriptionTests(unittest.TestCase):
         list_tools.return_value = {
             'tools': [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)], 'warnings': []}
         catalog = [Skill(
-            name='application-builder',
+            name='application-reader',
             description='Build applications.',
             instructions='Use applications only. SECRET-INSTRUCTION-MARKER',
             allowed_tools=('application',),
