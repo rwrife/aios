@@ -4,12 +4,13 @@ import json
 import os
 from pathlib import Path
 import selectors
+import shutil
 import signal
 import subprocess
 import sys
 import time
 
-from .scheduled_jobs import REQUEST_LIMIT, encode
+from .scheduled_jobs import REQUEST_LIMIT, RUN_REQUEST_LIMIT, encode
 
 
 def children(pid):
@@ -61,7 +62,7 @@ def execute(value, directory):
     tool_socket = str(directory / 'tools.sock')
     host = subprocess.Popen([sys.executable, '-m', 'aios.toolhost', tool_socket, '--background'],
                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            env=environment, start_new_session=True)
+                            env={**environment, 'XDG_RUNTIME_DIR': str(directory)}, start_new_session=True)
     host.stdin.write(encode(policy, REQUEST_LIMIT))
     host.stdin.close()
     messages = []
@@ -72,9 +73,10 @@ def execute(value, directory):
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                               env=environment, start_new_session=True)
     worker.stdin.write(encode({'action': 'chat', 'messages': messages,
-                              'tool_socket': tool_socket, 'background': policy}, REQUEST_LIMIT))
+                              'tool_socket': tool_socket, 'background': policy}, RUN_REQUEST_LIMIT))
     worker.stdin.close()
     result = ''
+    usage = {}
     frame = bytearray()
     total = 0
     done = False
@@ -93,7 +95,7 @@ def execute(value, directory):
                 if not chunk:
                     worker.wait(timeout=1)
                     if done and worker.returncode == 0:
-                        return {'state': 'succeeded', 'result': result}
+                        return {'state': 'succeeded', 'result': result, 'usage': usage}
                     return {'state': 'failed', 'error': 'Scheduled worker stopped before completing'}
                 total += len(chunk)
                 if total > 2 * 1024 * 1024:
@@ -118,6 +120,8 @@ def execute(value, directory):
                                 'error': event.get('text', 'Scheduled worker failed')[:4096]}
                     elif kind == 'done':
                         done = True
+                    elif kind == 'usage' and isinstance(event.get('usage'), dict):
+                        usage = event['usage']
                     elif kind != 'progress':
                         return {'state': 'failed', 'error': 'Invalid scheduled worker event'}
             if host.poll() is not None and not done:
@@ -134,8 +138,8 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(InterruptedError()))
     outcome = {'state': 'failed', 'error': 'Scheduled worker could not start'}
     try:
-        raw = sys.stdin.buffer.readline(REQUEST_LIMIT + 1)
-        if not raw or len(raw) > REQUEST_LIMIT:
+        raw = sys.stdin.buffer.readline(RUN_REQUEST_LIMIT + 1)
+        if not raw or len(raw) > RUN_REQUEST_LIMIT:
             return
         value = json.loads(raw)
         outcome = execute(value, directory)
@@ -146,6 +150,7 @@ def main():
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         clean_children()
+        shutil.rmtree(directory)
         os.close(lease)
     print(json.dumps(outcome), flush=True)
 

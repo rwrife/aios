@@ -1,5 +1,5 @@
 """Credential-free route bindings and budgets for unattended agent turns."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from types import SimpleNamespace
@@ -105,6 +105,7 @@ class BackgroundContext:
     execution: dict
     output_bytes: int = 0
     tool_calls: int = 0
+    usage: dict = field(default_factory=dict)
 
     def configuration(self):
         _, config = bind(self.execution, require_credentials=True)
@@ -116,7 +117,7 @@ class BackgroundContext:
 
     @property
     def remaining_tokens(self):
-        return self.execution['token_budget'] - self.output_bytes
+        return self.execution['token_budget'] - max(self.output_bytes, self.usage.get('output_tokens', 0))
 
     def output(self, value):
         # A UTF-8 byte is a conservative output-token unit, independent of a
@@ -129,3 +130,14 @@ class BackgroundContext:
         if self.tool_calls >= self.execution['tool_budget']:
             raise RuntimeError('Scheduled run tool budget reached')
         self.tool_calls += 1
+
+    def reported_usage(self, value):
+        for source, target in (('prompt_tokens', 'input_tokens'), ('completion_tokens', 'output_tokens')):
+            if source not in value:
+                continue
+            count = value[source]
+            if type(count) is not int or not 0 <= count <= 2 ** 30:
+                raise RuntimeError('The provider returned invalid token usage')
+            self.usage[target] = self.usage.get(target, 0) + count
+        if self.usage.get('output_tokens', 0) > self.execution['token_budget']:
+            raise RuntimeError('Scheduled run output budget reached')

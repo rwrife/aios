@@ -2,7 +2,6 @@ import http.server
 import json
 import os
 from pathlib import Path
-import shutil
 import signal
 import socket
 import struct
@@ -16,7 +15,7 @@ from unittest.mock import patch
 import uuid
 
 from aios import core, scheduled_jobs
-from aios.scheduled_execution import BackgroundContext, NeedsUserAction, bind
+from aios.scheduled_execution import BackgroundContext
 from aios.scheduling import UnavailableError
 
 
@@ -24,14 +23,14 @@ FIXTURE = Path(__file__).parent / 'fixtures' / 'scheduled_tool_process.py'
 
 
 class Provider(http.server.BaseHTTPRequestHandler):
-    requests = []
-
     def log_message(self, *_):
         pass
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.server.requests.append(body)
+        if self.server.on_request is not None:
+            self.server.on_request(body)
         prompt = ' '.join(str(item.get('content', '')) for item in body['messages'] if item['role'] == 'user')
         if 'AUTH_FAILURE' in prompt:
             self.send_error(401)
@@ -74,6 +73,7 @@ class SchedulerProcessTests(unittest.TestCase):
         cls.provider = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Provider)
         cls.provider.daemon_threads = True
         cls.provider.requests = []
+        cls.provider.on_request = None
         cls.thread = threading.Thread(target=cls.provider.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -84,6 +84,7 @@ class SchedulerProcessTests(unittest.TestCase):
         cls.thread.join()
 
     def setUp(self):
+        self.provider.on_request = None
         self.temp = tempfile.TemporaryDirectory(prefix='asj-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -91,13 +92,17 @@ class SchedulerProcessTests(unittest.TestCase):
         runtime.mkdir(mode=0o700)
         bin_dir = self.root / 'bin'
         bin_dir.mkdir()
-        shutil.copyfile(FIXTURE, bin_dir / 'aios-browser')
+        (bin_dir / 'aios-browser').write_text(FIXTURE.read_text())
         (bin_dir / 'aios-browser').chmod(0o700)
+        (bin_dir / 'codex').write_text('#!/usr/bin/env python3\n' + (
+            FIXTURE.parent / 'codex_server.py').read_text())
+        (bin_dir / 'codex').chmod(0o700)
         self.env = patch.dict(os.environ, {
             'HOME': str(self.root), 'XDG_CONFIG_HOME': str(self.root / 'config'),
             'XDG_DATA_HOME': str(self.root / 'data'), 'XDG_RUNTIME_DIR': str(runtime),
             'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
             'SCHEDULED_TEST_PIDS': str(self.root / 'pids'), 'TZ': 'UTC',
+            'AIOS_FAKE_LOG': str(self.root / 'codex-log'), 'AIOS_FAKE_SCENARIO': '',
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -214,6 +219,33 @@ class SchedulerProcessTests(unittest.TestCase):
         core.write_json(core.config_dir() / 'config.json', self.config)
         self.wait_run(self.run_job(job), 'needs_user_action')
 
+    def test_agent_profile_and_subscription_run_without_chat(self):
+        self.config.update(agent_mode='remote', agent_url=self.config['url'],
+                           agent_model='agent-model', agent_api_key='fixture-agent-key')
+        core.write_json(core.config_dir() / 'config.json', self.config)
+        self.wait_run(self.run_job(self.job(profile='agent', model='agent-model')), 'succeeded')
+        self.config.update(mode='chatgpt', subscription_model='test-model')
+        core.write_json(core.config_dir() / 'config.json', self.config)
+        core.write_json(core.config_dir() / 'codex' / 'auth.json', {'fixture': True})
+        run = self.run_job(self.job(provider='subscription'))
+        result = self.wait_run(run, 'succeeded')
+        self.assertEqual(result['result'], 'Hello 世界')
+        requests = [json.loads(line) for line in (self.root / 'codex-log').read_text().splitlines()]
+        started = next(item for item in requests if item.get('method') == 'thread/start')
+        self.assertEqual(started['params']['model'], 'test-model')
+        self.assertTrue(started['params']['ephemeral'])
+
+    def test_live_capability_revocation_prevents_tool_call(self):
+        self.configure_mcp()
+        def revoke(_):
+            core.write_json(core.config_dir() / 'mcp.json', {'servers': {}})
+        self.provider.on_request = revoke
+        self.wait_run(self.run_job(self.job('MCP', capabilities=['mcp_fixture_ping'])), 'succeeded')
+        self.assertFalse((self.root / 'pids').exists())
+        messages = self.provider.requests[-1]['messages']
+        self.assertTrue(any(item['role'] == 'tool' and 'unavailable' in item['content'] for item in messages))
+        self.provider.on_request = None
+
     def test_rejected_credentials_are_action_needed(self):
         self.wait_run(self.run_job(self.job('AUTH_FAILURE')), 'needs_user_action')
 
@@ -245,7 +277,7 @@ class SchedulerProcessTests(unittest.TestCase):
         for operation in ('cancel_run', 'delete', 'timeout'):
             (self.root / 'pids').unlink(missing_ok=True)
             job = self.job('MCP', capabilities=['mcp_fixture_ping'],
-                           timeout_seconds=2 if operation == 'timeout' else 10)
+                           timeout_seconds=5 if operation == 'timeout' else 10)
             run = self.run_job(job)
             pids = self.wait_pids()
             if operation == 'cancel_run':
@@ -266,6 +298,39 @@ class SchedulerProcessTests(unittest.TestCase):
         self.assert_stopped(pids)
         self.assertEqual(len(self.call('unread')), 1)
 
+    def test_worker_and_guardian_crashes_stop_descendants(self):
+        from aios.scheduled_runner import descendants
+        self.configure_mcp(hang=True)
+        for module, state in (('aios.worker', 'failed'), ('aios.scheduled_runner', 'interrupted')):
+            (self.root / 'pids').unlink(missing_ok=True)
+            run = self.run_job(self.job('MCP', capabilities=['mcp_fixture_ping']))
+            pids = self.wait_pids()
+            targets = []
+            for pid in descendants(self.service.pid):
+                try:
+                    if module.encode() in Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0'):
+                        targets.append(pid)
+                except FileNotFoundError:
+                    pass
+            self.assertEqual(len(targets), 1)
+            os.kill(targets[0], signal.SIGKILL)
+            self.wait_run(run, state)
+            self.assert_stopped(pids)
+
+    def test_manual_idempotency_and_active_snapshot_survive_edit(self):
+        job = self.job('HANG', timeout_seconds=8)
+        request_id = str(uuid.uuid4())
+        first = self.call('run_now', job_id=job['id'], expected_revision=1, request_id=request_id)
+        repeated = self.call('run_now', job_id=job['id'], expected_revision=1, request_id=request_id)
+        self.assertEqual(first['id'], repeated['id'])
+        config = {key: job[key] for key in ('title', 'prompt', 'context', 'conversation',
+                                           'schedule', 'execution', 'notification')}
+        config['prompt'] = 'Replacement prompt'
+        self.call('update', job_id=job['id'], expected_revision=1, config=config)
+        result = self.wait_run(first, 'succeeded')
+        self.assertEqual(result['snapshot']['prompt'], 'HANG')
+        self.assertEqual(result['revision'], 1)
+
     def test_shutdown_preserves_jobs_and_interrupts_work(self):
         self.configure_mcp(hang=True)
         job = self.job('MCP', capabilities=['mcp_fixture_ping'])
@@ -280,6 +345,12 @@ class SchedulerProcessTests(unittest.TestCase):
 
     def test_singleton_socket_permissions_and_peer_identity(self):
         second = subprocess.run([sys.executable, '-m', 'aios.scheduler'], capture_output=True, timeout=5)
+        self.assertNotEqual(second.returncode, 0)
+        self.assertIn(b'already owns', second.stderr)
+        other_runtime = self.root / 'other'
+        other_runtime.mkdir(mode=0o700)
+        second = subprocess.run([sys.executable, '-m', 'aios.scheduler'], capture_output=True, timeout=5,
+                                env={**os.environ, 'XDG_RUNTIME_DIR': str(other_runtime)})
         self.assertNotEqual(second.returncode, 0)
         self.assertIn(b'already owns', second.stderr)
         self.assertEqual(scheduled_jobs.socket_path().stat().st_mode & 0o777, 0o600)
@@ -309,6 +380,32 @@ class SchedulerProcessTests(unittest.TestCase):
             slow.connect(str(scheduled_jobs.socket_path()))
             slow.sendall(b'{')
             self.assertTrue(self.call('health')['available'])
+
+
+class BackgroundPolicyTests(unittest.TestCase):
+    def test_tool_host_enforces_native_signin_and_nested_schedule_denials(self):
+        from aios.toolhost import ToolHost
+        host = ToolHost(background={'capabilities': ['os_settings', 'scheduled_jobs'], 'tool_budget': 2})
+        self.addCleanup(host.close)
+        for name, arguments in (('os_settings', {'action': 'authenticate'}),
+                                ('scheduled_jobs', {'action': 'create'})):
+            with self.assertRaises(ValueError):
+                host.call(name, arguments)
+
+    def test_independent_budget_counts_and_reported_usage(self):
+        context = BackgroundContext({'token_budget': 8, 'tool_budget': 1})
+        context.output('abc')
+        context.reported_usage({'prompt_tokens': 20, 'completion_tokens': 5})
+        self.assertEqual(context.remaining_tokens, 3)
+        context.tool()
+        with self.assertRaises(RuntimeError):
+            context.tool()
+        with self.assertRaises(RuntimeError):
+            context.output('abcdef')
+
+    def test_protected_client_is_unavailable_before_connecting(self):
+        with patch('aios.scheduled_execution.principals.current', return_value=object()):
+            self.assertEqual(scheduled_jobs.request({'action': 'health'})['status'], 'unavailable')
 
 
 if __name__ == '__main__':

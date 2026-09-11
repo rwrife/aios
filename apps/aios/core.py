@@ -250,15 +250,21 @@ def request(route, body=None, timeout=90, profile="current", *, config=None, bac
             raise RuntimeError("Cannot reach the model. Check your connection and model service.") from None
 
 
-def sse_events(stream):
+def sse_events(stream, *, limit=None):
     # HTTPResponse iterates complete lines even when TCP splits a UTF-8 character.
     data = []
-    for raw in stream:
+    size = 0
+    lines = stream if limit is None else iter(lambda: stream.readline(limit + 1), b'')
+    for raw in lines:
+        size += len(raw)
+        if limit is not None and size > limit:
+            raise RuntimeError("The model response event was too large.")
         line = raw.decode("utf-8").rstrip("\r\n")
         if not line:
             if data:
                 yield "\n".join(data)
                 data = []
+            size = 0
         elif line.startswith("data:"):
             data.append(line[5:].lstrip(" "))
     if data:

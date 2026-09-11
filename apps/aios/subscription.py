@@ -542,7 +542,7 @@ def _chat_rpc_result(value, kind):
     return identifier
 
 
-def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
+def chat(messages, *, session=None, background=None, turn_timeout=MAX_AGENT_SECONDS,
          clock=time.monotonic):
     from . import agent, toolhost
 
@@ -564,12 +564,9 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         account = account_result.get('account') if isinstance(account_result, dict) else None
         if not isinstance(account, dict) or account.get('type') != 'chatgpt':
             raise RuntimeError('Sign in with ChatGPT in AI models settings first.')
-        background = getattr(session, 'background', None)
         config = background.configuration() if background else core.load_config()
         model = background.execution['model'] if background else config.get('subscription_model') or None
         if session is not None:
-            if background is not None:
-                background.output(encoded_args.decode('utf-8'))
             tools = session.codex_tools()
             base_instructions = session.system_prompt() + '\n\n' + CHATGPT_ACTIVATION_NOTE
             if len(base_instructions.encode('utf-8')) > agent.MAX_SYSTEM_PROMPT_BYTES:
@@ -628,6 +625,8 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     continue
                 args = params.get('arguments')
                 count += 1
+                if background is not None and background.tool_calls >= background.execution['tool_budget']:
+                    raise RuntimeError('Scheduled run tool budget reached')
                 tool = params.get('tool')
                 try:
                     encoded_args = json.dumps(
@@ -641,6 +640,8 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     raise RuntimeError(
                         'ChatGPT requested an invalid tool call or reached the action limit.')
                 if session is not None:
+                    if background is not None:
+                        background.output(encoded_args.decode('utf-8'))
                     yield {'type': 'progress', 'text': session.progress(tool, args)}
                     try:
                         remaining = _chat_remaining(deadline, clock)

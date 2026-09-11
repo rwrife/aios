@@ -418,6 +418,7 @@ def openai_chat(
         content = ""
         content_bytes = 0
         finish = None
+        reported_usage = None
         tools = session.tools()
         history[0]["content"] = session.system_prompt()
         body = _request_body(
@@ -437,7 +438,8 @@ def openai_chat(
             profile=profile,
             **options,
         ) as response:
-            for event in core.sse_events(response):
+            events = core.sse_events(response, limit=128 * 1024) if background else core.sse_events(response)
+            for event in events:
                 _remaining_time(deadline, clock)
                 if event == "[DONE]":
                     break
@@ -449,6 +451,8 @@ def openai_chat(
                     raise RuntimeError("The model could not complete this response.")
                 if value.get("error"):
                     raise RuntimeError("The model could not complete this response.")
+                if background is not None and isinstance(value.get('usage'), dict):
+                    reported_usage = value['usage']
                 choices = value.get("choices", [])
                 if not isinstance(choices, list):
                     raise RuntimeError("The model could not complete this response.")
@@ -517,10 +521,14 @@ def openai_chat(
                         entry["function"]["name"] += name_fragment
                         entry["function"]["arguments"] += arguments_fragment
                 _remaining_time(deadline, clock)
+        if background is not None and reported_usage is not None:
+            background.reported_usage(reported_usage)
         if calls:
             if finish != "tool_calls":
                 raise RuntimeError("The model tool request was incomplete; no action was taken.")
             ordered = [calls[index] for index in sorted(calls)]
+            if background is not None and background.tool_calls + len(ordered) > background.execution['tool_budget']:
+                raise RuntimeError('Scheduled run tool budget reached')
             try:
                 if any(len(_json_bytes(call)) > MAX_CALL_BYTES for call in ordered):
                     raise RuntimeError("The model tool request was too large.")
@@ -588,12 +596,14 @@ def select_provider(session, config):
 
 
 def chat(messages, tool_socket, *, background=None):
+    if background is not None:
+        background.configuration()
     session = AgentSession(messages, tool_socket, background=background)
     if background is not None:
         background.configuration()
         if background.execution['provider'] == 'subscription':
             from .subscription import chat as subscription_chat
-            yield from subscription_chat(messages, session=session,
+            yield from subscription_chat(messages, session=session, background=background,
                                          turn_timeout=background.execution['timeout_seconds'])
         else:
             yield from openai_chat(session, background.profile,

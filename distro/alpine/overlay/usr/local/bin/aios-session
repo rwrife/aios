@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR=$(mktemp -d "/tmp/aios-runtime-$(id -u).XXXXXX")
+    export XDG_RUNTIME_DIR
+fi
+
 # Minimal visual baseline
 xsetroot -solid '#0d1117'
 

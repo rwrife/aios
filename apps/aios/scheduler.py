@@ -54,41 +54,51 @@ def configured_zone():
 
 class Scheduler:
     def __init__(self):
+        if os.getuid() == 0:
+            raise UnavailableError('Run the scheduler as the unprivileged desktop user')
         self.root = protocol.runtime_dir()
         if ctypes.CDLL(None).prctl(36, 1, 0, 0, 0) != 0:
             raise UnavailableError('Scheduler requires Linux child supervision')
+        self.store = ScheduledStore()
         try:
-            self.lease = locked_file(self.root / 'service.lock')
+            self.lease = locked_file(self.store.root / 'service.lock')
         except BlockingIOError:
+            self.store.close()
             raise UnavailableError('A scheduler already owns this OS user') from None
-        self.store = None
+        self.leases = self.store.root / 'leases'
         self.running = {}
         self.stopping = False
         self.health_error = None
         try:
+            self.leases.mkdir(mode=0o700, exist_ok=True)
+            info = self.leases.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise UnavailableError('Scheduler process leases must be private')
             # An old run retains its lease until its subreaper has stopped all
             # descendants. Never recover SQLite first and allow duplicate work.
             self.recover_processes()
-            self.store = ScheduledStore()
             self.store.recover()
         except BaseException:
+            self.store.close()
             os.close(self.lease)
             raise
 
     def recover_processes(self):
-        for directory in self.root.glob('run-*'):
-            if directory.is_symlink() or not directory.is_dir():
-                raise UnavailableError('Invalid scheduler run directory')
+        for path in self.leases.iterdir():
             deadline = time.monotonic() + 10
             while True:
                 try:
-                    lease = locked_file(directory / 'lease')
+                    lease = locked_file(path)
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
                         raise UnavailableError('Previous scheduled processes have not stopped; recovery is blocked')
                     time.sleep(0.05)
             os.close(lease)
+            path.unlink()
+        for directory in self.root.glob('run-*'):
+            if directory.is_symlink() or not directory.is_dir():
+                raise UnavailableError('Invalid scheduler run directory')
             shutil.rmtree(directory)
 
     def readback(self, job):
@@ -104,9 +114,25 @@ class Scheduler:
             raise SchedulingError('Choose only currently permitted background capabilities')
         return config
 
+    def background_peer(self, pid):
+        workers = {entry[0].pid for entry in self.running.values()}
+        for _ in range(128):
+            if pid in workers:
+                return True
+            if pid <= 1 or pid == os.getpid():
+                return False
+            try:
+                data = Path(f'/proc/{pid}/stat').read_text().split(') ', 1)[1].split()
+                pid = int(data[1])
+            except (FileNotFoundError, IndexError, ValueError):
+                return True
+        return True
+
     def dispatch(self, value):
         protocol.validate_request(value)
         action = value['action']
+        if self.health_error and action in ('create', 'update', 'resume', 'run_now'):
+            raise UnavailableError(self.health_error)
         args = {key: item for key, item in value.items() if key != 'action'}
         if action == 'health':
             return {'available': self.health_error is None, 'error': self.health_error,
@@ -165,10 +191,10 @@ class Scheduler:
             return
         directory = self.root / ('run-' + run['id'])
         directory.mkdir(mode=0o700)
-        lease = locked_file(directory / 'lease')
+        lease = locked_file(self.leases / run['id'])
         process = None
         try:
-            payload = protocol.encode(run, protocol.REQUEST_LIMIT)
+            payload = protocol.encode(run, protocol.RUN_REQUEST_LIMIT)
             process = subprocess.Popen(
                 [sys.executable, '-m', 'aios.scheduled_runner', str(lease), str(directory)],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -183,6 +209,7 @@ class Scheduler:
                 self.stop_run(run['id'])
             else:
                 shutil.rmtree(directory)
+                (self.leases / run['id']).unlink(missing_ok=True)
             if self.store.get_run(run['id'])['state'] == 'queued':
                 self.store.start(run['id'])
             self.store.finish(run['id'], 'failed', error='Scheduled worker could not start')
@@ -205,9 +232,33 @@ class Scheduler:
             if time.monotonic() >= deadline:
                 raise UnavailableError('Scheduled process cleanup is still pending')
             time.sleep(0.02)
+        if process.returncode != 0:
+            self.crashed_pool()
+            raise UnavailableError(self.health_error)
+        self.release_run(run_id)
+
+    def release_run(self, run_id):
+        process, directory, _ = self.running.pop(run_id)
         process.stdout.close()
-        self.running.pop(run_id)
-        shutil.rmtree(directory)
+        if not process.stdin.closed:
+            process.stdin.close()
+        if directory.exists():
+            shutil.rmtree(directory)
+        (self.leases / run_id).unlink(missing_ok=True)
+
+    def crashed_pool(self):
+        # A dead run subreaper's children belong to this service now. Recovery
+        # must also cover a cancel/delete arriving before the next timer tick.
+        from .scheduled_runner import clean_children
+        for entry in self.running.values():
+            if not entry[0].stdin.closed:
+                entry[0].stdin.close()
+        clean_children()
+        for run_id in list(self.running):
+            self.running[run_id][0].wait()
+            self.release_run(run_id)
+        self.store.recover()
+        self.health_error = 'Scheduled supervisor crashed; restart the service before dispatch'
 
     def tick(self):
         for run_id, (process, directory, frame) in list(self.running.items()):
@@ -233,17 +284,7 @@ class Scheduler:
                     frame.clear()
                     break
             if process.returncode != 0:
-                # If a subreaper itself crashes, its descendants are adopted
-                # here. Stop the pool before recovering any affected claims.
-                from .scheduled_runner import clean_children
-                for entry in self.running.values():
-                    if not entry[0].stdin.closed:
-                        entry[0].stdin.close()
-                clean_children()
-                for active_id in list(self.running):
-                    self.stop_run(active_id)
-                self.store.recover()
-                self.health_error = 'Scheduled supervisor crashed; restart the service before dispatch'
+                self.crashed_pool()
                 return
             try:
                 outcome = json.loads(frame)
@@ -305,7 +346,9 @@ class Scheduler:
                         if key.fileobj is server:
                             client, _ = server.accept()
                             try:
-                                protocol.same_user(client)
+                                pid = protocol.same_user(client)
+                                if self.background_peer(pid):
+                                    raise UnavailableError('Background runs cannot access scheduling operations')
                                 if len(clients) >= MAX_CLIENTS:
                                     client.close()
                                     continue

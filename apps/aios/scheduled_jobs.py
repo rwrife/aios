@@ -13,6 +13,7 @@ from .scheduled_store import identifier
 from .toolhost import _read_socket_line
 
 REQUEST_LIMIT = 128 * 1024
+RUN_REQUEST_LIMIT = 256 * 1024
 RESPONSE_LIMIT = 2 * 1024 * 1024
 STATUSES = {'ok', 'invalid', 'unavailable', 'conflict', 'quota_exceeded', 'needs_user_action'}
 ACTIONS = {
@@ -62,9 +63,10 @@ def socket_path():
 
 def same_user(connection):
     credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
-    _, uid, _ = struct.unpack('3i', credentials)
+    pid, uid, _ = struct.unpack('3i', credentials)
     if uid != os.getuid():
         raise UnavailableError('Scheduler peer identity does not match the OS user')
+    return pid
 
 
 def validate_request(value):
