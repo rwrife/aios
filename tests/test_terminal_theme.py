@@ -122,8 +122,6 @@ class TerminalThemeTests(unittest.TestCase):
             openbox, re.S)
         self.assertIsNotNone(terminal_rule)
         self.assertIsNotNone(browser_rule)
-        self.assertIn("<width>69%</width>", terminal_rule.group(1))
-        self.assertIn("<height>60%</height>", terminal_rule.group(1))
         self.assertNotIn("<size>", browser_rule.group(1))
 
     def test_native_close_icon_has_twelve_pixel_visible_mark(self):

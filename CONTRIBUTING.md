@@ -106,16 +106,17 @@ Use a Python virtual environment if your distribution manages the system
 interpreter. Scheduling uses the system IANA time-zone database (`tzdata` on
 Linux); the Alpine image includes it.
 
-Windows contributors can open the configured distribution, change to the
-repository's mounted Windows path, and run the same checks:
+Windows contributors can run the same checks from PowerShell after installing
+the Python requirements in the configured WSL distribution:
 
 ```powershell
-wsl -d Ubuntu
+.\scripts\test.ps1
 ```
 
-```sh
-cd /mnt/c/path/to/aios
-bash scripts/test.sh
+Use `-Distro` if the test environment is in another distribution:
+
+```powershell
+.\scripts\test.ps1 -Distro Debian
 ```
 
 Before opening a pull request, confirm the intended files are included:

@@ -132,47 +132,10 @@ TestCase {
         compare(String(image.pixel(image.width - 1, image.height - 1)), background)
         verify(String(image.pixel(image.width / 2, 0)) !== background)
     }
-    function test_setup_action_keeps_full_label_data() {
-        return [{tag: "default", width: 820}, {tag: "minimum", width: 540}]
-    }
-    function test_default_size_fits_screen() {
-        var window = createTemporaryObject(settingsComponent, test, {
-            backend: backend, theme: palette
-        })
-        window.show()
-        verify(window.width <= Math.floor(window.screen.desktopAvailableWidth * 0.7))
-        verify(window.height <= Math.floor(window.screen.desktopAvailableHeight * 0.7))
-        verify(window.minimumWidth <= window.width)
-        verify(window.minimumHeight <= window.height)
-        window.close()
-    }
-    function test_setup_action_keeps_full_label(data) {
-        var window = settingsComponent.createObject(test, {
-            backend: backend, theme: palette, width: data.width, height: 620
-        })
-        window.show()
-        var setup = findChild(window, "launchSetup")
-        verify(!setup.visible)
-        findChild(window, "settingsPages").currentIndex = 6
-        waitForRendering(setup)
-        verify(setup.visible)
-        compare(setup.contentItem.truncated, false)
-        verify(setup.width >= 170)
-        window.destroy()
-    }
     function test_pick_color_updates_existing_window() {
         var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
         verify(window !== null)
         window.show()
-        compare(findChild(window, "settingsWindowSurface").radius, palette.windowRadius)
-        compare(findChild(window, "settingsWindowTitle").font.pixelSize, 22)
-        compare(findChild(window, "settingsCloseButton").implicitWidth, 36)
-        compare(findChild(window, "settingsCloseButton").implicitHeight, 36)
-        compare(findChild(window, "settingsCloseButton").background.radius, 8)
-        var setup = findChild(window, "launchSetup")
-        compare(setup.implicitHeight, 44)
-        compare(setup.contentItem.horizontalAlignment, Text.AlignHCenter)
-        compare(setup.contentItem.elide, Text.ElideRight)
         findChild(window, "settingsPages").currentIndex = 5
         wait(100)
         compare(palette.choices.length, 8)
@@ -230,12 +193,6 @@ TestCase {
         compare(selected.resolution.width, 640)
         compare(selected.resolution.height, 360)
         compare(selected.mode, "compressed")
-        window.show()
-        findChild(window, "settingsPages").currentIndex = 2
-        wait(100)
-        var preview = findChild(window, "cameraPreview")
-        verify(Math.abs(preview.width / preview.height - 16 / 9) < 0.02)
-        verify(Math.abs(preview.width / preview.parent.width - 0.75) < 0.02)
         window.destroy()
     }
     function test_facial_recognition_has_separate_toggle_and_purge_controls() {

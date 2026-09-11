@@ -19,6 +19,8 @@ docker run --rm --privileged --cgroupns=private \
     c++ tests/wayland_surface.cpp -o /usr/bin/gnome-calculator $(pkg-config --cflags --libs Qt6Gui)
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_MEDIA_BACKEND=gstreamer \
       /usr/lib/qt6/bin/qmltestrunner -input tests/qml
+    AIOS_APP_HOST_TEST_BINARY=/tmp/display-shell/aios-app-host PYTHONPATH=/workspace/apps \
+      python3 -m unittest tests.test_applications.ApplicationStoreTests.test_compiled_native_host_binary_ready_protocol_and_validation -v
     mkdir /tmp/aios-cgroup
     mount -t cgroup2 none /tmp/aios-cgroup
     mount --bind /tmp/aios-cgroup /sys/fs/cgroup

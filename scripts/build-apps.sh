@@ -10,8 +10,6 @@ python3 -m pip install --disable-pip-version-check --no-compile --no-deps \
   --only-binary=:all: --require-hashes --upgrade \
   --target "$DEST/usr/local/share/aios" -r "$ROOT/apps/requirements.txt"
 python3 "$ROOT/scripts/stage-codex.py" "$BUILD" "$DEST"
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_MEDIA_BACKEND=gstreamer \
-  /usr/lib/qt6/bin/qmltestrunner -input "$ROOT/tests/qml"
 git config --global --add safe.directory "$BUILD/llama"
 case "${AIOS_IDENTITY_BUILD:-0}" in
   0) embedded_display=OFF ;;
@@ -25,11 +23,6 @@ cmake -S "$ROOT/apps/shell" -B "$SHELL_BUILD" -G Ninja \
   -DAIOS_EMBEDDED_DISPLAY="$embedded_display" \
   -DAIOS_COMMIT="$AIOS_COMMIT" -DAIOS_BUILD_NUMBER="$AIOS_BUILD_NUMBER"
 cmake --build "$SHELL_BUILD" -j "${JOBS:-4}"
-(
-  cd "$ROOT"
-  AIOS_APP_HOST_TEST_BINARY="$SHELL_BUILD/aios-app-host" PYTHONPATH="$ROOT/apps" \
-    python3 -m unittest tests.test_applications.ApplicationStoreTests.test_compiled_native_host_binary_ready_protocol_and_validation -v
-)
 DESTDIR="$DEST" cmake --install "$SHELL_BUILD"
 rm -rf "$DEST/usr/local/share/aios/examples"
 cp -R "$ROOT/examples" "$DEST/usr/local/share/aios/examples"
