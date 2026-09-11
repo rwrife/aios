@@ -79,6 +79,17 @@ individual applications.
 - **Appearance:** chooses a theme color and enables or reduces background motion.
 - **About:** shows the AIOS version, build number, source commit, operating system,
   kernel, architecture, CPU and total memory.
+- **Date & Time:** reads and sets the actual guest system clock used by all
+  applications and chats. Refresh shows UTC and local time with the current
+  timezone. Enter a whole-second ISO date/time with `Z` or an explicit UTC offset,
+  for example `2026-09-11T07:30:00-07:00`; valid dates and UTC equivalents must be
+  in 2000-2099 with offsets within +/-14:00. This does not change the timezone.
+  Manual setting is blocked while a time-sync daemon is running; an administrator
+  must stop it first. AIOS attempts to save the UTC hardware clock and reports
+  whether that succeeded. A runtime-only change can be lost on reboot; a VM may
+  restore its host's time even after a successful save. The existing desktop OS
+  user's exact doas permission authorizes this fixed operation, not chat sign-in.
+  Clock errors stay visible and never imply a successful change.
 
 Configuration survives reboot on an installed system. Live sessions remain
 ephemeral. Audio/camera/Wi-Fi capabilities depend on the connected hardware and

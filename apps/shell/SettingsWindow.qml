@@ -71,7 +71,13 @@ Window {
         border.color: theme.line
     }
     // Add a section here and its page to the StackLayout below.
-    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
+    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts", "Date & Time"]
+    function openSection(section) {
+        if (section === "date_time") {
+            stopCameraPreview()
+            pages.currentIndex = 8
+        }
+    }
     component Action: Button {
         id: control
         hoverEnabled: true
@@ -116,7 +122,7 @@ Window {
     RowLayout {
         anchors.fill: parent; anchors.margins: 24; spacing: 24
         ColumnLayout {
-            Layout.preferredWidth: 170; Layout.minimumWidth: 170; Layout.fillHeight: true; spacing: 6
+            Layout.preferredWidth: 170; Layout.minimumWidth: Math.max(170, setupAction.implicitWidth); Layout.fillHeight: true; spacing: 6
             WindowTitle {
                 objectName: "settingsWindowTitle"
                 theme: settings.theme
@@ -125,20 +131,32 @@ Window {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 16
             }
-            Repeater {
-                model: settings.sections
-                Button {
-                    id: sectionButton
-                    required property string modelData; required property int index
-                    Layout.fillWidth: true; padding: 12
-                    Accessible.name: modelData; Accessible.role: Accessible.PageTab; Accessible.checked: pages.currentIndex === index
-                    contentItem: Text { text: modelData; color: pages.currentIndex === index ? theme.ink : theme.muted; font.pixelSize: 14 }
-                    background: Rectangle { radius: 6; color: pages.currentIndex === index || sectionButton.hovered ? theme.input : "transparent"; border.width: sectionButton.activeFocus ? 1 : 0; border.color: theme.accent }
-                    onClicked: { settings.stopCameraPreview(); pages.currentIndex = index }
+            ScrollView {
+                id: sectionScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: sectionScroll.availableWidth
+                    spacing: 4
+                    Repeater {
+                        objectName: "settingsSections"
+                        model: settings.sections
+                        Button {
+                            id: sectionButton
+                            required property string modelData; required property int index
+                            Layout.fillWidth: true; padding: 8
+                            Accessible.name: modelData; Accessible.role: Accessible.PageTab; Accessible.checked: pages.currentIndex === index
+                            contentItem: Text { text: modelData; color: pages.currentIndex === index ? theme.ink : theme.muted; font.pixelSize: 14 }
+                            background: Rectangle { radius: 6; color: pages.currentIndex === index || sectionButton.hovered ? theme.input : "transparent"; border.width: sectionButton.activeFocus ? 1 : 0; border.color: theme.accent }
+                            onClicked: { settings.stopCameraPreview(); pages.currentIndex = index }
+                        }
+                    }
                 }
             }
-            Item { Layout.fillHeight: true }
             Action {
+                id: setupAction
                 objectName: "launchSetup"
                 text: "Run setup wizard"
                 Accessible.name: "Run setup wizard"
@@ -357,36 +375,36 @@ Window {
                     }
                     Item { Layout.fillHeight: true }
                 }
+                ColumnLayout {
+                    spacing: 16
+                    Note { text: "Build and system information for this computer." }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: aboutDetails.implicitHeight + 32
+                        color: theme.input; radius: 8
+                        ColumnLayout {
+                            id: aboutDetails
+                            anchors.fill: parent; anchors.margins: 16; spacing: 12
+                            InfoRow { label: "AIOS version"; value: backend.systemInfo.version; fieldName: "aboutVersion" }
+                            InfoRow { label: "Build"; value: backend.systemInfo.build; fieldName: "aboutBuild" }
+                            InfoRow { label: "Commit"; value: backend.systemInfo.commit; fieldName: "aboutCommit" }
+                            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
+                            InfoRow { label: "Operating system"; value: backend.systemInfo.os; fieldName: "aboutOs" }
+                            InfoRow { label: "Kernel"; value: backend.systemInfo.kernel; fieldName: "aboutKernel" }
+                            InfoRow { label: "Architecture"; value: backend.systemInfo.architecture; fieldName: "aboutArchitecture" }
+                            InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
+                            InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+                AccountSettings { id: accountsPage; control: settings.profileControl }
+                DateTimeSettings { backend: settings.backend; theme: settings.theme; active: settings.visible && pages.currentIndex === 8 }
             }
-            Note { text: backend.status; visible: pages.currentIndex !== 0 && text.length > 0; font.pixelSize: 11 }
+            Note { text: backend.status; visible: pages.currentIndex !== 0 && pages.currentIndex !== 8 && text.length > 0; font.pixelSize: 11 }
         }
     }
     MediaDevices { id: devices }
-    AccountSettings { id: accountsPage; parent: pages; control: settings.profileControl }
-    ColumnLayout {
-        parent: pages
-        spacing: 16
-        Note { text: "Build and system information for this computer." }
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: aboutDetails.implicitHeight + 32
-            color: theme.input; radius: 8
-            ColumnLayout {
-                id: aboutDetails
-                anchors.fill: parent; anchors.margins: 16; spacing: 12
-                InfoRow { label: "AIOS version"; value: backend.systemInfo.version; fieldName: "aboutVersion" }
-                InfoRow { label: "Build"; value: backend.systemInfo.build; fieldName: "aboutBuild" }
-                InfoRow { label: "Commit"; value: backend.systemInfo.commit; fieldName: "aboutCommit" }
-                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line }
-                InfoRow { label: "Operating system"; value: backend.systemInfo.os; fieldName: "aboutOs" }
-                InfoRow { label: "Kernel"; value: backend.systemInfo.kernel; fieldName: "aboutKernel" }
-                InfoRow { label: "Architecture"; value: backend.systemInfo.architecture; fieldName: "aboutArchitecture" }
-                InfoRow { label: "CPU"; value: backend.systemInfo.cpu; fieldName: "aboutCpu" }
-                InfoRow { label: "Memory"; value: backend.systemInfo.memory; fieldName: "aboutMemory" }
-            }
-        }
-        Item { Layout.fillHeight: true }
-    }
     WindowBorder { theme: settings.theme }
     Camera {
         id: camera

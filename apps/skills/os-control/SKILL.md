@@ -1,8 +1,8 @@
 ---
 name: os-control
-description: Changes AIOS volume, mute, theme and reduced motion, opens sound/display/network settings, and starts native user authentication.
+description: Changes AIOS volume, mute, theme, reduced motion and machine date/time, opens native settings, and starts native user authentication.
 metadata:
-  aios-triggers: volume, mute, unmute, theme, reduced motion, sound settings, display settings, network settings, authenticate, sign in, log in
+  aios-triggers: volume, mute, unmute, theme, reduced motion, sound settings, display settings, network settings, date and time, date time, machine time, system clock, authenticate, sign in, log in
   aios-model: current
 ---
 
@@ -22,6 +22,24 @@ Theme keys: Ocean = `blue`, Lagoon = `teal`, Sage = `sage`, Amber = `amber`,
 Copper = `copper`, Rose = `rose`, Dusk = `violet`, Slate = `slate`.
 Use the returned `themes` list as the installed source of supported keys.
 Appearance is persisted and applied to the live desktop.
+
+For the machine clock, first call `{"action":"read","setting":"date_time"}`.
+Use `{"action":"set","setting":"date_time","value":"2026-09-11T14:30:00Z"}`
+to set the actual AIOS guest clock, not an application preference. Values must
+include seconds and `Z` or an explicit UTC offset such as `-07:00`, within
++/-14:00. Calendar dates and their UTC equivalents must be in 2000-2099.
+Never infer a timezone when the requested instant is ambiguous. This does not
+change the configured timezone. Readback includes UTC, local time, timezone,
+and running time-sync daemons. Manual changes are refused while sync is running;
+report that an administrator must stop it rather than bypassing the guard.
+The result includes `state`, `hardware_clock_saved`, and a persistence notice.
+If hardware-clock saving fails, the system clock still changed but may reset
+on reboot. VM RTC policy may override even a saved clock. Clock control is
+authorized only for the existing AIOS desktop OS user through a fixed helper,
+not granted by a chat sign-in. Report unavailable/denied/error results honestly;
+after a timeout, read before retrying because a change may already have applied.
+`{"action":"open","section":"date_time"}` requests the native Date & Time page
+on the ordinary desktop. The protected desktop reports it unavailable.
 
 For device selection, screen layout, or network connections, use `open` with
 `section` set to `sound`, `display`, or `network`. This opens the native panel;
