@@ -679,7 +679,7 @@ class QemuVM:
             if "return" in response:
                 return response["return"]
 
-    def screenshot(self, filename):
+    def screenshot(self, filename, *, require_visible=True):
         destination = self.artifacts / filename
         self.qmp("screendump", {"filename": str(destination.resolve())}, timeout=30)
         raw = destination.read_bytes()
@@ -694,7 +694,7 @@ class QemuVM:
         colors = {pixels[offset:offset + 3] for offset in range(0, len(pixels), 3)}
         visible = sum(max(pixels[offset:offset + 3]) > 32
                       for offset in range(0, len(pixels), 3))
-        if len(colors) < 16 or visible < width * height // 50:
+        if require_visible and (len(colors) < 16 or visible < width * height // 50):
             raise RuntimeError(f"QMP screenshot is black or blank: {destination}")
         return destination
 
@@ -735,7 +735,8 @@ def install(args, artifacts, deadline):
         console.expect(
             rb"Installation complete\. Shut down, remove the ISO/USB, then boot from disk\.",
             remaining(deadline, args.install_timeout))
-        screenshot = vm.screenshot("install-complete.ppm")
+        # The serial installer intentionally runs before the graphical session.
+        screenshot = vm.screenshot("install-complete.ppm", require_visible=False)
         status = vm.status()
         write_json(artifacts / "installation.json", {
             "disk": str(args.disk),
