@@ -106,8 +106,9 @@ Use a Python virtual environment if your distribution manages the system
 interpreter. Scheduling uses the system IANA time-zone database (`tzdata` on
 Linux); the Alpine image includes it.
 
-Windows contributors can run the same checks from PowerShell after installing
-the Python requirements in the configured WSL distribution:
+Windows contributors can run the complete source and display suites from
+PowerShell after installing the Python requirements in the configured WSL
+distribution:
 
 ```powershell
 .\scripts\test.ps1

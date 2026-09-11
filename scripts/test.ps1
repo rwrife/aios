@@ -20,9 +20,14 @@ try {
         throw 'WSL is required. Install WSL2 and a Linux distribution.'
     }
 
-    $testScript = Convert-ToWslPath (Join-Path $rootDir 'scripts\test.sh')
-    & wsl.exe -d $Distro --exec bash $testScript
-    exit $LASTEXITCODE
+    foreach ($relativePath in @('scripts\test.sh', 'scripts\test-identity-display.sh')) {
+        $testScript = Convert-ToWslPath (Join-Path $rootDir $relativePath)
+        & wsl.exe -d $Distro --exec bash $testScript
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    exit 0
 } catch {
     Write-Error $_ -ErrorAction Continue
     exit 1
