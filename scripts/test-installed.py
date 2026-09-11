@@ -163,32 +163,45 @@ def browser_acceptance():
         require({"installed-browser-one", "installed-browser-two"} <= sessions,
                 f"concurrent browser registrations missing: {registrations}")
         trees = descendants(first.process.pid) + descendants(second.process.pid)
+        browser_related = [
+            item for item in command_lines()
+            if item["uid"] == os.getuid()
+            and any("aios-browser" in argument
+                    or "QtWebEngineProcess" in argument
+                    or argument.startswith("--type=")
+                    for argument in item["argv"])
+        ]
+        by_pid = {item["pid"]: item for item in trees + browser_related}
+        trees = list(by_pid.values())
         command_text = "\n".join(" ".join(item["argv"]) for item in trees)
         require("--no-sandbox" not in command_text,
                 "Chromium sandbox was disabled in a browser process")
-        renderer_status = []
+        engine_status = []
         for item in trees:
-            if any("--type=renderer" in argument for argument in item["argv"]):
+            if any("QtWebEngineProcess" in argument for argument in item["argv"]):
                 status = Path(f"/proc/{item['pid']}/status").read_text()
                 fields = {}
                 for line in status.splitlines():
                     if ":" in line:
                         key, value = line.split(":", 1)
                         fields[key] = value.strip()
-                renderer_status.append({
+                engine_status.append({
                     "pid": item["pid"],
+                    "type": next((argument for argument in item["argv"]
+                                  if argument.startswith("--type=")), ""),
+                    "no_zygote_sandbox": "--no-zygote-sandbox" in item["argv"],
                     "no_new_privs": fields.get("NoNewPrivs"),
                     "seccomp": fields.get("Seccomp"),
                 })
-        require(renderer_status, "Chromium renderer process was not observed")
-        require(all(item["no_new_privs"] == "1" or item["seccomp"] == "2"
-                    for item in renderer_status),
-                f"Chromium renderer sandbox evidence missing: {renderer_status}")
+        require(len(engine_status) >= 2,
+                f"Chromium process separation was not observed: {trees}")
+        require(any(not item["no_zygote_sandbox"] for item in engine_status),
+                f"Chromium sandboxed zygote was not observed: {engine_status}")
         evidence = {
             "sessions": sorted(sessions),
             "isolated_cookies": True,
             "sandbox_disabled_flag_present": False,
-            "renderer_status": renderer_status,
+            "engine_status": engine_status,
             "browser_processes": trees,
         }
     finally:
@@ -329,6 +342,7 @@ evidence = {
     "database": {"path": str(database), "bytes": database.stat().st_size},
     "acknowledged": False,
 }
+time.sleep(6)
 encoded = base64.b64encode(
     json.dumps(evidence, ensure_ascii=False, sort_keys=True).encode()).decode()
 print("AIOS_EVIDENCE_FIRST:" + encoded, flush=True)
@@ -508,9 +522,340 @@ evidence = {
         "saved_run_and_result_preserved": True,
     },
 }
+time.sleep(6)
 encoded = base64.b64encode(
     json.dumps(evidence, ensure_ascii=False, sort_keys=True).encode()).decode()
 print("AIOS_EVIDENCE_SECOND:" + encoded, flush=True)
+'''
+
+REMINDER_ACCEPTANCE = r'''#!/usr/bin/env python3
+import base64
+from datetime import datetime, timedelta, timezone
+import http.server
+import json
+from pathlib import Path
+import subprocess
+import threading
+import time
+import uuid
+
+from aios import core, scheduled_jobs
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def request(action, **values):
+    return scheduled_jobs.request({"action": action, **values})
+
+
+def call(action, **values):
+    reply = request(action, **values)
+    require(reply.get("status") == "ok", f"{action} failed: {reply}")
+    return reply["result"]
+
+
+def execution(binding):
+    return {
+        "provider": binding["provider"],
+        "profile": binding["profile"],
+        "model": binding["model"],
+        "capabilities": [],
+        "timeout_seconds": 300,
+        "token_budget": 1024,
+        "tool_budget": 0,
+        "missed_run": "coalesce",
+    }
+
+
+def wait_run(run_id, timeout=360):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = call("read_result", run_id=run_id)
+        if value["state"] not in ("queued", "running"):
+            return value
+        time.sleep(0.2)
+    raise AssertionError(f"run did not finish: {run_id}")
+
+
+def run_now(job):
+    run = call("run_now", job_id=job["id"], expected_revision=job["revision"],
+               request_id=str(uuid.uuid4()))
+    return wait_run(run["id"])
+
+
+def window_state():
+    try:
+        clients = subprocess.run(
+            ["xprop", "-root", "_NET_CLIENT_LIST"],
+            check=True, capture_output=True, text=True, timeout=5).stdout.strip()
+        active = subprocess.run(
+            ["xprop", "-root", "_NET_ACTIVE_WINDOW"],
+            check=True, capture_output=True, text=True, timeout=5).stdout.strip()
+        return {"clients": clients, "active": active}
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return {"clients": "unavailable", "active": "unavailable"}
+
+
+class Provider(http.server.BaseHTTPRequestHandler):
+    requests = []
+
+    def log_message(self, *_):
+        pass
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        type(self).requests.append(body)
+        prompt = " ".join(
+            str(item.get("content", "")) for item in body["messages"]
+            if item.get("role") == "user")
+        answer = ("Remote recovery succeeded."
+                  if "RECOVERY" in prompt else "Remote installed answer.")
+        event = {
+            "choices": [{
+                "index": 0,
+                "delta": {"content": answer},
+                "finish_reason": "stop",
+            }]
+        }
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        self.wfile.write(
+            ("data: " + json.dumps(event) + "\n\ndata: [DONE]\n\n").encode())
+        self.wfile.flush()
+
+
+original = core.load_config()
+provider = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+provider.daemon_threads = True
+thread = threading.Thread(target=provider.serve_forever, daemon=True)
+thread.start()
+route_evidence = {}
+jobs = []
+try:
+    remote = dict(original)
+    remote.update({
+        "mode": "remote",
+        "url": f"http://127.0.0.1:{provider.server_port}/v1",
+        "model": "installed-remote",
+        "api_key": "installed-fixture-key",
+        "agent_mode": "current",
+    })
+    core.write_json(core.config_dir() / "config.json", remote)
+    remote_binding = call("binding", prompt="Run a remote installed acceptance.")
+    require(remote_binding["provider"] == "remote"
+            and remote_binding["model"] == "installed-remote",
+            f"remote route was not selected: {remote_binding}")
+    remote_job = call("create", config={
+        "title": "Remote route acceptance",
+        "prompt": "Return the remote installed acceptance.",
+        "schedule": {"kind": "cron", "value": "0 0 1 1 *", "zone": "UTC"},
+        "execution": execution(remote_binding),
+        "notification": {"mode": "all"},
+    })
+    jobs.append(remote_job)
+    remote_result = run_now(remote_job)
+    require(remote_result["state"] == "succeeded"
+            and remote_result["result"] == "Remote installed answer.",
+            f"remote route failed: {remote_result}")
+    call("acknowledge_result", run_id=remote_result["id"])
+
+    changed = dict(remote)
+    changed["model"] = "changed-model"
+    core.write_json(core.config_dir() / "config.json", changed)
+    changed_result = run_now(remote_job)
+    require(changed_result["state"] == "needs_user_action",
+            f"changed binding did not require user action: {changed_result}")
+    paused = call("get", job_id=remote_job["id"])
+    require(not paused["enabled"], "changed binding did not pause the job")
+    changed_unread = [
+        item for item in call("unread", limit=50)
+        if item["run_id"] == changed_result["id"]]
+    require(len(changed_unread) == 1,
+            f"changed binding did not create one deduplicated notice: {changed_unread}")
+    core.write_json(core.config_dir() / "config.json", remote)
+    resumed = call("resume", job_id=paused["id"], expected_revision=paused["revision"])
+    recovered = run_now(resumed)
+    require(recovered["state"] == "succeeded"
+            and recovered["result"] == "Remote installed answer.",
+            f"changed binding did not recover: {recovered}")
+    call("acknowledge_result", run_id=changed_result["id"])
+    call("acknowledge_result", run_id=recovered["id"])
+
+    missing = dict(remote)
+    missing["api_key"] = ""
+    missing_job = call("create", config={
+        "title": "Missing credential acceptance",
+        "prompt": "RECOVERY",
+        "schedule": {"kind": "cron", "value": "0 0 1 1 *", "zone": "UTC"},
+        "execution": execution(remote_binding),
+        "notification": {"mode": "all"},
+    })
+    jobs.append(missing_job)
+    core.write_json(core.config_dir() / "config.json", missing)
+    missing_result = run_now(missing_job)
+    require(missing_result["state"] == "needs_user_action",
+            f"missing credentials did not require user action: {missing_result}")
+    missing_paused = call("get", job_id=missing_job["id"])
+    require(not missing_paused["enabled"], "missing credentials did not pause the job")
+    core.write_json(core.config_dir() / "config.json", remote)
+    missing_resumed = call(
+        "resume", job_id=missing_paused["id"],
+        expected_revision=missing_paused["revision"])
+    missing_recovered = run_now(missing_resumed)
+    require(missing_recovered["state"] == "succeeded"
+            and missing_recovered["result"] == "Remote recovery succeeded.",
+            f"credential recovery failed: {missing_recovered}")
+    call("acknowledge_result", run_id=missing_result["id"])
+    call("acknowledge_result", run_id=missing_recovered["id"])
+
+    subscription = dict(original)
+    subscription.update({"mode": "chatgpt", "subscription_model": "installed-subscription"})
+    core.write_json(core.config_dir() / "config.json", subscription)
+    subscription_binding = call("binding", prompt="Run a subscription acceptance.")
+    require(subscription_binding["provider"] == "subscription",
+            f"subscription route was not selected: {subscription_binding}")
+    subscription_job = call("create", config={
+        "title": "Subscription route acceptance",
+        "prompt": "Return the subscription acceptance.",
+        "schedule": {"kind": "cron", "value": "0 0 1 1 *", "zone": "UTC"},
+        "execution": execution(subscription_binding),
+        "notification": {"mode": "all"},
+    })
+    jobs.append(subscription_job)
+    subscription_result = run_now(subscription_job)
+    require(subscription_result["state"] == "needs_user_action",
+            f"signed-out subscription did not require user action: {subscription_result}")
+    require("Sign in with ChatGPT" in subscription_result["error"],
+            f"subscription error was not clear: {subscription_result}")
+    call("acknowledge_result", run_id=subscription_result["id"])
+    route_evidence = {
+        "remote_binding": remote_binding,
+        "remote_result": remote_result,
+        "changed_binding": changed_result,
+        "changed_binding_notice_count": len(changed_unread),
+        "changed_binding_recovery": recovered,
+        "missing_credentials": missing_result,
+        "missing_credentials_recovery": missing_recovered,
+        "subscription_binding": subscription_binding,
+        "subscription_missing_account": subscription_result,
+        "provider_request_count": len(Provider.requests),
+        "silent_fallback": False,
+    }
+finally:
+    local = dict(original)
+    local.update({
+        "mode": "local",
+        "model": "local",
+        "api_key": "",
+        "subscription_model": "",
+        "agent_mode": "current",
+    })
+    core.write_json(core.config_dir() / "config.json", local)
+    provider.shutdown()
+    provider.server_close()
+    thread.join()
+
+health = call("health")
+require(health["zone"] == "America/Los_Angeles",
+        f"configured IANA zone was not discovered: {health}")
+phrase = "remind me in 10 minutes that I need to leave"
+binding = call("binding", prompt=phrase)
+require(binding["provider"] == "local",
+        f"reminder did not return to the configured local route: {binding}")
+target = datetime.now(timezone.utc) + timedelta(minutes=10)
+due = target.replace(second=0, microsecond=0)
+if due < target:
+    due += timedelta(minutes=1)
+schedule = {
+    "kind": "once",
+    "value": due.isoformat().replace("+00:00", "Z"),
+    "zone": health["zone"],
+}
+preview = call("preview", schedule=schedule)
+require(
+    len(preview) == 1
+    and datetime.fromisoformat(preview[0]["utc"].replace("Z", "+00:00")) == due,
+        f"one-shot reminder preview was incorrect: {preview}")
+reminder = call("create", config={
+    "title": "Leave reminder",
+    "prompt": "Remind me that I need to leave. Reply with one concise notice.",
+    "context": "",
+    "conversation": "",
+    "schedule": schedule,
+    "execution": execution(binding),
+    "notification": {"mode": "all"},
+})
+jobs.append(reminder)
+require(
+    reminder["schedule"]["kind"] == "once"
+    and reminder["schedule"]["zone"] == schedule["zone"]
+    and datetime.fromisoformat(
+        reminder["schedule"]["value"].replace("Z", "+00:00")) == due,
+    f"reminder readback changed: {reminder}")
+require(datetime.fromisoformat(reminder["next_due"].replace("Z", "+00:00")) == due,
+        f"reminder due time changed: {reminder}")
+require(reminder["conversation"] == "",
+        "reminder retained a source-chat dependency")
+before_windows = window_state()
+
+deadline = time.monotonic() + 780
+reminder_result = None
+while time.monotonic() < deadline:
+    runs = call("list_runs", job_id=reminder["id"], limit=10)
+    if runs:
+        value = call("read_result", run_id=runs[0]["id"])
+        if value["state"] not in ("queued", "running"):
+            reminder_result = value
+            break
+    time.sleep(1)
+require(reminder_result is not None, "ten-minute reminder did not run at its due time")
+require(reminder_result["state"] == "succeeded",
+        f"ten-minute reminder failed: {reminder_result}")
+require(0 < len(reminder_result["result"].strip()) <= 240,
+        f"reminder notice was not concise: {reminder_result['result']!r}")
+unread = call("unread", limit=50)
+require(any(item["run_id"] == reminder_result["id"] for item in unread),
+        "reminder result did not create unread orb feedback")
+after_windows = window_state()
+require(before_windows == after_windows,
+        f"background reminder stole focus or opened a window: {before_windows} -> {after_windows}")
+
+state_path = core.data_dir() / "installed-reminder-acceptance.json"
+state = {
+    "job_id": reminder["id"],
+    "run_id": reminder_result["id"],
+    "result": reminder_result["result"],
+}
+core.write_json(state_path, state)
+evidence = {
+    "phase": "installed-reminder",
+    "phrase": phrase,
+    "configured_zone": health["zone"],
+    "schedule": schedule,
+    "preview": preview,
+    "saved_job": reminder,
+    "source_chat_closed": True,
+    "result": reminder_result,
+    "concise_notice": True,
+    "unread_run_ids": [item["run_id"] for item in unread],
+    "window_state_before": before_windows,
+    "window_state_after": after_windows,
+    "no_focus_steal_or_automatic_chat": True,
+    "route_recovery": route_evidence,
+    "missing_zone_behavior": "First installed boot returned zone=null; clients must ask.",
+    "suspend_power_behavior": (
+        "AIOS does not hardware-wake. While suspended or powered off, execution waits "
+        "for resume/boot and the configured missed-run policy applies."
+    ),
+}
+time.sleep(6)
+encoded = base64.b64encode(
+    json.dumps(evidence, ensure_ascii=False, sort_keys=True).encode()).decode()
+print("AIOS_EVIDENCE_REMINDER:" + encoded, flush=True)
 '''
 
 
@@ -531,9 +876,22 @@ def parse_args():
     parser.add_argument("--shutdown-timeout", type=int, default=120)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--qemu-img", default="qemu-img")
+    parser.add_argument(
+        "--reuse-installed", action="store_true",
+        help="Skip disk creation and installation; validate an existing installed qcow2")
+    parser.add_argument(
+        "--reminder-only", action="store_true",
+        help="With --reuse-installed, run only provider and reminder acceptance")
+    parser.add_argument(
+        "--capture-reminder-only", action="store_true",
+        help="With --reuse-installed, capture an already delivered reminder")
     args = parser.parse_args()
     if args.memory_mb < 2048 or args.cpus < 1:
         parser.error("memory must be at least 2048 MiB and CPUs must be positive")
+    if (args.reminder_only or args.capture_reminder_only) and not args.reuse_installed:
+        parser.error("reminder-only modes require --reuse-installed")
+    if args.reminder_only and args.capture_reminder_only:
+        parser.error("choose only one reminder-only mode")
     for name in ("total_timeout", "install_timeout", "boot_timeout",
                  "acceptance_timeout", "shutdown_timeout"):
         if getattr(args, name) <= 0:
@@ -855,6 +1213,30 @@ class QemuVM:
     def status(self):
         return self.qmp("query-status")
 
+    def click(self, x, y, *, width=1280, height=800):
+        self.qmp("input-send-event", {"events": [
+            {"type": "abs", "data": {"axis": "x", "value": round(x * 32767 / width)}},
+            {"type": "abs", "data": {"axis": "y", "value": round(y * 32767 / height)}},
+        ]})
+        self.qmp("input-send-event", {"events": [
+            {"type": "btn", "data": {"button": "left", "down": True}},
+        ]})
+        time.sleep(0.1)
+        self.qmp("input-send-event", {"events": [
+            {"type": "btn", "data": {"button": "left", "down": False}},
+        ]})
+
+    def move_pointer(self, x, y, *, width=1280, height=800):
+        self.qmp("input-send-event", {"events": [
+            {"type": "abs", "data": {"axis": "x", "value": round(x * 32767 / width)}},
+            {"type": "abs", "data": {"axis": "y", "value": round(y * 32767 / height)}},
+        ]})
+
+    def send_keys(self, *keys):
+        self.qmp("send-key", {
+            "keys": [{"type": "qcode", "data": key} for key in keys],
+        })
+
     def wait_for_exit(self, timeout):
         try:
             return self.process.wait(timeout=min(timeout, remaining(self.deadline, timeout)))
@@ -911,6 +1293,14 @@ def installed_boot(args, artifacts, deadline, phase, script, marker, evidence_na
     with QemuVM(args, phase, artifacts, deadline) as vm:
         console = vm.console
         login_root(console, remaining(deadline, args.boot_timeout))
+        if phase == "installed-first":
+            console.run(
+                "install -d -o aios -g aios -m 700 /home/aios/.config/aios && "
+                "printf '[General]\\ndismissed=true\\n' "
+                "> /home/aios/.config/aios/setup.conf && "
+                "chown aios:aios /home/aios/.config/aios/setup.conf && "
+                "chmod 600 /home/aios/.config/aios/setup.conf",
+                timeout=10)
         remote_path = f"/home/aios/.local/state/aios/{phase}-acceptance.py"
         console.run(
             "install -d -o aios -g aios -m 700 /home/aios/.local/state/aios",
@@ -925,6 +1315,94 @@ def installed_boot(args, artifacts, deadline, phase, script, marker, evidence_na
             "screenshot": screenshot.name,
         }
         write_json(artifacts / evidence_name, evidence)
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(f"{phase} VM exited with status {exit_code}")
+
+
+def reminder_boot(args, artifacts, deadline):
+    phase = "installed-reminder"
+    with QemuVM(args, phase, artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        console.run("printf '%s\\n' America/Los_Angeles > /etc/timezone", timeout=10)
+        time.sleep(2)
+        vm.send_keys("alt", "f4")
+        time.sleep(2)
+        remote_path = "/home/aios/.local/state/aios/installed-reminder-acceptance.py"
+        console.run(
+            "install -d -o aios -g aios -m 700 /home/aios/.local/state/aios",
+            timeout=30)
+        console.upload_text(
+            remote_path, REMINDER_ACCEPTANCE,
+            timeout=remaining(deadline, args.acceptance_timeout))
+        evidence = console.execute_as_aios(
+            remote_path, "AIOS_EVIDENCE_REMINDER",
+            remaining(deadline, args.acceptance_timeout))
+        vm.move_pointer(50, 50)
+        time.sleep(2)
+        unread = vm.screenshot("reminder-unread.ppm")
+        vm.click(640, 724)
+        time.sleep(2)
+        inbox = vm.screenshot("reminder-inbox.ppm")
+        # The newest unread reminder is the first inbox row; View is its explicit action.
+        vm.click(270, 326)
+        time.sleep(3)
+        result = vm.screenshot("reminder-result.ppm")
+        evidence["host_capture"] = {
+            "qmp_status_before_poweroff": vm.status(),
+            "screenshots": [unread.name, inbox.name, result.name],
+            "orb_click": {"x": 640, "y": 724},
+            "result_click": {"x": 270, "y": 326},
+        }
+        write_json(artifacts / "reminder.json", evidence)
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(f"{phase} VM exited with status {exit_code}")
+
+
+def capture_reminder_boot(args, artifacts, deadline):
+    with QemuVM(args, "installed-reminder-prep", artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        console.run(
+            "install -d -o aios -g aios -m 700 /home/aios/.config/aios && "
+            "printf '[General]\\ndismissed=true\\n' "
+            "> /home/aios/.config/aios/setup.conf && "
+            "chown aios:aios /home/aios/.config/aios/setup.conf && "
+            "chmod 600 /home/aios/.config/aios/setup.conf",
+            timeout=10)
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(
+                f"installed-reminder-prep VM exited with status {exit_code}")
+
+    phase = "installed-reminder-capture"
+    with QemuVM(args, phase, artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        state = console.run(
+            "cat /home/aios/.local/share/aios/installed-reminder-acceptance.json",
+            timeout=10)
+        vm.move_pointer(50, 50)
+        time.sleep(8)
+        unread = vm.screenshot("reminder-unread.ppm")
+        vm.click(640, 724)
+        time.sleep(2)
+        inbox = vm.screenshot("reminder-inbox.ppm")
+        vm.click(270, 326)
+        time.sleep(3)
+        result = vm.screenshot("reminder-result.ppm")
+        write_json(artifacts / "reminder-capture.json", {
+            "saved_state_output": state,
+            "screenshots": [unread.name, inbox.name, result.name],
+            "orb_click": {"x": 640, "y": 724},
+            "result_click": {"x": 270, "y": 326},
+            "qmp_status_before_poweroff": vm.status(),
+        })
         console.send_line("poweroff")
         exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
         if exit_code != 0:
@@ -967,15 +1445,18 @@ def main():
     if not args.disk.parent.is_dir():
         raise FileNotFoundError(
             f"qcow2 parent directory does not exist: {args.disk.parent}")
-    if args.disk.exists() or args.disk.is_symlink():
+    if args.reuse_installed and not args.disk.is_file():
+        raise FileNotFoundError(f"installed qcow2 does not exist: {args.disk}")
+    if not args.reuse_installed and (args.disk.exists() or args.disk.is_symlink()):
         mode = args.disk.lstat().st_mode
         if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode)):
             raise RuntimeError(
                 f"refusing to replace non-file disk path: {args.disk}")
         args.disk.unlink()
-    subprocess.run(
-        [args.qemu_img, "create", "-f", "qcow2", str(args.disk), args.disk_size],
-        check=True)
+    if not args.reuse_installed:
+        subprocess.run(
+            [args.qemu_img, "create", "-f", "qcow2", str(args.disk), args.disk_size],
+            check=True)
 
     deadline = time.monotonic() + args.total_timeout
     summary = {
@@ -988,8 +1469,38 @@ def main():
     }
     write_json(artifacts / "summary.json", summary)
     try:
-        print(f"Installing {args.iso.name} into {args.disk} ...", flush=True)
-        install(args, artifacts, deadline)
+        if args.capture_reminder_only:
+            print("Capturing delivered reminder UI ...", flush=True)
+            capture_reminder_boot(args, artifacts, deadline)
+            summary.update(
+                status="passed",
+                completed_unix=time.time(),
+                evidence=["reminder-capture.json"],
+                screenshots=[
+                    "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm"],
+            )
+            write_json(artifacts / "summary.json", summary)
+            print(f"PASS: delivered reminder UI capture ({artifacts})", flush=True)
+            return
+        if args.reminder_only:
+            print("Validating provider recovery and the ten-minute reminder ...", flush=True)
+            reminder_boot(args, artifacts, deadline)
+            summary.update(
+                status="passed",
+                completed_unix=time.time(),
+                evidence=["reminder.json"],
+                screenshots=[
+                    "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm"],
+            )
+            write_json(artifacts / "summary.json", summary)
+            print(
+                f"PASS: provider recovery and reminder delivery ({artifacts})",
+                flush=True,
+            )
+            return
+        if not args.reuse_installed:
+            print(f"Installing {args.iso.name} into {args.disk} ...", flush=True)
+            install(args, artifacts, deadline)
         print("Validating first installed boot and local scheduled run ...", flush=True)
         installed_boot(
             args, artifacts, deadline, "installed-first",
@@ -998,6 +1509,8 @@ def main():
         installed_boot(
             args, artifacts, deadline, "installed-second",
             SECOND_ACCEPTANCE, "AIOS_EVIDENCE_SECOND", "second-boot.json")
+        print("Validating provider recovery and the ten-minute reminder ...", flush=True)
+        reminder_boot(args, artifacts, deadline)
     except BaseException as error:
         summary.update(status="failed", completed_unix=time.time(),
                        error=f"{type(error).__name__}: {error}")
@@ -1006,13 +1519,17 @@ def main():
     summary.update(
         status="passed",
         completed_unix=time.time(),
-        evidence=["installation.json", "first-boot.json", "second-boot.json"],
-        screenshots=["install-complete.ppm", "installed-first.ppm", "installed-second.ppm"],
+        evidence=[
+            "installation.json", "first-boot.json", "second-boot.json", "reminder.json"],
+        screenshots=[
+            "install-complete.ppm", "installed-first.ppm", "installed-second.ppm",
+            "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm"],
     )
     write_json(artifacts / "summary.json", summary)
     print(
         "PASS: real install, installed boot, local scheduled run, reboot persistence, "
-        f"scheduler restart, and delete semantics ({artifacts})",
+        "scheduler restart, browser isolation, provider recovery, reminder delivery, "
+        f"and delete semantics ({artifacts})",
         flush=True,
     )
 
