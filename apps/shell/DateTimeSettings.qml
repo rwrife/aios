@@ -12,11 +12,11 @@ ScrollView {
     readonly property bool syncing: (state.sync_daemons || []).length > 0
     clip: true
     contentWidth: availableWidth
-    onActiveChanged: if (active) backend.clockRequest()
+    onActiveChanged: if (active) { instant.text = ""; backend.clockRequest() }
     Connections {
         target: page.backend
         function onClockChanged() {
-            if (!instant.text && page.available) instant.text = page.state.utc
+            if (!page.backend.clockBusy && !instant.text && page.available) instant.text = page.state.utc
         }
     }
     component Note: Text {
@@ -48,8 +48,8 @@ ScrollView {
     }
     ColumnLayout {
         width: page.availableWidth
-        spacing: 16
-        Note { text: "Read or change this machine's system clock. All applications and chats use this clock." }
+        spacing: 12
+        Note { text: "Changes apply to every application and chat on this machine." }
         Text {
             Layout.fillWidth: true
             text: page.available ? page.state.utc : "Clock unavailable"
@@ -94,7 +94,7 @@ ScrollView {
                 border.color: instant.activeFocus ? page.theme.accent : page.theme.line
             }
         }
-        Note { text: "Use YYYY-MM-DDTHH:MM:SSZ for UTC, or an explicit offset such as 2026-09-11T07:30:00-07:00. Supported years: 2000-2099. This does not change the system timezone." }
+        Note { text: "Use YYYY-MM-DDTHH:MM:SSZ (UTC), or an offset such as -07:00. Years: 2000-2099. The system timezone is unchanged." }
         Action {
             objectName: "applyClock"
             text: "Set machine time"

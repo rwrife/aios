@@ -53,6 +53,11 @@ class IdentityImageTests(unittest.TestCase):
                                cwd=root, env=env, check=True, capture_output=True)
                 with tarfile.open(root / 'aios.apkovl.tar.gz') as archive:
                     world = archive.extractfile('./etc/apk/world').read().decode().splitlines()
+                    clock = archive.getmember('./usr/local/sbin/aios-clock')
+                    self.assertEqual((clock.uid, clock.gid, clock.mode), (0, 0, 0o755))
+                    self.assertTrue(archive.extractfile(clock).read().startswith(b'#!/usr/bin/python3 -I\n'))
+                    policy = archive.getmember('./etc/doas.d/aios.conf')
+                    self.assertEqual((policy.uid, policy.gid, policy.mode), (0, 0, 0o644))
                 self.assertEqual('bubblewrap' in world, enabled)
                 self.assertEqual('cryptsetup' in world, enabled)
                 self.assertFalse(any(line.startswith('# Optional') for line in world))

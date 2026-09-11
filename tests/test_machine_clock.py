@@ -1,4 +1,5 @@
 import datetime
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -129,3 +130,16 @@ class ClockServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not changed"):
                 self.service.handle({"action": "set", "value": "2026-09-11T14:30:00Z"})
             rtc.assert_not_called()
+
+    def test_helper_refuses_non_guest_hosts_and_arguments(self):
+        for argv, uid, release in ((["aios-clock", "set"], 0, "ID=aios\n"),
+                                   (["aios-clock"], 1000, "ID=aios\n"),
+                                   (["aios-clock"], 0, "ID=ubuntu\n")):
+            with mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(self.service.os, "geteuid", return_value=uid), \
+                    mock.patch.object(Path, "read_text", return_value=release), \
+                    mock.patch.object(self.service, "handle") as handle, \
+                    mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+                self.assertEqual(self.service.main(), 1)
+                self.assertIn("error", json.loads(output.getvalue()))
+                handle.assert_not_called()
