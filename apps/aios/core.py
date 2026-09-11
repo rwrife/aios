@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import shutil
+import sys
 import time
 from pathlib import Path
 import urllib.error
@@ -199,8 +200,37 @@ def model_name(profile="current"):
     raise ValueError("Unknown model profile.")
 
 
-def request(route, body=None, timeout=90, profile="current"):
-    config = load_config()
+class _LeasedResponse:
+    def __init__(self, response, lease):
+        self.response = response
+        self.lease = lease
+
+    def __getattr__(self, name):
+        return getattr(self.response, name)
+
+    def __iter__(self):
+        return iter(self.response)
+
+    def __enter__(self):
+        return self.response
+
+    def __exit__(self, kind, error, traceback):
+        lease, self.lease = self.lease, None
+        if lease is None:
+            return
+        try:
+            self.response.close()
+        except BaseException:
+            lease.__exit__(*sys.exc_info())
+            raise
+        lease.__exit__(kind, error, traceback)
+
+    def close(self):
+        self.__exit__(None, None, None)
+
+
+def request(route, body=None, timeout=90, profile="current", *, config=None, background=False):
+    config = load_config() if config is None else config
     local = False
     if profile == "current":
         if config["mode"] == "chatgpt":
@@ -223,9 +253,27 @@ def request(route, body=None, timeout=90, profile="current"):
             headers=headers,
             data=json.dumps(body).encode() if body is not None else None,
         )
-        opener = urllib.request.build_opener(NoRedirect)
+        handlers = [NoRedirect]
+        if local:
+            handlers.append(urllib.request.ProxyHandler({}))
+        opener = urllib.request.build_opener(*handlers)
     except ValueError:
         raise RuntimeError(SAFE_REQUEST_VALUE_ERROR) from None
+    lease = None
+    if local:
+        from .local_runtime import admission
+        lease = admission(config, background=background, timeout=timeout)
+        timeout = min(timeout, lease.__enter__())
+    try:
+        response = _open_request(opener, req, timeout, local)
+        return _LeasedResponse(response, lease) if lease is not None else response
+    except BaseException:
+        if lease is not None:
+            lease.__exit__(*sys.exc_info())
+        raise
+
+
+def _open_request(opener, req, timeout, local):
     deadline = time.monotonic() + min(timeout, LOCAL_CONNECT_RETRY_SECONDS)
     while True:
         try:
@@ -250,15 +298,21 @@ def request(route, body=None, timeout=90, profile="current"):
             raise RuntimeError("Cannot reach the model. Check your connection and model service.") from None
 
 
-def sse_events(stream):
+def sse_events(stream, *, limit=None):
     # HTTPResponse iterates complete lines even when TCP splits a UTF-8 character.
     data = []
-    for raw in stream:
+    size = 0
+    lines = stream if limit is None else iter(lambda: stream.readline(limit + 1), b'')
+    for raw in lines:
+        size += len(raw)
+        if limit is not None and size > limit:
+            raise RuntimeError("The model response event was too large.")
         line = raw.decode("utf-8").rstrip("\r\n")
         if not line:
             if data:
                 yield "\n".join(data)
                 data = []
+            size = 0
         elif line.startswith("data:"):
             data.append(line[5:].lstrip(" "))
     if data:

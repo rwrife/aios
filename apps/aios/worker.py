@@ -56,8 +56,15 @@ def handle(request):
         tool_socket = request.get("tool_socket")
         if isinstance(tool_socket, str) and tool_socket:
             from .agent import chat as agent_chat
-            for event in agent_chat(request["messages"], tool_socket):
+            background = None
+            if 'background' in request:
+                from .scheduled_execution import BackgroundContext
+                background = BackgroundContext(request['background'])
+            options = {'background': background} if background is not None else {}
+            for event in agent_chat(request["messages"], tool_socket, **options):
                 print(json.dumps(event), flush=True)
+            if background is not None:
+                emit('usage', usage={**background.usage, 'tool_calls': background.tool_calls})
         else:
             for text in chat(request["messages"]):
                 emit("token", text=text)
@@ -72,6 +79,10 @@ def main():
     try:
         handle(json.loads(sys.stdin.readline()))
     except Exception as exc:
+        from .scheduled_execution import NeedsUserAction
+        if isinstance(exc, NeedsUserAction):
+            emit("needs_user_action", text=str(exc))
+            sys.exit(1)
         # Network helpers intentionally exclude server bodies and credentials.
         emit("error", text=str(exc) if isinstance(exc, (ValueError, RuntimeError)) else "Unable to complete the request. Check configuration and available storage.")
         sys.exit(1)

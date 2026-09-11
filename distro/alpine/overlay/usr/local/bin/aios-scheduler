@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+export PYTHONPATH=/usr/local/share/aios
+exec /usr/bin/python3 -m aios.scheduler "$@"

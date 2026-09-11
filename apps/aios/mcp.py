@@ -722,7 +722,9 @@ class McpRegistry:
         definitions_timeout=15,
         failure_cooldown=DEFAULT_FAILURE_COOLDOWN,
         clock=time.monotonic,
+        allowed_tools=None,
     ):
+        self.allowed_tools = None if allowed_tools is None else frozenset(allowed_tools)
         self.config_path = _config_path(config_path)
         self.request_timeout = request_timeout
         self.definitions_timeout = definitions_timeout
@@ -770,6 +772,10 @@ class McpRegistry:
 
     def _definitions(self):
         servers, warnings = _load_servers(self.config_path)
+        if self.allowed_tools is not None:
+            servers = [(name, settings) for name, settings in servers
+                       if any(tool != '*' and _exposed_name(name, tool) in self.allowed_tools
+                              for tool in settings['tools'])]
         deadline = time.monotonic() + self.definitions_timeout
         active = {name for name, _ in servers}
         for name in list(self._clients):
@@ -821,6 +827,8 @@ class McpRegistry:
             invalid = False
             for tool in selected:
                 exposed = _exposed_name(name, tool["name"])
+                if self.allowed_tools is not None and exposed not in self.allowed_tools:
+                    continue
                 if not exposed or exposed in pending_map:
                     invalid = True
                     break
