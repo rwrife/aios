@@ -11,6 +11,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class RunLauncherTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "Linux launcher requires bash")
+    def test_linux_defaults_show_window_and_boot_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            iso = Path(directory) / "test-x86_64.iso"
+            iso.touch()
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith("AIOS_")}
+            env["DRY_RUN"] = "1"
+            args = shlex.split(subprocess.check_output(
+                ["bash", str(ROOT / "scripts/run.sh"), str(iso)],
+                env=env, text=True,
+            ))
+            self.assertEqual(args[args.index("-display") + 1],
+                             "gtk,full-screen=off,zoom-to-fit=on")
+            self.assertEqual(args[args.index("-serial") + 1], "mon:stdio")
+            self.assertEqual(args.count("-serial"), 1)
+
+    @unittest.skipUnless(os.name == "nt", "Native launcher requires Windows PowerShell")
+    def test_native_defaults_show_window_and_boot_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            iso = Path(directory) / "test-x86_64.iso"
+            iso.touch()
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith("AIOS_")}
+            command = subprocess.check_output(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-File", str(ROOT / "scripts/run.ps1"), str(iso),
+                 "-Native", "-DryRun"], env=env, text=True,
+            )
+            self.assertIn("'-display' 'sdl,full-screen=off'", command)
+            self.assertIn("'-serial' 'mon:stdio'", command)
+            self.assertEqual(command.count("'-serial'"), 1)
+
+    @unittest.skipUnless(os.name == "posix", "Linux launcher requires bash")
     def test_linux_name_and_serial(self):
         with tempfile.TemporaryDirectory() as directory:
             iso = Path(directory) / "test image-x86_64.iso"
@@ -27,6 +60,7 @@ class RunLauncherTests(unittest.TestCase):
                     ))
                     self.assertEqual(args[args.index("-name") + 1], "Boot check,, Ocean")
                     self.assertEqual(args[args.index("-serial") + 1], "file:/tmp/boot.log")
+                    self.assertEqual(args.count("-serial"), 1)
                     self.assertEqual(args[args.index("-cdrom") + 1], str(iso))
             env.pop("AIOS_VM_NAME")
             args = shlex.split(subprocess.check_output(
@@ -52,6 +86,7 @@ class RunLauncherTests(unittest.TestCase):
                     )
                     self.assertIn("'-name' 'Boot check,, Ocean'", command)
                     self.assertIn(r"'-serial' 'file:C:\Temp\boot.log'", command)
+                    self.assertEqual(command.count("'-serial'"), 1)
                     self.assertIn(str(iso), command)
 
 
