@@ -28,6 +28,9 @@ available. The built-in `os_settings` tool works without MCP configuration.
 | Mute | `{"action":"set","setting":"muted","value":true}` | Changes default output mute independently of volume |
 | Set Ocean theme | `{"action":"set","setting":"theme_color","value":"blue"}` | Saves configuration and updates live shell appearance |
 | Reduce motion | `{"action":"set","setting":"reduced_motion","value":true}` | Saves configuration and updates the shell |
+| Read machine clock | `{"action":"read","setting":"date_time"}` | Guest UTC/local time, timezone, running sync daemons, accepted range and persistence semantics |
+| Set machine clock | `{"action":"set","setting":"date_time","value":"2026-09-11T14:30:00Z"}` | Changes the guest kernel clock, attempts to save UTC hardware clock, returns actual `state`, `hardware_clock_saved` and `notice` |
+| Open Date & Time | `{"action":"open","section":"date_time"}` | Requests the native page on the ordinary desktop; unavailable on the protected desktop |
 | Open network settings | `{"action":"open","section":"network"}` | Reports whether the native panel launched; also supports `sound` and `display` |
 | Start sign-in | `{"action":"authenticate"}` | Opens this chat's native profile picker; reports `awaiting_user` or `unavailable` |
 | Check sign-in | `{"action":"authentication_status"}` | Reports completion after the native UI emits its successful unlock event |
@@ -50,6 +53,29 @@ authorization. The model never supplies the PIN. While the user is choosing a
 profile or entering a PIN, return control to them rather than polling. A
 cancelled picker may remain `awaiting_user`; that never means authentication
 succeeded. Identity changes and privacy loss clear completion status.
+
+Date/time uses the same fixed guest adapter as the Settings page. Input is
+`YYYY-MM-DDTHH:MM:SSZ` or `YYYY-MM-DDTHH:MM:SS+HH:MM` (negative offsets also
+accepted), at whole-second precision, with valid calendar dates and UTC
+equivalents in 2000-2099. Offsets are bounded to +/-14:00; unknown `-00:00` is
+rejected. No timezone change is implied. The bounded, no-argument
+`/usr/local/sbin/aios-clock` helper runs through an exact doas rule for the
+existing `aios` desktop OS user. It uses isolated Python and root-owned installed
+code, validates again before `clock_settime`, and exposes neither commands nor
+identity-broker passthrough. Other OS users do not gain permission by signing in
+inside a chat. The helper refuses non-AIOS hosts and serializes clock requests.
+Read-all retains its existing appearance/audio response; clock reads are explicit.
+
+Running Alpine `ntpd` or `chronyd` (also `systemd-timesyncd` on adapted images)
+blocks manual setting. AIOS does not stop or reconfigure an administrator's
+sync service, and daemon presence is not proof that time is synchronized.
+The stock image does not enable an automatic sync daemon. UTC hardware-clock
+saving is best-effort **after** the system-clock change: failure returns
+`hardware_clock_saved: false` and an explicit notice, not a claim that no change
+occurred. Without a saved hardware clock the change may be lost at reboot;
+VM RTC policy can override saved time too. Service/permission failures and
+invalid inputs are errors. A timeout or a failed readback may follow a completed
+change, so read state before retrying. No test should change a shared host clock.
 
 For a separate local MCP client, the same implementation is available as
 `python3 -m aios.os_settings`. Configure it with an explicit tool allowlist:

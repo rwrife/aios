@@ -82,6 +82,10 @@ Window {
     Connections {
         target: backendApi
         function onLoaded() { if (backendApi.setupPending()) desktop.openSetup() }
+        function onSettingsRequested(section) {
+            desktop.openSettings()
+            if (desktop.settingsWindow) desktop.settingsWindow.openSection(section)
+        }
     }
     Component { id: setupComponent; SetupWizard {} }
     function openSettings() {

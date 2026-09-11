@@ -71,7 +71,13 @@ Window {
         border.color: theme.line
     }
     // Add a section here and its page to the StackLayout below.
-    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts"]
+    readonly property var sections: ["AI models", "Sound", "Camera", "Network & Wi-Fi", "Display", "Appearance", "About", "Accounts", "Date & Time"]
+    function openSection(section) {
+        if (section === "date_time") {
+            stopCameraPreview()
+            pages.currentIndex = 8
+        }
+    }
     component Action: Button {
         id: control
         hoverEnabled: true
@@ -125,6 +131,13 @@ Window {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 16
             }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: parent.width
             Repeater {
                 model: settings.sections
                 Button {
@@ -137,7 +150,8 @@ Window {
                     onClicked: { settings.stopCameraPreview(); pages.currentIndex = index }
                 }
             }
-            Item { Layout.fillHeight: true }
+                }
+            }
             Action {
                 objectName: "launchSetup"
                 text: "Run setup wizard"
@@ -387,6 +401,7 @@ Window {
         }
         Item { Layout.fillHeight: true }
     }
+    DateTimeSettings { parent: pages; backend: settings.backend; theme: settings.theme; active: settings.visible && pages.currentIndex === 8 }
     WindowBorder { theme: settings.theme }
     Camera {
         id: camera

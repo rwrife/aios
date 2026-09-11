@@ -27,6 +27,12 @@ TestCase {
             cpu: "Test CPU · 2 logical CPUs", memory: "4.0 GiB"
         })
         signal configured()
+        property var clockState: ({})
+        property bool clockBusy: false
+        property string clockNotice: ""
+        property var clockRequests: []
+        signal clockChanged()
+        function clockRequest(value) { clockRequests = clockRequests.concat([value || "read"]) }
         function defaultRecognitionCamera() {
             return "/dev/v4l/by-id/test-video-index0"
         }
@@ -62,6 +68,39 @@ TestCase {
         function purgeRecognitionData() { purges++; recognitionDataPurged() }
     }
     Component { id: settingsComponent; SettingsWindow {} }
+    function test_date_time_page_data() {
+        return [{tag: "Ocean", theme: "blue"}, {tag: "Sage", theme: "sage"}]
+    }
+    function test_date_time_page(data) {
+        backend.config = ({theme_color: data.theme, reduced_motion: true})
+        backend.clockState = ({utc: "2026-09-11T14:30:00Z", local: "2026-09-11T14:30:00+00:00", timezone: "UTC", sync_daemons: []})
+        backend.clockRequests = []
+        backend.clockBusy = false
+        var window = createTemporaryObject(settingsComponent, test, {backend: backend, theme: palette, width: 820, height: 620})
+        window.show()
+        window.openSection("date_time")
+        wait(100)
+        compare(findChild(window, "settingsPages").currentIndex, 8)
+        compare(backend.clockRequests.length, 1)
+        var input = findChild(window, "dateTimeInput")
+        var apply = findChild(window, "applyClock")
+        verify(input.visible)
+        backend.clockChanged()
+        compare(input.text, backend.clockState.utc)
+        input.text = "2026-09-11T07:30:00-07:00"
+        backend.clockChanged()
+        compare(input.text, "2026-09-11T07:30:00-07:00")
+        compare(input.background.color, palette.input)
+        verify(apply.enabled)
+        apply.clicked()
+        compare(backend.clockRequests[1], input.text)
+        backend.clockState = Object.assign({}, backend.clockState, {sync_daemons: ["ntpd"]})
+        verify(!apply.enabled)
+        backend.clockState = ({})
+        verify(!apply.enabled)
+        compare(findChild(window, "machineClockValue").text, "Clock unavailable")
+        window.close()
+    }
     Component {
         id: borderComponent
         Rectangle {
