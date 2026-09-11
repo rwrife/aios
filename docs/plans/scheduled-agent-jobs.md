@@ -2,9 +2,9 @@
 
 Status: milestones 1-2 implemented as the core and isolated execution service.
 Milestone 3 ordinary desktop and dedicated native protected configuration are
-implemented. Protected model/chat scheduling remains disabled pending the
-dedicated protected foreground-chat prerequisite.
-Feedback/orb UI and full image validation remain later dependent layers.
+implemented. The dependent protected foreground-chat prerequisite is now
+implemented, including trusted protected model scheduling. Feedback/orb UI and
+full image validation remain later dependent layers.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -96,26 +96,28 @@ configuration surface. A compiled Qt client also exercised the real scheduler,
 worker and deterministic provider for CRUD, preview, run deduplication,
 persisted results, history and outbox acknowledgement.
 
-Protected model/chat scheduling is **not enabled** by this layer. Investigation found
-that `Main.openChat` refuses protected sessions, while `Backend::run` and
-`Backend::persist` remain ordinary desktop process/storage paths. The embedded
-display hosts fixed native clients, not a protected foreground ChatSession.
-Adding a scheduling action to the existing desktop control socket alone would
-not give those chats encrypted persistence or owner-scoped worker execution.
-The parent therefore split a required dependent protected-chat layer before
-feedback and final acceptance. It must supply broker-owned encrypted
-conversation persistence, protected foreground worker/tool-host launch,
-trusted per-chat native relay and session generations, authorization
-expiry/replacement and privacy cancellation, and display integration.
-Protected model calls stay unavailable. Native protected settings instead use
-a dedicated client created by SessionControl and bound to its exact current
-lease/work snapshot in C++; the global desktop client never receives that
-authority. Current broker authorization and registered display PID gate every
-request. Scope/privacy loss or transport failure erases the binding, discards
-in-flight responses and closes/clears the window. Reopening creates a new scoped
-client. No descriptor, greeting profile, or informational sign-in status
-authorizes this route, and native support does not complete the protected
-foreground-chat prerequisite.
+Protected foreground chat is a separate broker-owned path; the ordinary
+`Backend::run` and `Backend::persist` desktop path remains unchanged and is
+never used under a protected display. `SessionControl::createProtectedChat()`
+captures the current native lease/work binding and creates a `ProtectedChat`
+client whose chat ID and per-chat association key remain private C++ state.
+The broker launches one `aios.protected_chat` supervisor per chat through the
+existing encrypted artifact alias, cgroup and bubblewrap boundary. That
+supervisor owns its worker, tool host, browser and MCP descendants. Conversation
+messages are committed by the broker to the encrypted owner journal; no
+protected conversation file or provider configuration is written to desktop
+XDG storage.
+
+The protected tool host advertises the existing structured `scheduled_jobs`
+schema. Its only scheduling route is a private fixed relay socket to its chat
+supervisor. The supervisor emits a correlated scheduling event to the broker;
+the registered native display supplies no authority fields to Python. The
+broker revalidates display PID, lease, work, chat association, owner presence
+and scheduler request schema, invokes the existing protected scheduler adapter,
+and returns only the normal status envelope. Shielding, lease/work replacement,
+display or shell loss, close, cancellation, timeout, broker restart, or relay
+failure kills the complete chat cgroup and discards late events before they
+reach QML. Reopening creates a new native generation and association key.
 
 The protected adapter runs the same scheduler and worker inside the owner's
 encrypted workspace, using broker-held private pipes rather than a public
@@ -159,8 +161,8 @@ sh scripts/test-identity-linux.sh \
   linux_identity_isolation.KernelIsolationTests.test_protected_scheduler_executes_and_cancels_in_encrypted_workspace
 ```
 
-These checks do not replace the later protected foreground-chat, real provider
-account, or final Alpine/QEMU visual and browser-sandbox acceptance gates.
+These checks do not replace real provider-account or final Alpine/QEMU visual
+and browser-sandbox acceptance gates.
 
 ## Outcome
 

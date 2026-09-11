@@ -40,16 +40,20 @@ class Provider(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if 'HANG' in prompt:
             time.sleep(4)
-        name = 'browser' if 'BROWSER' in prompt else 'mcp_fixture_ping'
-        tools = 'MCP' in prompt or 'BROWSER' in prompt
+        name = ('scheduled_jobs' if 'SCHEDULE' in prompt else
+                'browser' if 'BROWSER' in prompt else 'mcp_fixture_ping')
+        tools = 'MCP' in prompt or 'BROWSER' in prompt or 'SCHEDULE' in prompt
         used = any(item['role'] == 'tool' for item in body['messages'])
         if tools and (not used or 'LOOP' in prompt):
-            arguments = {'action': 'open', 'url': 'https://example.com'} if name == 'browser' else {}
+            arguments = ({'action': 'open', 'url': 'https://example.com'} if name == 'browser'
+                         else {'action': 'health'} if name == 'scheduled_jobs' else {})
             delta = {'tool_calls': [{'index': 0, 'id': str(uuid.uuid4()), 'type': 'function',
                                      'function': {'name': name, 'arguments': json.dumps(arguments)}}]}
             finish = 'tool_calls'
         else:
-            delta = {'content': 'x' * 40000 if 'OVERSIZED' in prompt else 'Saved background answer'}
+            delta = {'content': ('x' * 40000 if 'OVERSIZED' in prompt else
+                                 'Protected chat scheduled result' if 'SCHEDULE' in prompt
+                                 else 'Saved background answer')}
             finish = 'stop'
         event = {'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}
         try:

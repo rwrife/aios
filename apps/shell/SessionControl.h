@@ -11,6 +11,7 @@
 #include <QPointer>
 #include "ProfilePhoto.h"
 #include "ScheduledJobs.h"
+#include "ProtectedChat.h"
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <algorithm>
@@ -115,6 +116,23 @@ public:
         });
         connect(this, &SessionControl::privacyLost, jobs, &ScheduledJobs::invalidate);
         return jobs;
+    }
+    Q_INVOKABLE QObject *createProtectedChat() {
+        const auto binding = schedulingContext();
+        if (binding.isEmpty()) {
+            m_error = "Unlock an authorized private workspace before opening chat.";
+            emit changed();
+            return nullptr;
+        }
+        auto chat = new ProtectedChat(path, binding, [this, binding] {
+            return schedulingContext() == binding ? binding : QJsonObject{};
+        }, this);
+        connect(this, &SessionControl::privacyLost, chat, &ProtectedChat::invalidate);
+        connect(chat, &ProtectedChat::failed, this, [this](const QString &message) {
+            m_error = message;
+            emit changed();
+        });
+        return chat;
     }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
     Q_INVOKABLE void deleteAccount(const QString &id, const QString &pin) {

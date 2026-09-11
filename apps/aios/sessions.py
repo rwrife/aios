@@ -32,6 +32,7 @@ class Sessions:
         self.pending_restoration = []
         self.enrollment_blocked = False
         self.scheduled = None
+        self.chats = {}
         self._reconcile_enrollment()
 
     def _reconcile_enrollment(self):
@@ -89,7 +90,10 @@ class Sessions:
         self.verified_until = 0
         self.manual_owner = None
         self.manual_until = 0
-        self._stop_scheduled()
+        try:
+            self._stop_scheduled()
+        finally:
+            self._stop_chats()
 
     def _stop_scheduled(self):
         scheduled, self.scheduled = self.scheduled, None
@@ -99,6 +103,75 @@ class Sessions:
             except Exception:
                 self.fault = True
                 raise
+
+    def _stop_chats(self):
+        chats, self.chats = self.chats, {}
+        for chat in chats.values():
+            try:
+                chat.close()
+            except Exception:
+                self.fault = True
+                raise
+
+    def chat_open(self, lease, scope):
+        from .protected_chat import ProtectedChat
+        self._present()
+        if self.work is None or (lease, scope) != (self.lease, self.work):
+            raise PermissionError('Protected chat scope expired')
+        chat = ProtectedChat(self)
+        self.chats[chat.id] = chat
+        return {'chat': chat.id, 'key': chat.key, 'history': self.journal.history(self.work),
+                'config': chat.config}
+
+    def _chat(self, lease, scope, chat, key):
+        self._present()
+        if (lease, scope) != (self.lease, self.work):
+            raise PermissionError('Protected chat scope expired')
+        value = self.chats.get(chat)
+        if value is None or key != value.key:
+            raise PermissionError('Protected chat is unavailable')
+        value.authorize()
+        return value
+
+    def chat_send(self, lease, scope, chat, key, content):
+        value = self._chat(lease, scope, chat, key)
+        if not isinstance(content, str) or not content.strip() or len(content) > 32768:
+            raise ValueError('Invalid protected chat message')
+        content = content.strip()
+        self.journal.message(self.work, 'user', content)
+        history = self.journal.history(self.work)['messages']
+        try:
+            value.send([{'role': item['role'], 'content': item['content']} for item in history])
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
+        return {'accepted': True}
+
+    def chat_poll(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
+        try:
+            return value.poll()
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
+
+    def chat_stop(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
+        try:
+            value.stop()
+        except Exception:
+            self.chats.pop(chat, None)
+            value.close()
+            raise
+        return {'stopping': True}
+
+    def chat_close(self, lease, scope, chat, key):
+        value = self._chat(lease, scope, chat, key)
+        self.chats.pop(chat, None)
+        value.close()
+        return {'closed': True}
 
     def scheduled_request(self, lease, scope, request):
         from .scheduled_jobs import validate_request
