@@ -84,7 +84,7 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn('-bw 1', launcher)
         self.assertIn('-class AIOS-Terminal', launcher)
 
-    def test_compositor_rounds_only_native_browser_and_terminal(self):
+    def test_compositor_preserves_square_native_frames(self):
         config = (ROOT / "distro/alpine/overlay/etc/xdg/picom.conf").read_text()
         self.assertIn('backend = "glx"', config)
         self.assertIn("use-damage = false;", config)
@@ -93,15 +93,12 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("mesa-utils", world)
         terminal_rule = re.search(
             r'\{\s*match = "class_g = \'AIOS-Terminal\'";(.*?)\}', config, re.S)
-        browser_rule = re.search(
-            r'\{\s*match = "class_i = \'aios-browser\'";(.*?)\}', config, re.S)
         self.assertIsNotNone(terminal_rule)
-        self.assertIsNotNone(browser_rule)
         self.assertIn("opacity = 0.92;", terminal_rule.group(1))
-        self.assertIn("corner-radius = 16;", terminal_rule.group(1))
-        self.assertNotIn("opacity", browser_rule.group(1))
-        self.assertIn("corner-radius = 16;", browser_rule.group(1))
-        self.assertEqual(config.count("corner-radius = 16;"), 2)
+        self.assertEqual(re.findall(r'corner-radius\s*=\s*(\d+)\s*;', config), ["0"])
+        self.assertNotIn("corner-radius", terminal_rule.group(1))
+        self.assertNotIn("aios-browser", config)
+        self.assertEqual(config.count("opacity = 0.92;"), 1)
         self.assertIn('picom', (ROOT / "distro/alpine/apks/world.x11").read_text().splitlines())
 
     def test_openbox_chrome_uses_aios_window_colors(self):
