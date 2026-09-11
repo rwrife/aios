@@ -70,4 +70,5 @@ class IdentityImageTests(unittest.TestCase):
                     env=env, check=True, capture_output=True, text=True)
                 self.assertEqual('bubblewrap' in result.stdout.split(), enabled)
                 self.assertIn('tzdata', result.stdout.split())
+                self.assertIn('linux-lts', result.stdout.split())
                 self.assertNotIn('Optional', result.stdout.split())
