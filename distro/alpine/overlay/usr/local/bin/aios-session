@@ -1,10 +1,10 @@
 #!/bin/sh
 set -eu
 
-if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
-    XDG_RUNTIME_DIR=$(mktemp -d "/tmp/aios-runtime-$(id -u).XXXXXX")
-    export XDG_RUNTIME_DIR
-fi
+runtime_parent="${XDG_RUNTIME_DIR:-/tmp}"
+[ -d "$runtime_parent" ] && [ -w "$runtime_parent" ] || runtime_parent=/tmp
+XDG_RUNTIME_DIR=$(mktemp -d "$runtime_parent/aios-session-$(id -u).XXXXXX")
+export XDG_RUNTIME_DIR
 
 # Minimal visual baseline
 xsetroot -solid '#0d1117'
@@ -44,6 +44,7 @@ cleanup() {
     aios-local-runtime stop >>"$HOME/.local/state/aios/local-runtime.log" 2>&1 || true
     wait "$local_runtime" 2>/dev/null || true
     kill "$compositor" "$wm" 2>/dev/null || true
+    rmdir "$XDG_RUNTIME_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on
