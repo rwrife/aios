@@ -858,6 +858,89 @@ encoded = base64.b64encode(
 print("AIOS_EVIDENCE_REMINDER:" + encoded, flush=True)
 '''
 
+PALETTE_ACCEPTANCE = r'''#!/usr/bin/env python3
+import base64
+import json
+import time
+import uuid
+
+from aios import core, scheduled_jobs
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def call(action, **values):
+    reply = scheduled_jobs.request({"action": action, **values})
+    require(reply.get("status") == "ok", f"{action} failed: {reply}")
+    return reply["result"]
+
+
+config = core.load_config()
+require(config["theme_color"] == "sage", f"generated palette was not active: {config}")
+require(config["reduced_motion"] is True, f"reduced motion was not active: {config}")
+binding = call("binding", prompt="Create an action-needed visual acceptance.")
+require(binding["provider"] == "local", f"local binding was unavailable: {binding}")
+job = call("create", config={
+    "title": "Action needed acceptance",
+    "prompt": "Return a short acceptance.",
+    "schedule": {"kind": "cron", "value": "0 0 1 1 *", "zone": "UTC"},
+    "execution": {
+        "provider": binding["provider"],
+        "profile": binding["profile"],
+        "model": binding["model"],
+        "capabilities": [],
+        "timeout_seconds": 300,
+        "token_budget": 1024,
+        "tool_budget": 0,
+        "missed_run": "coalesce",
+    },
+    "notification": {"mode": "all"},
+})
+changed = dict(config)
+changed.update({
+    "mode": "remote",
+    "url": "http://127.0.0.1:9/v1",
+    "model": "changed-route",
+    "api_key": "",
+})
+core.write_json(core.config_dir() / "config.json", changed)
+try:
+    run = call(
+        "run_now", job_id=job["id"], expected_revision=job["revision"],
+        request_id=str(uuid.uuid4()))
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        result = call("read_result", run_id=run["id"])
+        if result["state"] not in ("queued", "running"):
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError("action-needed run did not finish")
+    require(result["state"] == "needs_user_action",
+            f"action-needed visual state was not produced: {result}")
+    unread = call("unread", limit=50)
+    require(any(item["run_id"] == result["id"] for item in unread),
+            "action-needed result was not unread")
+finally:
+    core.write_json(core.config_dir() / "config.json", config)
+
+time.sleep(6)
+evidence = {
+    "phase": "generated-palette-reduced-motion",
+    "theme_color": config["theme_color"],
+    "reduced_motion": config["reduced_motion"],
+    "result": result,
+    "unread_run_ids": [item["run_id"] for item in unread],
+    "steady_attention_only": True,
+}
+encoded = base64.b64encode(
+    json.dumps(evidence, ensure_ascii=False, sort_keys=True).encode()).decode()
+print("AIOS_EVIDENCE_PALETTE:" + encoded, flush=True)
+'''
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -885,13 +968,16 @@ def parse_args():
     parser.add_argument(
         "--capture-reminder-only", action="store_true",
         help="With --reuse-installed, capture an already delivered reminder")
+    parser.add_argument(
+        "--palette-only", action="store_true",
+        help="With --reuse-installed, capture generated-palette reduced-motion states")
     args = parser.parse_args()
     if args.memory_mb < 2048 or args.cpus < 1:
         parser.error("memory must be at least 2048 MiB and CPUs must be positive")
-    if (args.reminder_only or args.capture_reminder_only) and not args.reuse_installed:
+    if (args.reminder_only or args.capture_reminder_only or args.palette_only) and not args.reuse_installed:
         parser.error("reminder-only modes require --reuse-installed")
-    if args.reminder_only and args.capture_reminder_only:
-        parser.error("choose only one reminder-only mode")
+    if sum((args.reminder_only, args.capture_reminder_only, args.palette_only)) > 1:
+        parser.error("choose only one single-stage mode")
     for name in ("total_timeout", "install_timeout", "boot_timeout",
                  "acceptance_timeout", "shutdown_timeout"):
         if getattr(args, name) <= 0:
@@ -1357,6 +1443,47 @@ def reminder_boot(args, artifacts, deadline):
             "result_click": {"x": 270, "y": 326},
         }
         write_json(artifacts / "reminder.json", evidence)
+        console.run(
+            "su -s /bin/sh aios -c "
+            + shlex.quote(
+                "HOME=/home/aios XDG_CONFIG_HOME=/home/aios/.config "
+                "PYTHONPATH=/usr/local/share/aios /usr/bin/python3 -c "
+                + shlex.quote(
+                    "from aios import core; value=core.load_config(); "
+                    "value.update(theme_color='sage', reduced_motion=True); "
+                    "core.write_json(core.config_dir() / 'config.json', value)"
+                )
+            ),
+            timeout=15)
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(f"{phase} VM exited with status {exit_code}")
+
+
+def palette_boot(args, artifacts, deadline):
+    phase = "installed-palette"
+    with QemuVM(args, phase, artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        vm.move_pointer(50, 50)
+        time.sleep(6)
+        idle = vm.screenshot("palette-idle-reduced.ppm")
+        remote_path = "/home/aios/.local/state/aios/installed-palette-acceptance.py"
+        console.upload_text(
+            remote_path, PALETTE_ACCEPTANCE,
+            timeout=remaining(deadline, args.acceptance_timeout))
+        evidence = console.execute_as_aios(
+            remote_path, "AIOS_EVIDENCE_PALETTE",
+            remaining(deadline, args.acceptance_timeout))
+        vm.move_pointer(50, 50)
+        time.sleep(2)
+        action = vm.screenshot("palette-action-needed-reduced.ppm")
+        evidence["host_capture"] = {
+            "qmp_status_before_poweroff": vm.status(),
+            "screenshots": [idle.name, action.name],
+        }
+        write_json(artifacts / "palette.json", evidence)
         console.send_line("poweroff")
         exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
         if exit_code != 0:
@@ -1485,16 +1612,34 @@ def main():
         if args.reminder_only:
             print("Validating provider recovery and the ten-minute reminder ...", flush=True)
             reminder_boot(args, artifacts, deadline)
+            print("Capturing generated-palette reduced-motion states ...", flush=True)
+            palette_boot(args, artifacts, deadline)
             summary.update(
                 status="passed",
                 completed_unix=time.time(),
-                evidence=["reminder.json"],
+                evidence=["reminder.json", "palette.json"],
                 screenshots=[
-                    "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm"],
+                    "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm",
+                    "palette-idle-reduced.ppm", "palette-action-needed-reduced.ppm"],
             )
             write_json(artifacts / "summary.json", summary)
             print(
                 f"PASS: provider recovery and reminder delivery ({artifacts})",
+                flush=True,
+            )
+            return
+        if args.palette_only:
+            print("Capturing generated-palette reduced-motion states ...", flush=True)
+            palette_boot(args, artifacts, deadline)
+            summary.update(
+                status="passed",
+                completed_unix=time.time(),
+                evidence=["palette.json"],
+                screenshots=["palette-idle-reduced.ppm", "palette-action-needed-reduced.ppm"],
+            )
+            write_json(artifacts / "summary.json", summary)
+            print(
+                f"PASS: generated-palette reduced-motion states ({artifacts})",
                 flush=True,
             )
             return
@@ -1511,6 +1656,8 @@ def main():
             SECOND_ACCEPTANCE, "AIOS_EVIDENCE_SECOND", "second-boot.json")
         print("Validating provider recovery and the ten-minute reminder ...", flush=True)
         reminder_boot(args, artifacts, deadline)
+        print("Capturing generated-palette reduced-motion states ...", flush=True)
+        palette_boot(args, artifacts, deadline)
     except BaseException as error:
         summary.update(status="failed", completed_unix=time.time(),
                        error=f"{type(error).__name__}: {error}")
@@ -1520,10 +1667,12 @@ def main():
         status="passed",
         completed_unix=time.time(),
         evidence=[
-            "installation.json", "first-boot.json", "second-boot.json", "reminder.json"],
+            "installation.json", "first-boot.json", "second-boot.json", "reminder.json",
+            "palette.json"],
         screenshots=[
             "install-complete.ppm", "installed-first.ppm", "installed-second.ppm",
-            "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm"],
+            "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm",
+            "palette-idle-reduced.ppm", "palette-action-needed-reduced.ppm"],
     )
     write_json(artifacts / "summary.json", summary)
     print(
