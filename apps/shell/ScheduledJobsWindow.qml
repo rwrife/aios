@@ -229,6 +229,7 @@ Window {
             runs = request.details.more ? runs.concat(value) : value; moreRuns = value.length === 20
         } else if (purpose === "result" && request.details.job === job.id) {
             result = value
+            track(jobsApi.acknowledgeResult(value.id), "acknowledge")
         } else if (purpose === "stop") {
             if (result.id === value.id) result = value
             refreshRuns(false); notice = "Run stopped."

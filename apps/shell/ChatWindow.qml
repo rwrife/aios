@@ -12,6 +12,7 @@ Window {
     required property var theme
     property var profileControl: null
     property bool ownsProfileControl: false
+    property string initialDraft: ""
     property bool osAuthenticationCompleted: false
     readonly property bool protectedMode: session.protectedMode === true
     readonly property var effectiveConfig: protectedMode ? session.config : backend.config
@@ -34,7 +35,11 @@ Window {
         if (ownsProfileControl && profileControl) profileControl.dispose()
         Qt.callLater(chat.destroy)
     }
-    Component.onCompleted: { conversation.syncMessages(); composer.forceActiveFocus() }
+    Component.onCompleted: {
+        conversation.syncMessages()
+        composer.text = initialDraft
+        composer.forceActiveFocus()
+    }
     Connections {
         target: chat.session
         ignoreUnknownSignals: true

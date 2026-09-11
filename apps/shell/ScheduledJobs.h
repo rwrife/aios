@@ -67,6 +67,7 @@ public:
     }
     Q_INVOKABLE QString readResult(const QString &run) { return call({{"action", "read_result"}, {"run_id", run}}); }
     Q_INVOKABLE QString acknowledgeResult(const QString &run) { return call({{"action", "acknowledge_result"}, {"run_id", run}}); }
+    Q_INVOKABLE QString markNotified(const QString &run) { return call({{"action", "mark_notified"}, {"run_id", run}}); }
     Q_INVOKABLE QString unread(int limit = 50, qint64 after = 0) {
         return call({{"action", "unread"}, {"limit", limit}, {"after", after}});
     }

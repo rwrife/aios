@@ -134,6 +134,10 @@ int main(int argc, char **argv) {
     bridge.unread(20, 32);
     wait();
     if (observed.value("limit").toInt() != 20 || observed.value("after").toInt() != 32) return 6;
+    bridge.markNotified("private-run");
+    wait();
+    if (observed.value("action") != "mark_notified"
+            || observed.value("run_id") != "private-run") return 41;
     response = "{\"status\":\"ok\",\"unexpected\":true}\n";
     bridge.health();
     wait();

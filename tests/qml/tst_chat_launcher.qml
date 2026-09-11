@@ -24,6 +24,8 @@ TestCase {
         property var messages: []
         property bool olderMessages: false
         signal privacyLost()
+        signal changed()
+        signal unlocked()
         signal documentLoaded(string content)
         signal documentSaved()
         function chatProfile() { return sessionControl }
@@ -63,18 +65,26 @@ TestCase {
         id: scheduledClientComponent
         QtObject {
             property bool protectedWorkspace: true
+            property int sequence: 0
             signal completed(string requestId, string action, var response)
             signal invalidated()
-            function health() { return "health" }
+            function record(action) { return action + "-" + (++sequence) }
+            function health() { return record("health") }
+            function unread(limit, after) { return record("unread") }
+            function markNotified(run) { return record("mark_notified") }
             function dispose() { destroy() }
         }
     }
     QtObject {
         id: desktopJobs
         property int calls: 0
+        property int sequence: 0
         signal completed(string requestId, string action, var response)
         signal invalidated()
-        function health() { calls++; return "desktop-health" }
+        function record(action) { calls++; return action + "-" + (++sequence) }
+        function health() { return record("health") }
+        function unread(limit, after) { return record("unread") }
+        function markNotified(run) { return record("mark_notified") }
     }
     Component {
         id: sessionComponent
@@ -246,7 +256,7 @@ TestCase {
         desktop.settingsWindow.scheduledJobsRequested()
         verify(desktop.scheduledJobsWindow !== null)
         compare(desktop.scheduledJobsWindow.jobsApi, desktopJobs)
-        compare(desktopJobs.calls, 1)
+        verify(desktopJobs.calls >= 1)
         desktop.scheduledJobsWindow.close()
         sessionControl.enabled = true
         desktop.displayBridgeApi = {enabled: true}
@@ -412,14 +422,18 @@ TestCase {
         return null
     }
 
-    function test_orb_keeps_accessibility_without_visual_tooltip() {
+    function test_orb_accessibility_and_keyboard_tooltip() {
         var orb = createLauncher()
         compare(orb.Accessible.name, "Start a new chat")
         compare(orb.Accessible.description, "Open a new conversation")
         orb.forceActiveFocus()
         tryCompare(orb, "activeFocus", true)
-        wait(1000)
-        compare(findVisibleText(test.Window.window, "New chat"), null)
+        tryVerify(function() {
+            return findVisibleText(test.Window.window, "Start a new chat") !== null
+        }, 1000)
+        orb.unreadCount = 2
+        compare(orb.Accessible.name, "Open scheduled results")
+        compare(orb.Accessible.description, "2 unread scheduled results")
     }
 
     function test_visible_chats_do_not_prevent_new_sessions() {
@@ -444,6 +458,17 @@ TestCase {
         verify(first !== second)
         verify(first.visibility !== Window.Minimized)
         verify(second.visibility !== Window.Minimized)
+    }
+
+    function test_follow_up_forces_fresh_chat_with_bounded_draft() {
+        var main = createDesktop()
+        var minimized = main.openChat()
+        minimize(minimized)
+        var followUp = main.openChat("Saved result context", true)
+        verify(followUp !== minimized)
+        compare(backend.createSessionCalls, 2)
+        compare(findChild(followUp, "composer").text, "Saved result context")
+        compare(minimized.visibility, Window.Minimized)
     }
 
     function test_protected_chat_uses_scoped_session_and_closes_on_privacy_loss() {

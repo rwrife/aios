@@ -296,6 +296,61 @@ class ScheduledStoreTests(unittest.TestCase):
         with self.assertRaises(UnavailableError):
             self.store.get_run(run['id'])
 
+    def test_notification_policy_and_persisted_pulse_receipt(self):
+        all_job = self.create()
+        all_run = self.store.run_now(all_job['id'], 1, str(uuid.uuid4()))
+        self.store.start(all_run['id'])
+        self.store.finish(all_run['id'], 'succeeded', result='Changed', outcome='changed')
+
+        actionable = job_config()
+        actionable['notification'] = {'mode': 'actionable'}
+        actionable_job = self.store.create(actionable)
+        quiet_run = self.store.run_now(actionable_job['id'], 1, str(uuid.uuid4()))
+        self.store.start(quiet_run['id'])
+        self.store.finish(quiet_run['id'], 'succeeded', result='No change', outcome='unchanged')
+        error_run = self.store.run_now(actionable_job['id'], 1, str(uuid.uuid4()))
+        self.store.start(error_run['id'])
+        self.store.finish(error_run['id'], 'failed', error='Provider unavailable')
+
+        unread = self.store.unread()
+        self.assertEqual([item['run_id'] for item in unread], [all_run['id'], error_run['id']])
+        self.assertEqual(unread[0]['title'], all_job['title'])
+        self.assertIsNone(unread[0]['notified'])
+        self.store.mark_notified(all_run['id'])
+        self.store.mark_notified(all_run['id'])
+        self.reopen()
+        persisted = self.store.unread()
+        self.assertIsNotNone(persisted[0]['notified'])
+        with self.assertRaises(ConflictError):
+            self.store.mark_notified(quiet_run['id'])
+
+    def test_quiet_hours_and_snooze_report_release_without_hiding_feedback(self):
+        config = job_config()
+        config['notification'] = {
+            'mode': 'all',
+            'quiet_hours': {'start': '23:00', 'end': '01:00', 'zone': 'UTC'},
+            'snooze_until': '2026-01-01T00:30:00Z',
+        }
+        job = self.store.create(config)
+        run = self.store.run_now(job['id'], 1, str(uuid.uuid4()))
+        self.complete(run)
+        self.assertEqual(self.store.unread()[0]['suppressed_until'],
+                         '2026-01-01T01:00:00.000000Z')
+        self.clock.advance(3601)
+        self.assertIsNone(self.store.unread()[0]['suppressed_until'])
+
+    def test_version_one_outbox_migrates_atomically(self):
+        self.store.close()
+        with sqlite3.connect(self.root / 'jobs.sqlite3') as db:
+            db.execute('ALTER TABLE outbox DROP COLUMN deliverable')
+            db.execute('ALTER TABLE outbox DROP COLUMN notified')
+            db.execute('PRAGMA user_version=1')
+        self.store = ScheduledStore(self.root, self.clock)
+        columns = {row['name'] for row in self.store.db.execute('PRAGMA table_info(outbox)')}
+        self.assertEqual(self.store.db.execute('PRAGMA user_version').fetchone()[0], 2)
+        self.assertIn('deliverable', columns)
+        self.assertIn('notified', columns)
+
     def test_thousand_run_retention_preserves_unread_overflow(self):
         job = self.create()
         unread = self.store.run_now(job['id'], 1, str(uuid.uuid4()))
