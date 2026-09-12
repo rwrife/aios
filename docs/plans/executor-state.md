@@ -23,7 +23,8 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
     app changes stashed (17 pass/1 fail), PASSes with them restored.
   - Not verified: in-VM QEMU GUI session (no display on this runner).
   - CI: `Validate` workflow remains `disabled_manually`; no checks arrive for PRs.
-- New PR: pending creation (see report).
+- New PR: https://github.com/rwrife/aios/pull/107 — MERGED (squash commit bf18aa954a3d93fe9c2350f36b3760f02be430a5, 2026-09-12T12:41:38Z); issue #72 closed at merge; assignment retained through the PR, cleared by the Closes linkage.
+- Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; worktree removed.
 
 ## 2026-09-12 01:35 UTC
 
