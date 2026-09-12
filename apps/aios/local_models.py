@@ -52,10 +52,30 @@ def availability(model_id, model, ram, disk):
             "required_disk_bytes": required, "available": not reason, "reason": reason}
 
 
+def selected_model_id():
+    """Catalog id of the model the local provider currently points at."""
+    config = core.load_config()
+    if config.get("mode") != "local":
+        return ""
+    active = str(config.get("model_path") or "")
+    if not active:
+        return ""
+    try:
+        active = str(Path(active).resolve())
+    except OSError:
+        return ""
+    for model_id in catalog():
+        if str(destination(model_id).resolve()) == active:
+            return model_id
+    return ""
+
+
 def list_models():
     ram, disk = memory_bytes(), free_disk()
-    return {"models": [availability(key, model, ram, disk) for key, model in catalog().items()],
-            "ram_bytes": ram, "free_disk_bytes": disk}
+    selected = selected_model_id()
+    models = [dict(availability(key, model, ram, disk), selected=key == selected)
+              for key, model in catalog().items()]
+    return {"models": models, "ram_bytes": ram, "free_disk_bytes": disk}
 
 
 def install(model_id=DEFAULT_MODEL, progress=lambda text: None):
