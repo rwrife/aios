@@ -220,6 +220,16 @@ groups (including web runner descendants) and removes snapshots. Other chats'
 apps and the persistent draft/published cache are unaffected. Shutdown cancels
 in-flight readiness waits and rejects subsequent launches.
 
+Application-builder turns buffer model prose until the application tool verifies
+`launched: true` for the requested application ID. Text that claims a launch,
+including text formatted like a tool call, is not execution evidence. If a model
+finishes without launching, AIOS allows one bounded continuation to perform the
+missing tool actions; a second unsupported finish reports that the app was not
+launched. Launch/tool failures report an error rather than model-written success.
+This applies to local, remote, and ChatGPT subscription turns. Explicit draft-only
+requests (for example, "draft only", "don't launch", or "without opening") do not
+require launch. Evidence is per turn and is invalidated by a later create/write.
+
 Native templates are trusted, compiled Qt implementations shipped with AIOS.
 The model selects an advertised template and supplies metadata only; it never
 generates or compiles C++ or QML. Native launch is considered ready only after

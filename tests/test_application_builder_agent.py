@@ -152,7 +152,7 @@ class _ModelState:
         _require("self-contained `index.html`" in prompt, "Web fallback instructions were absent.")
         _require("finish by launching it in the same turn" in prompt, "Base launch policy was absent.")
         _require("Publication is optional and separate" in prompt, "Optional publication instructions were absent.")
-        _require('`template: "calculator"`, then `launch`' in prompt, "Direct native launch instructions were absent.")
+        _require("then `launch`" in prompt and "then `publish`" not in prompt, "Direct native launch instructions were absent.")
         application_tools = [
             tool for tool in body["tools"]
             if tool.get("function", {}).get("name") == "application"
@@ -421,7 +421,9 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                 )
                 self.assertEqual(listed["warnings"], [])
 
-                first_events = self._events(self._run_worker(env, tool_socket))
+                first_worker = self._run_worker(env, tool_socket)
+                self.assertEqual(state.errors, [], "\n".join(state.errors))
+                first_events = self._events(first_worker)
                 self.assertEqual(
                     [event["text"] for event in first_events if event["type"] == "progress"],
                     [

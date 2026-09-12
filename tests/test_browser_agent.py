@@ -41,6 +41,102 @@ def host_tool(name, description=None, parameters=None):
 
 
 class BrowserAgentTests(unittest.TestCase):
+    def _application_session(self, request="create a calculator application"):
+        warnings = []
+        skill = skills._load_skill_dir(
+            Path(__file__).resolve().parents[1] / "apps/skills/application-builder", warnings)
+        self.assertEqual(warnings, [])
+        return agent.AgentSession([{"role": "user", "content": request}], "tools.sock", catalog=[skill])
+
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_completion_rejects_success_prose_without_tool_calls(self, _tools):
+        for mode in ("local", "remote"):
+            with self.subTest(mode=mode), \
+                    patch("aios.agent.core.load_config", return_value={"mode": mode, "model": "test"}), \
+                    patch("aios.agent.core.request", side_effect=lambda *_a, **_kw: stream([
+                        {"content": 'Successfully created and launched. {"action":"launch","id":"invented"}'}
+                    ])) as request, patch("aios.agent.toolhost.call") as call:
+                session = self._application_session()
+                emitted = []
+                with self.assertRaisesRegex(RuntimeError, "not launched"):
+                    emitted.extend(agent.openai_chat(session))
+                self.assertEqual(emitted, [])
+                call.assert_not_called()
+                self.assertEqual(request.call_count, 2)
+                retry = request.call_args.args[1]
+                self.assertEqual(retry["tool_choice"], {"type": "function", "function": {"name": "application"}})
+                self.assertEqual(retry["messages"][-1]["content"], agent.APPLICATION_LAUNCH_CONTINUATION)
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_completion_recovers_in_same_turn_and_only_emits_verified_final_text(self, _tools, _config):
+        responses = [
+            stream([{"content": "It is already launched."}]),
+            stream([{"content": "Created and launched it.", "tool_calls": [{
+                "index": 0, "id": "create", "function": {"name": "application",
+                "arguments": json.dumps({"action": "create", "title": "Calculator", "request": "calculator"})},
+            }]}], "tool_calls"),
+            stream([{"tool_calls": [{
+                "index": 0, "id": "launch", "function": {"name": "application",
+                "arguments": json.dumps({"action": "launch", "id": "calculator-12345678"})},
+            }]}], "tool_calls"),
+            stream([{"content": "Calculator is open."}]),
+        ]
+        with patch("aios.agent.core.request", side_effect=responses), \
+                patch("aios.agent.toolhost.call", side_effect=[
+                    {"id": "calculator-12345678", "runtime": "native"},
+                    {"id": "calculator-12345678", "launched": True},
+                ]) as call:
+            events = list(agent.openai_chat(self._application_session()))
+        self.assertEqual([e["text"] for e in events if e["type"] == "token"], ["Calculator is open."])
+        self.assertEqual([c.args[2]["action"] for c in call.call_args_list], ["create", "launch"])
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_launch_failure_cannot_be_rewritten_as_success(self, _tools, _config):
+        for result in (
+            {"id": "calculator-12345678", "launched": False, "reason": "Application window could not open."},
+            {"id": "another-12345678", "launched": True},
+            {"id": "calculator-12345678", "launched": "true"},
+        ):
+            with self.subTest(result=result):
+                response = stream([{"content": "Successfully launched!", "tool_calls": [{
+                    "index": 0, "id": "launch", "function": {"name": "application",
+                    "arguments": json.dumps({"action": "launch", "id": "calculator-12345678"})},
+                }]}], "tool_calls")
+                emitted = []
+                with patch("aios.agent.core.request", return_value=response) as request, \
+                        patch("aios.agent.toolhost.call", return_value=result), \
+                        self.assertRaises(RuntimeError):
+                    emitted.extend(agent.openai_chat(self._application_session()))
+                self.assertFalse(any(e["type"] == "token" for e in emitted))
+                self.assertEqual(request.call_count, 1)
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "remote", "model": "test"})
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_draft_only_requests_do_not_force_a_launch(self, _tools, _config):
+        for suffix in ("draft only", "just a draft", "don't launch it", "do not open it", "without running it"):
+            with self.subTest(suffix=suffix), \
+                    patch("aios.agent.core.request", return_value=stream([{"content": "Draft only."}])) as request:
+                session = self._application_session("create a calculator application, " + suffix)
+                self.assertFalse(session.verify_application_completion)
+                self.assertEqual(list(agent.openai_chat(session)), [{"type": "token", "text": "Draft only."}])
+                self.assertEqual(request.call_count, 1)
+
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_completion_evidence_is_per_turn_and_invalidated_by_edits(self, _tools):
+        first = self._application_session()
+        second = self._application_session()
+        first.tools()
+        second.tools()
+        with patch("aios.agent.toolhost.call", return_value={"id": "app-12345678", "launched": True}):
+            first.dispatch("application", {"action": "launch", "id": "app-12345678"})
+        self.assertFalse(first.application_completion_pending())
+        self.assertTrue(second.application_completion_pending())
+        with patch("aios.agent.toolhost.call", return_value={"written": True}):
+            first.dispatch("application", {"action": "write", "id": "app-12345678", "html": "<!doctype html>"})
+        self.assertTrue(first.application_completion_pending())
+
     def test_web_urls_and_lazy_start(self):
         for url in ("file:///etc/passwd", "javascript:alert(1)", "******example.com", "--no-sandbox", None):
             with self.assertRaises(ValueError):
@@ -470,7 +566,7 @@ class BrowserAgentTests(unittest.TestCase):
 
         with patch("aios.agent.core.request", side_effect=request), patch(
             "aios.agent.toolhost.call",
-            side_effect=[{"matches": []}, {"id": "draft-1"}, {"launched": True}],
+            side_effect=[{"matches": []}, {"id": "draft-1"}, {"launched": True, "id": "draft-1"}],
         ) as call:
             events = list(agent.openai_chat(session))
 
@@ -501,22 +597,16 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertIsNotNone(skill)
         session = agent.AgentSession(
-            [{"role": "user", "content": "I need a calculator"}],
+            [{"role": "user", "content": "create a calculator application"}],
             "tools.sock",
             catalog=[skill],
         )
         bodies = []
         html = "<!doctype html><title>Calculator</title><button>1</button>"
         calls = [
-            ("fallback-search", {"action": "search", "query": "I need a calculator"}),
-            ("fallback-create", {"action": "create", "title": "Calculator", "request": "I need a calculator"}),
+            ("fallback-search", {"action": "search", "query": "create a calculator application"}),
+            ("fallback-create", {"action": "create", "title": "Calculator", "request": "create a calculator application"}),
             ("fallback-write", {"action": "write", "id": "calculator-web", "html": html}),
-            ("fallback-publish", {
-                "action": "publish",
-                "id": "calculator-web",
-                "summary": "Offline web calculator.",
-                "keywords": ["calculator", "offline"],
-            }),
             ("fallback-launch", {"action": "launch", "id": "calculator-web"}),
         ]
 
@@ -526,6 +616,8 @@ class BrowserAgentTests(unittest.TestCase):
                 prompt = body["messages"][0]["content"]
                 self.assertIn("Inspect the advertised `application` tool schema", prompt)
                 self.assertIn("self-contained `index.html`", prompt)
+                self.assertIn("Publication is optional and separate", prompt)
+                self.assertIn("finish by launching it in the same turn", prompt)
                 properties = body["tools"][1]["function"]["parameters"]["properties"]
                 self.assertNotIn("runtime", properties)
                 self.assertNotIn("template", properties)
@@ -552,7 +644,6 @@ class BrowserAgentTests(unittest.TestCase):
             {"matches": []},
             {"id": "calculator-web", "title": "Calculator", "runtime": "web"},
             {"written": True, "bytes": len(html.encode("utf-8"))},
-            {"published": True, "id": "calculator-web", "runtime": "web"},
             {"launched": True, "id": "calculator-web", "runtime": "web"},
         ]
         with patch("aios.agent.core.request", side_effect=request), patch(
@@ -571,7 +662,6 @@ class BrowserAgentTests(unittest.TestCase):
                 "Application: search",
                 "Application: create",
                 "Application: write",
-                "Application: publish",
                 "Application: launch",
             ],
         )
@@ -1013,7 +1103,7 @@ class BrowserAgentTests(unittest.TestCase):
         list_tools.return_value = {"tools": [clone(BROWSER_TOOL), clone(APPLICATION_TOOL)], "warnings": []}
         catalog = [
             Skill(
-                name="application-builder",
+                name="application-reader",
                 description="Build apps.",
                 instructions="Applications only.",
                 allowed_tools=("application",),
@@ -1027,7 +1117,7 @@ class BrowserAgentTests(unittest.TestCase):
             bodies.append(clone(body))
             if len(bodies) == 1:
                 return stream([
-                    {"tool_calls": [{"index": 0, "id": "activate", "function": {"name": "activate_skill", "arguments": "{\"name\":\"application-builder\"}"}}]},
+                    {"tool_calls": [{"index": 0, "id": "activate", "function": {"name": "activate_skill", "arguments": "{\"name\":\"application-reader\"}"}}]},
                     {"tool_calls": [{"index": 1, "id": "browse", "function": {"name": "browser", "arguments": "{\"action\":\"snapshot\"}"}}]},
                 ], "tool_calls")
             return stream([{"content": "Done."}])
@@ -1036,7 +1126,7 @@ class BrowserAgentTests(unittest.TestCase):
             events = list(agent.openai_chat(session))
         call.assert_not_called()
         tool_messages = [message for message in bodies[1]["messages"] if message["role"] == "tool"]
-        self.assertEqual(json.loads(tool_messages[0]["content"]), {"activated": "application-builder"})
+        self.assertEqual(json.loads(tool_messages[0]["content"]), {"activated": "application-reader"})
         self.assertIn("unavailable", json.loads(tool_messages[1]["content"])["error"])
         self.assertEqual(events[-1], {"type": "token", "text": "Done."})
 
