@@ -941,6 +941,98 @@ encoded = base64.b64encode(
 print("AIOS_EVIDENCE_PALETTE:" + encoded, flush=True)
 '''
 
+RUNNING_ACCEPTANCE = r'''#!/usr/bin/env python3
+import http.server
+import json
+import threading
+import time
+import uuid
+
+from aios import core, scheduled_jobs
+
+
+class Provider(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        time.sleep(60)
+
+
+def call(action, **values):
+    reply = scheduled_jobs.request({"action": action, **values})
+    if reply.get("status") != "ok":
+        raise AssertionError(f"{action} failed: {reply}")
+    return reply["result"]
+
+
+for item in call("unread", limit=50):
+    call("acknowledge_result", run_id=item["run_id"])
+
+original = core.load_config()
+provider = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+provider.daemon_threads = True
+thread = threading.Thread(target=provider.serve_forever, daemon=True)
+thread.start()
+remote = dict(original)
+remote.update({
+    "mode": "remote",
+    "url": f"http://127.0.0.1:{provider.server_port}/v1",
+    "model": "running-visual",
+    "api_key": "running-fixture-key",
+    "agent_mode": "current",
+})
+core.write_json(core.config_dir() / "config.json", remote)
+try:
+    binding = call("binding", prompt="Hold a scheduled visual acceptance open.")
+    job = call("create", config={
+        "title": "Running visual acceptance",
+        "prompt": "Hold the provider request while the running state is captured.",
+        "schedule": {"kind": "cron", "value": "0 0 1 1 *", "zone": "UTC"},
+        "execution": {
+            "provider": binding["provider"],
+            "profile": binding["profile"],
+            "model": binding["model"],
+            "capabilities": [],
+            "timeout_seconds": 120,
+            "token_budget": 1024,
+            "tool_budget": 0,
+            "missed_run": "coalesce",
+        },
+        "notification": {"mode": "all"},
+    })
+    run = call(
+        "run_now", job_id=job["id"], expected_revision=job["revision"],
+        request_id=str(uuid.uuid4()))
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        result = call("read_result", run_id=run["id"])
+        if result["state"] == "running":
+            break
+        if result["state"] not in ("queued", "running"):
+            raise AssertionError(f"run ended before capture: {result}")
+        time.sleep(0.1)
+    else:
+        raise AssertionError("run did not enter running state")
+    evidence = {
+        "phase": "ocean-running",
+        "theme_color": original["theme_color"],
+        "reduced_motion": original["reduced_motion"],
+        "job_id": job["id"],
+        "run_id": run["id"],
+        "state": result["state"],
+    }
+    core.write_json(core.data_dir() / "running-visual-acceptance.json", evidence)
+    (scheduled_jobs.runtime_dir() / "running-visual-ready").write_text("ready\n")
+    time.sleep(30)
+finally:
+    core.write_json(core.config_dir() / "config.json", original)
+    provider.shutdown()
+    provider.server_close()
+    thread.join()
+'''
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -971,12 +1063,17 @@ def parse_args():
     parser.add_argument(
         "--palette-only", action="store_true",
         help="With --reuse-installed, capture generated-palette reduced-motion states")
+    parser.add_argument(
+        "--running-only", action="store_true",
+        help="With --reuse-installed, capture the Ocean running state")
     args = parser.parse_args()
     if args.memory_mb < 2048 or args.cpus < 1:
         parser.error("memory must be at least 2048 MiB and CPUs must be positive")
-    if (args.reminder_only or args.capture_reminder_only or args.palette_only) and not args.reuse_installed:
+    if (args.reminder_only or args.capture_reminder_only
+            or args.palette_only or args.running_only) and not args.reuse_installed:
         parser.error("reminder-only modes require --reuse-installed")
-    if sum((args.reminder_only, args.capture_reminder_only, args.palette_only)) > 1:
+    if sum((args.reminder_only, args.capture_reminder_only,
+            args.palette_only, args.running_only)) > 1:
         parser.error("choose only one single-stage mode")
     for name in ("total_timeout", "install_timeout", "boot_timeout",
                  "acceptance_timeout", "shutdown_timeout"):
@@ -1490,6 +1587,85 @@ def palette_boot(args, artifacts, deadline):
             raise RuntimeError(f"{phase} VM exited with status {exit_code}")
 
 
+def running_boot(args, artifacts, deadline):
+    with QemuVM(args, "installed-running-prep", artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        script = (
+            "from aios import core; value=core.load_config(); "
+            "value.update(theme_color='blue', reduced_motion=False); "
+            "core.write_json(core.config_dir() / 'config.json', value)"
+        )
+        console.run(
+            "su -s /bin/sh aios -c "
+            + shlex.quote(
+                "HOME=/home/aios XDG_CONFIG_HOME=/home/aios/.config "
+                "PYTHONPATH=/usr/local/share/aios /usr/bin/python3 -c "
+                + shlex.quote(script)
+            ),
+            timeout=15)
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(f"installed-running-prep VM exited with status {exit_code}")
+
+    phase = "installed-running"
+    with QemuVM(args, phase, artifacts, deadline) as vm:
+        console = vm.console
+        login_root(console, remaining(deadline, args.boot_timeout))
+        remote_path = "/home/aios/.local/state/aios/installed-running-acceptance.py"
+        console.upload_text(
+            remote_path, RUNNING_ACCEPTANCE,
+            timeout=remaining(deadline, args.acceptance_timeout))
+        uid_text = console.run("id -u aios", timeout=10)
+        uid = re.findall(r"(?m)^([0-9]+)\r?$", uid_text)[-1]
+        console.run(f"chown aios:aios {shlex.quote(remote_path)}", timeout=10)
+        command = (
+            "su -s /bin/sh aios -c "
+            + shlex.quote(
+                f"HOME=/home/aios USER=aios LOGNAME=aios "
+                f"XDG_CONFIG_HOME=/home/aios/.config "
+                f"XDG_DATA_HOME=/home/aios/.local/share "
+                f"XDG_RUNTIME_DIR=/run/user/{uid} DISPLAY=:0 "
+                f"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+                f"PYTHONPATH=/usr/local/share/aios "
+                f"setsid /usr/bin/python3 {shlex.quote(remote_path)} "
+                f">/home/aios/.local/state/aios/running-visual.log 2>&1 &"
+            )
+        )
+        console.run(command, timeout=10)
+        deadline_ready = time.monotonic() + 60
+        while time.monotonic() < deadline_ready:
+            output = console.run(
+                f"test -f /run/user/{uid}/aios-scheduler/running-visual-ready "
+                "&& echo ready || true",
+                timeout=10)
+            if re.search(r"(?m)^ready\r?$", output):
+                break
+            time.sleep(1)
+        else:
+            log = console.run(
+                "tail -100 /home/aios/.local/state/aios/running-visual.log || true",
+                timeout=10)
+            raise TimeoutError(f"running visual did not become ready:\n{log}")
+        time.sleep(6)
+        vm.move_pointer(50, 50)
+        time.sleep(2)
+        screenshot = vm.screenshot("ocean-running.ppm")
+        state = console.run(
+            "cat /home/aios/.local/share/aios/running-visual-acceptance.json",
+            timeout=10)
+        write_json(artifacts / "running.json", {
+            "saved_state_output": state,
+            "screenshot": screenshot.name,
+            "qmp_status_before_poweroff": vm.status(),
+        })
+        console.send_line("poweroff")
+        exit_code = vm.wait_for_exit(remaining(deadline, args.shutdown_timeout))
+        if exit_code != 0:
+            raise RuntimeError(f"{phase} VM exited with status {exit_code}")
+
+
 def capture_reminder_boot(args, artifacts, deadline):
     with QemuVM(args, "installed-reminder-prep", artifacts, deadline) as vm:
         console = vm.console
@@ -1643,6 +1819,18 @@ def main():
                 flush=True,
             )
             return
+        if args.running_only:
+            print("Capturing Ocean running state ...", flush=True)
+            running_boot(args, artifacts, deadline)
+            summary.update(
+                status="passed",
+                completed_unix=time.time(),
+                evidence=["running.json"],
+                screenshots=["ocean-running.ppm"],
+            )
+            write_json(artifacts / "summary.json", summary)
+            print(f"PASS: Ocean running state ({artifacts})", flush=True)
+            return
         if not args.reuse_installed:
             print(f"Installing {args.iso.name} into {args.disk} ...", flush=True)
             install(args, artifacts, deadline)
@@ -1658,6 +1846,8 @@ def main():
         reminder_boot(args, artifacts, deadline)
         print("Capturing generated-palette reduced-motion states ...", flush=True)
         palette_boot(args, artifacts, deadline)
+        print("Capturing Ocean running state ...", flush=True)
+        running_boot(args, artifacts, deadline)
     except BaseException as error:
         summary.update(status="failed", completed_unix=time.time(),
                        error=f"{type(error).__name__}: {error}")
@@ -1668,11 +1858,12 @@ def main():
         completed_unix=time.time(),
         evidence=[
             "installation.json", "first-boot.json", "second-boot.json", "reminder.json",
-            "palette.json"],
+            "palette.json", "running.json"],
         screenshots=[
             "install-complete.ppm", "installed-first.ppm", "installed-second.ppm",
             "reminder-unread.ppm", "reminder-inbox.ppm", "reminder-result.ppm",
-            "palette-idle-reduced.ppm", "palette-action-needed-reduced.ppm"],
+            "palette-idle-reduced.ppm", "palette-action-needed-reduced.ppm",
+            "ocean-running.ppm"],
     )
     write_json(artifacts / "summary.json", summary)
     print(
