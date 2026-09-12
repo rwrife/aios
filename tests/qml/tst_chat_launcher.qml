@@ -359,6 +359,24 @@ TestCase {
         verify(second.visibility !== Window.Minimized)
     }
 
+    function test_chat_opens_in_top_region_clear_of_the_orb() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        verify(chat !== null)
+        var band = Screen.height * 0.75
+        if (chat.height <= band) {
+            // The chat is centered on the top 75% of the screen, so it stays
+            // clear of the orb docked at the bottom instead of covering it.
+            compare(chat.y - Screen.virtualY, Math.max(0, Math.floor((band - chat.height) / 2)))
+            verify(chat.y - Screen.virtualY < (Screen.height - chat.height) / 2)
+            verify(chat.y + chat.height <= Screen.virtualY + band)
+        } else {
+            // Short screens clamp to the top edge rather than hiding the orb.
+            compare(chat.y, Screen.virtualY)
+            verify(chat.y + chat.height <= Screen.virtualY + Screen.height)
+        }
+    }
+
     function test_chat_settings_close_preserves_tab_data() {
         return [
             {tag: "AI", tab: 0},

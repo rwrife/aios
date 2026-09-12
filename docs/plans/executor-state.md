@@ -2,6 +2,29 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-12 12:40 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges, no blocked PRs.
+- Open issues: 30; none assigned and none PR-linked at selection time (none skipped as assigned-elsewhere).
+- Selected issue: https://github.com/rwrife/aios/issues/72 — "Move chat window default location".
+  Rationale: the chat window opening dead-center covers the chat orb, the single
+  interaction point of the AI-only OS; moving it up restores unobstructed access
+  to the primary UX entry and is fully verifiable headless via the QML harness.
+- Claim: `gh issue edit 72 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation: `WindowSizing.js` gains `topCenterY(screenHeight, windowHeight)`
+  (centers a window on the top 75% band, clamped at the top edge); `ChatWindow.qml`
+  uses it for its initial `y` instead of full-screen centering. Horizontal centering
+  and the 70% size clamp are unchanged; users can still move/resize after opening.
+- Verification (targeted QML-suite evidence, not full-harness green):
+  - Alpine 3.23 Qt6 `qmltestrunner` offscreen: `tst_chat_launcher` 18 pass/0 fail
+    (new regression test included); `tst_setup` 9, `tst_local_models` 6,
+    `tst_theme` 12, `tst_chat_scroll` 6, `tst_subscription` 7, `tst_app_host` 14 — all pass.
+  - RED/GREEN: new `test_chat_opens_in_top_region_clear_of_the_orb` FAILs with the
+    app changes stashed (17 pass/1 fail), PASSes with them restored.
+  - Not verified: in-VM QEMU GUI session (no display on this runner).
+  - CI: `Validate` workflow remains `disabled_manually`; no checks arrive for PRs.
+- New PR: pending creation (see report).
+
 ## 2026-09-12 01:35 UTC
 
 - PR lane: 1 open PR at start.
