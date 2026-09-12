@@ -2,6 +2,33 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-12 18:55 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.
+- Open issues: 28; none assigned and none PR-linked at selection time (none skipped as assigned-elsewhere).
+- Selected issue: https://github.com/rwrife/aios/issues/73 — "desktop clock alignment".
+  Rationale: the desktop wordmark + clock are the persistent chrome of the
+  AI-only desktop; the clock floated ~20px above the title because both texts
+  shared `y` while the clock renders at 75% pixel size. Fully verifiable
+  headless via the QML harness.
+- Claim: `gh issue edit 73 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation: `desktopClock` in `Main.qml` now anchors `baseline` to the
+  wordmark baseline instead of copying its `y`; the smaller clock's font
+  baseline (and, with descender-free text, its visible bottom) matches the
+  title's. Added regression test `test_desktop_clock_is_bottom_aligned_with_wordmark`.
+- Verification (targeted QML-suite evidence, not full-harness green):
+  - Alpine 3.23 Qt6 `qmltestrunner` offscreen: `tst_chat_launcher` 19 pass/0 fail
+    (new regression test included); `tst_setup` 9, `tst_local_models` 6,
+    `tst_theme` 12, `tst_chat_scroll` 6 — all pass.
+  - RED/GREEN: new alignment test FAILs with the Main.qml change stashed
+    (18 pass/1 fail), PASSes with it restored.
+  - Not verified: in-VM QEMU GUI session (no display on this runner).
+  - CI: `Validate` workflow remains `disabled_manually`; no checks arrive for PRs.
+    Branch protection is structurally absent (free private repo), so the merge
+    was gated on fresh local verification instead of CI.
+- New PR: https://github.com/rwrife/aios/pull/109 — MERGED (squash commit af45809edcebd0cc2e1804f02d321cf59bd7a0b2, 2026-09-12T18:52:29Z); issue #73 closed at merge; assignment retained through the PR, cleared by the Closes linkage.
+- Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; worktree removed.
+
 ## 2026-09-12 12:40 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges, no blocked PRs.
