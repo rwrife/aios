@@ -428,7 +428,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                         time.sleep(0.02)
                 self.assertEqual(
                     [tool["function"]["name"] for tool in listed["tools"]],
-                    ["browser", "application"],
+                    ["browser", "application", "os_settings", "scheduled_jobs"],
                 )
                 self.assertEqual(listed["warnings"], [])
 

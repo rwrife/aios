@@ -64,6 +64,9 @@ profile_aios() {
 	if [ -n "$AIOS_WORLD_VM" ] && [ -f "$AIOS_WORLD_VM" ]; then
 		apks="$apks $(tr '\n' ' ' < "$AIOS_WORLD_VM")"
 	fi
+	# setup-disk installs the running flavor as a package. mkimage otherwise
+	# writes its boot files separately and omits the APK from offline media.
+	apks="$apks linux-lts"
 
 	hostname="aios"
 	apks="$apks $(cat "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI" | tr '\n' ' ')"

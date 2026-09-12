@@ -1,9 +1,9 @@
 # Scheduled agent jobs and orb attention
 
-Status: milestones 1-4 implemented through durable scheduling, isolated
-execution, ordinary/protected configuration, protected foreground chat, and
-reliable saved-result feedback/orb attention. Full installed-image validation
-remains the final dependent layer.
+Status: COMPLETE. Milestones 1-5 are implemented and validated through durable
+scheduling, isolated execution, ordinary/protected configuration, protected
+foreground chat, reliable saved-result feedback/orb attention, and the final
+identity-enabled live/installed Alpine image gate.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -192,6 +192,104 @@ sh scripts/test-identity-linux.sh \
 
 These checks do not replace real provider-account or final Alpine/QEMU visual
 and browser-sandbox acceptance gates.
+
+### Milestone 5 release validation
+
+The final release gate was run locally from the dependent
+`rwrife-scheduled-jobs-release` branch with `AIOS_IDENTITY_BUILD=1`; no GitHub
+ISO build was used. The resulting image is:
+
+- `distro/alpine/out/alpine-aios-20260912-x86_64.iso`
+- 3,047,489,536 bytes
+- SHA-256
+  `C0FD56D3D1135D079428CDCBA4084C9784B659A337CAA3AE3A501F48B0FDA226`
+
+`scripts/verify-iso.sh` passed checksum, package manifests, BIOS boot, UEFI
+boot, and hybrid USB metadata. `scripts/test-boot.py` then booted the real live
+image under KVM and passed the ordinary-user shell, desktop application
+compiler, and bundled local-model response. The image manifest contains the
+scheduled Python/QML/C++ launchers and skill, CronSim license, `tzdata`,
+identity packages, and the `linux-lts` APK required by the offline installer.
+The live image remains intentionally ephemeral.
+
+`scripts/test-installed.py` installed that ISO without networking into:
+
+- `final-installed.qcow2`
+- 3,945,005,056 bytes allocated at validation time
+- SHA-256
+  `DA041A66D499825190C7FB6CAA23BB00B1A618F379F88AA65679FDE287DAC0A5`
+
+The retained artifact and evidence are under
+`C:\Users\ryrife\.copilot\session-state\f0a610b6-0d9e-4ef8-a068-dfbad8c2862f\files\scheduled-jobs-release`.
+KVM was enabled. Recorded QEMU names include
+`AIOS-installed-final-installed-1630-install`,
+`AIOS-installed-final-installed-653-installed-first`,
+`AIOS-installed-final-installed-653-installed-second`,
+`AIOS-installed-final-installed-653-installed-reminder`,
+`AIOS-installed-final-installed-653-installed-palette`, and
+`AIOS-installed-final-installed-653-installed-running`; the evidence JSON
+retains each complete command. The combined final evidence directory is
+`final-full-evidence`.
+
+Installed-system acceptance covered:
+
+- required startup order and private `/run/user/1000` runtime; local model,
+  scheduler, and shell were independently present;
+- a local scheduled worker run after its source chat was absent, UUID
+  deduplication, durable unread result, exact result persistence across reboot,
+  acknowledgement, pause/resume, scheduler stop/restart, service-unavailable
+  reporting while stopped, retained database contents, delete tombstones, and
+  retained run results;
+- real WebEngine page loading, bounded input, clicking, navigation, back,
+  scrolling, failure reporting, two concurrent off-the-record browser sessions,
+  cookie/socket/profile isolation, registration cleanup, and descendant
+  cleanup; no process contained `--no-sandbox`, all observed WebEngine zygotes
+  had `NoNewPrivs: 1`, and sandboxed zygotes included seccomp mode 2;
+- local, deterministic OpenAI-compatible remote, and subscription route
+  selection without silent fallback; changed bindings and missing credentials
+  each produced one `needs_user_action` result, paused the job, and recovered
+  after explicit correction; the signed-out subscription route requested
+  ChatGPT sign-in instead of falling back;
+- the exact ordinary request
+  `remind me in 10 minutes that I need to leave`: the configured
+  `America/Los_Angeles` IANA zone and current time produced a normalized
+  one-shot UTC/local preview, the self-contained job remained valid without a
+  source conversation, and it ran at the scheduled instant. The persisted
+  concise result was
+  `I will remind you of your need to leave. Please go ahead and leave.` It
+  created one unread orb item without changing the active-window/client set.
+  Clicking the orb opened the saved-results inbox; explicitly selecting View
+  result opened and acknowledged only that result. New chat and Follow up
+  remained explicit controls and no chat or model turn opened automatically;
+- an unset configured zone returned `zone: null`, preserving the required
+  ask-for-zone behavior. Version one still does not hardware-wake or execute
+  while suspended/powered off; after resume or boot the documented coalesce or
+  skip missed-run policy applies;
+- Ocean idle/running/unread/result states and generated Sage idle/action-needed
+  states with reduced motion. Screenshots are retained as
+  `ocean-running.png`, `reminder-unread.png`, `reminder-inbox.png`,
+  `reminder-result.png`, `palette-idle-reduced.png`, and
+  `palette-action-needed-reduced.png`. The real result window stayed within the
+  70% screen budget and used shared colors, one-pixel contours, rounded chrome,
+  keyboard-visible controls, and explicit accessible labels/tooltips. QML tests
+  additionally verify exactly three pulses over six seconds, no reconnect
+  replay, quiet/snooze release, mouse/keyboard paths, focus behavior, and
+  steady-only reduced motion.
+
+The final source suite passed 519 tests with 7 optional skips. The reproducible
+protected Linux harness passed all 14 encrypted workspace/kernel tests,
+including protected chat scheduling, cancellation, durable reopen, cross-owner
+isolation, and cleanup. The embedded-display build passed 131 QML tests and all
+3 native display isolation tests. The identity-enabled ISO includes the native
+profile/PIN and protected scheduling surfaces. Automated acceptance used the
+existing deterministic protected harness and did not collect a PIN or
+synthesize production authentication evidence.
+
+No real OpenAI-compatible endpoint, ChatGPT account, camera, microphone, or
+physical suspend-capable host was available. Remote behavior used the
+deterministic loopback provider, subscription coverage intentionally exercised
+the signed-out recovery path, camera-dependent recognition was not attempted,
+and hardware wake remains out of scope by design.
 
 ## Outcome
 

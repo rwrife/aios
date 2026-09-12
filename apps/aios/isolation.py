@@ -33,7 +33,7 @@ def application(app, arguments):
     if app == 'calculator' and not arguments:
         return ['/usr/bin/gnome-calculator']
     if app == 'editor' and len(arguments) == 1:
-        return ['/usr/bin/featherpad', '/workspace/' + artifact_path(arguments[0])]
+        return ['/usr/bin/mousepad', '/workspace/' + artifact_path(arguments[0])]
     raise ValueError("Application or arguments are not allowlisted")
 
 

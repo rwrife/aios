@@ -1,10 +1,15 @@
 #!/bin/sh
 set -eu
 
-if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
-    XDG_RUNTIME_DIR=$(mktemp -d "/tmp/aios-runtime-$(id -u).XXXXXX")
-    export XDG_RUNTIME_DIR
+uid=$(id -u)
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+if [ ! -d "$XDG_RUNTIME_DIR" ] || [ -L "$XDG_RUNTIME_DIR" ] ||
+   [ "$(stat -c %u "$XDG_RUNTIME_DIR")" != "$uid" ]; then
+    echo "AIOS requires an owned runtime directory at $XDG_RUNTIME_DIR" >&2
+    exit 1
 fi
+chmod 700 "$XDG_RUNTIME_DIR"
+export XDG_RUNTIME_DIR
 
 # Minimal visual baseline
 xsetroot -solid '#0d1117'

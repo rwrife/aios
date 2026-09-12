@@ -106,8 +106,11 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                     # The success marker does not occur literally in the echoed command.
                     check = "for n in 1 2 3 4 5 6 7 8 9 10; do pgrep -u aios -x aios-shell >/dev/null && break; sleep 1; done; "
                     check += "pgrep -u aios -x aios-shell >/dev/null && su aios -c 'cd; aios-new-app smoke; cmake -S smoke -B smoke/build -G Ninja && cmake --build smoke/build' && "
-                    check += "{ for n in $(seq 1 60); do wget -qO /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; "
-                    check += "su aios -c 'aios-llm chat \"Say hello in one sentence.\"'; } && printf '\\nAIOS_QA_%s\\n' READY\n"
+                    check += "{ ready=; for n in $(seq 1 60); do "
+                    check += "if wget -qO /dev/null http://127.0.0.1:8080/health; then ready=1; break; fi; sleep 1; done; "
+                    check += "[ \"$ready\" = 1 ] && su aios -c "
+                    check += "'XDG_RUNTIME_DIR=/run/user/$(id -u) aios-llm chat \"Say hello in one sentence.\"'; "
+                    check += "} && printf '\\nAIOS_QA_%s\\n' READY\n"
                     serial.sendall(check.encode())
                     sent_test = True
                 if "\nAIOS_QA_READY" in output:

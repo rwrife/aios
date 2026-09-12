@@ -25,10 +25,14 @@ read -r confirmation
 # Recheck immediately before partitioning.
 if lsblk -nro MOUNTPOINTS "$disk" | grep -q '[^[:space:]]'; then echo 'Disk became busy'; exit 1; fi
 mountdir=$(mktemp -d /mnt/aios-install.XXXXXX)
+repositories=$(mktemp /tmp/aios-repositories.XXXXXX)
+cp /etc/apk/repositories "$repositories"
 cleanup() {
     mountpoint -q "$mountdir/boot/efi" && umount "$mountdir/boot/efi" || true
     mountpoint -q "$mountdir" && umount "$mountdir" || true
     rmdir "$mountdir" 2>/dev/null || true
+    cp "$repositories" /etc/apk/repositories
+    rm -f "$repositories"
 }
 trap cleanup EXIT INT TERM
 parted -s "$disk" mklabel gpt
@@ -48,9 +52,22 @@ if [ -d /sys/firmware/efi ]; then
     mkdir -p "$mountdir/boot/efi"
     mount "${prefix}1" "$mountdir/boot/efi"
 fi
+# Install from the packaged ISO repository so the supported installer works
+# without network access. Restore remote repositories in the installed system.
+media_repo=
+for candidate in /media/cdrom/apks /media/*/apks; do
+    if [ -f "$candidate/$(apk --print-arch)/APKINDEX.tar.gz" ]; then
+        media_repo=$candidate
+        break
+    fi
+done
+[ -n "$media_repo" ] || { echo 'AIOS package repository is not mounted'; exit 1; }
+printf '%s\n' "$media_repo" > /etc/apk/repositories
+apk update
 # setup-disk installs Alpine into an already mounted root and generates fstab,
 # initramfs and the appropriate GRUB bootloader. Its version comes from Alpine.
 BOOTLOADER=grub setup-disk -m sys "$mountdir"
+cp "$repositories" "$mountdir/etc/apk/repositories"
 if [ -d /sys/firmware/efi ]; then
     grub-install --target=x86_64-efi --efi-directory="$mountdir/boot/efi" \
         --boot-directory="$mountdir/boot" --removable --no-nvram
