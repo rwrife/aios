@@ -18,7 +18,8 @@ Window {
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
     width: WindowSizing.extent(740, Screen.width, Screen.desktopAvailableWidth)
     height: WindowSizing.extent(650, Screen.height, Screen.desktopAvailableHeight)
-    x: Screen.virtualX + (Screen.width - width)/2; y: Screen.virtualY + (Screen.height - height)/2
+    x: Screen.virtualX + (Screen.width - width)/2
+    y: Screen.virtualY + WindowSizing.topCenterY(Screen.height, height)
     color: "transparent"
     // True once the window has actually been shown, so startup stays out of
     // the away-tracking path (visibility is Hidden before the first show()).
