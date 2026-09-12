@@ -28,4 +28,5 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
     regression test fails without the QML fix); `tst_chat_launcher` 16 pass;
     `tst_setup` 9 pass.
   - Not verified: in-VM QEMU GUI session (no display on this runner).
-- New PR: (created by this run; see the final report)
+- New PR: https://github.com/rwrife/aios/pull/103 — MERGED (squash commit b273f45b989335d9ed9bd0fd9e69df792ceab569, 2026-09-12T02:30:23Z); issue #78 closed at merge.
+- Note: the repo `Validate` workflow is currently `disabled_manually`; every run since 2026-09-11 20:06 UTC concluded `failure` with zero jobs (startup-style failure, Actions service operational). PR #103 therefore had no CI checks. Local canonical + QML harness verification (above) is the evidence trail; restoring the workflow is left to the owner.
