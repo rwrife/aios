@@ -1430,7 +1430,7 @@ class QemuVM:
 def login_root(console, timeout):
     console.expect(rb"aios login:\s*$", timeout)
     console.send_line("root")
-    console.expect(rb"aios:~#\s*$", timeout)
+    console.expect(rb"aios:~#", timeout)
 
 
 def install(args, artifacts, deadline):
