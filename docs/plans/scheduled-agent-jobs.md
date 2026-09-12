@@ -199,10 +199,10 @@ The final release gate was run locally from the dependent
 `rwrife-scheduled-jobs-release` branch with `AIOS_IDENTITY_BUILD=1`; no GitHub
 ISO build was used. The resulting image is:
 
-- `distro/alpine/out/alpine-aios-20260911-x86_64.iso`
+- `distro/alpine/out/alpine-aios-20260912-x86_64.iso`
 - 3,047,489,536 bytes
 - SHA-256
-  `90F3BA0877270C8E7432BFCF694537B3A0408F79E5274E21CF56BC1A3401FAEF`
+  `C0FD56D3D1135D079428CDCBA4084C9784B659A337CAA3AE3A501F48B0FDA226`
 
 `scripts/verify-iso.sh` passed checksum, package manifests, BIOS boot, UEFI
 boot, and hybrid USB metadata. `scripts/test-boot.py` then booted the real live
@@ -215,18 +215,21 @@ The live image remains intentionally ephemeral.
 `scripts/test-installed.py` installed that ISO without networking into:
 
 - `final-installed.qcow2`
-- 3,949,789,184 bytes allocated at validation time
+- 3,945,005,056 bytes allocated at validation time
 - SHA-256
-  `120423FC296EEDEF6F2914AB52B3086BAD590B0CC72828144F0D95BA6C1AA220`
+  `DA041A66D499825190C7FB6CAA23BB00B1A618F379F88AA65679FDE287DAC0A5`
 
 The retained artifact and evidence are under
 `C:\Users\ryrife\.copilot\session-state\f0a610b6-0d9e-4ef8-a068-dfbad8c2862f\files\scheduled-jobs-release`.
 KVM was enabled. Recorded QEMU names include
-`AIOS-installed-final-installed-675-install`,
-`AIOS-installed-final-installed-675-installed-first`,
-`AIOS-installed-final-installed-675-installed-reminder`, and
-`AIOS-installed-final-installed-1403-installed-palette`; the evidence JSON
-retains each complete command.
+`AIOS-installed-final-installed-1630-install`,
+`AIOS-installed-final-installed-653-installed-first`,
+`AIOS-installed-final-installed-653-installed-second`,
+`AIOS-installed-final-installed-653-installed-reminder`,
+`AIOS-installed-final-installed-653-installed-palette`, and
+`AIOS-installed-final-installed-653-installed-running`; the evidence JSON
+retains each complete command. The combined final evidence directory is
+`final-full-evidence`.
 
 Installed-system acceptance covered:
 
@@ -252,11 +255,12 @@ Installed-system acceptance covered:
   `America/Los_Angeles` IANA zone and current time produced a normalized
   one-shot UTC/local preview, the self-contained job remained valid without a
   source conversation, and it ran at the scheduled instant. The persisted
-  concise result was `I will remind you that you need to leave.` It created one
-  unread orb item without changing the active-window/client set. Clicking the
-  orb opened the saved-results inbox; explicitly selecting View result opened
-  and acknowledged only that result. New chat and Follow up remained explicit
-  controls and no chat or model turn opened automatically;
+  concise result was
+  `I will remind you of your need to leave. Please go ahead and leave.` It
+  created one unread orb item without changing the active-window/client set.
+  Clicking the orb opened the saved-results inbox; explicitly selecting View
+  result opened and acknowledged only that result. New chat and Follow up
+  remained explicit controls and no chat or model turn opened automatically;
 - an unset configured zone returned `zone: null`, preserving the required
   ask-for-zone behavior. Version one still does not hardware-wake or execute
   while suspended/powered off; after resume or boot the documented coalesce or
