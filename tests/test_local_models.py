@@ -46,6 +46,22 @@ class LocalModelTests(unittest.TestCase):
                 self.assertEqual(models.install("qwen3-4b"), path)
             self.assertEqual(fetch.call_count, 1)
 
+    def test_downloaded_model_is_selected_in_the_inventory(self):
+        core.save_config({"mode": "remote"})
+        with patch("urllib.request.urlopen", return_value=Response(self.weights)):
+            models.install("qwen3-4b")
+        inventory = models.list_models()
+        flags = {entry["id"]: entry["selected"] for entry in inventory["models"]}
+        self.assertEqual(models.selected_model_id(), "qwen3-4b")
+        self.assertTrue(flags["qwen3-4b"])
+        self.assertFalse(any(flag for model_id, flag in flags.items() if model_id != "qwen3-4b"))
+
+    def test_selected_flag_clears_when_local_model_is_not_configured(self):
+        for config in ({"mode": "remote"}, {"mode": "local", "model_path": ""}):
+            core.save_config(config)
+            self.assertEqual(models.selected_model_id(), "")
+            self.assertFalse(any(entry["selected"] for entry in models.list_models()["models"]))
+
     def test_insufficient_resources_prevent_download_and_preserve_config(self):
         core.save_config({"mode": "remote"})
         for target, value, message in (("memory_bytes", 4 * models.GIB, "RAM"),

@@ -11,6 +11,10 @@ ColumnLayout {
     readonly property var inventory: backend.localModels || ({})
     readonly property var entries: inventory.models || []
     readonly property var selected: entries[choice.currentIndex] || ({})
+    // Id of the configured model seen in the last inventory refresh. When a
+    // download finishes, the backend marks the new model as configured and
+    // the picker re-follows it; plain refreshes keep manual browsing intact.
+    property string configuredId: ""
     spacing: 8
     function size(bytes) { return bytes < 1073741824 ? Math.ceil(bytes / 1048576) + " MiB" : (bytes / 1073741824).toFixed(1) + " GiB" }
     function gib(bytes) { return (bytes / 1073741824).toFixed(1) + " GiB" }
@@ -20,6 +24,19 @@ ColumnLayout {
         id: choice; objectName: "localModelChoice"
         Layout.fillWidth: true; enabled: !backend.busy && !backend.configuring
         model: picker.entries.map(function(m) { return m.name + (m.bundled ? " · Starter" : "") + (m.installed ? (m.bundled ? " · Bundled" : " · Downloaded") : "") })
+        // A refreshed model list resets the index, which made a freshly
+        // downloaded model look unselected after "Download and use model".
+        // Re-follow the configured model when the refresh changes it; manual
+        // browsing between refreshes stays untouched.
+        onModelChanged: {
+            var index = picker.entries.findIndex(function(m) { return m.selected })
+            var configured = index >= 0 ? picker.entries[index].id : ""
+            if (configured !== picker.configuredId) {
+                picker.configuredId = configured
+                if (index >= 0)
+                    choice.currentIndex = index
+            }
+        }
         Accessible.name: "Local chat model"
     }
     Text {
