@@ -237,6 +237,20 @@ TestCase {
         compare(clock.opacity, wordmark.opacity)
     }
 
+    function test_desktop_clock_is_bottom_aligned_with_wordmark() {
+        createDesktop()
+        var wordmark = findChild(desktop, "desktopWordmark")
+        var clock = findChild(desktop, "desktopClock")
+        verify(wordmark !== null)
+        verify(clock !== null)
+        // Neither string has descenders, so matching font baselines puts the
+        // visible bottoms of the clock and the title at the same height.
+        compare(clock.baseline, wordmark.baseline)
+        // The old layout pinned both texts to the same y; the smaller clock
+        // then sat visually higher than the title.
+        verify(clock.y > wordmark.y)
+    }
+
     function test_desktop_controls_are_faded_until_hovered_data() {
         return [
             {tag: "Ocean", theme: "blue"},
