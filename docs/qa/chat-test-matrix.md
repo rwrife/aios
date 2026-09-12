@@ -7,7 +7,7 @@ and fake-backend tests do not establish working inference or hardware support.
 - [x] QEMU BIOS offline boot to ordinary-user launcher (r10, 4 GiB)
 - [x] QEMU UEFI offline boot to ordinary-user launcher (r10, 4 GiB)
 - [x] Two launcher activations created independent centered windows/sessions with isolated histories and closure (r7)
-- [x] Source-level QML tests restore minimized chats newest-first before creating another session
+- [x] Source-level QML tests restore minimized or hidden chats newest-first before creating another session
 - [x] Real starter-model response on CPU (r4/r7)
 - [x] Real compatible remote endpoint response (HTTPS test server)
 - [ ] Download/import/configuration and invalid credentials

@@ -229,14 +229,15 @@ resizing are also covered. Image builds now run this UI suite before compiling.
 
 ## Minimized chat restoration
 
-The chat blob no longer displays a visual tooltip. Activating it restores
-minimized chat windows from most recently minimized to oldest before creating a
-new independent session. Closing a minimized chat removes it from the restore
-order, while visible chat windows continue to allow additional sessions.
+The chat blob no longer displays a visual tooltip. Activating it restores chat
+windows that are out of sight — minimized through the window button or hidden
+by the window manager — from most recently out of sight to oldest before
+creating a new independent session. Closing a hidden chat removes it from the
+restore order, while visible chat windows continue to allow additional sessions.
 
 Source-level Qt Quick regression tests cover accessibility metadata, tooltip
-removal, minimize tracking, restore order, close cleanup and session creation.
-This checkpoint does not claim a new ISO or interactive VM validation.
+removal, minimize and hide tracking, restore order, close cleanup and session
+creation. This checkpoint does not claim a new ISO or interactive VM validation.
 
 ## Agentic tools checkpoint (2026-09-09)
 

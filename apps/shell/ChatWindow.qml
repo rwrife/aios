@@ -20,13 +20,27 @@ Window {
     height: WindowSizing.extent(650, Screen.height, Screen.desktopAvailableHeight)
     x: Screen.virtualX + (Screen.width - width)/2; y: Screen.virtualY + (Screen.height - height)/2
     color: "transparent"
-    signal minimized()
+    // True once the window has actually been shown, so startup stays out of
+    // the away-tracking path (visibility is Hidden before the first show()).
+    property bool shownOnce: false
+    // True while the window is shutting down so a close is never mistaken
+    // for a minimize/hide that the launcher could restore.
+    property bool isClosing: false
+    //! Emitted when the window becomes invisible without closing, either via
+    //! the minimize button or because the window manager minimized or hid it.
+    signal putAway()
     signal removed()
     onVisibilityChanged: function() {
-        if (chat.visibility === Window.Minimized)
-            minimized()
+        if (chat.visibility === Window.Windowed || chat.visibility === Window.Maximized
+                || chat.visibility === Window.FullScreen)
+            chat.shownOnce = true
+        if (chat.isClosing || !chat.shownOnce)
+            return
+        if (chat.visibility === Window.Minimized || chat.visibility === Window.Hidden)
+            putAway()
     }
     onClosing: {
+        chat.isClosing = true
         removed()
         session.closeSession()
         if (ownsProfileControl && profileControl) profileControl.dispose()
