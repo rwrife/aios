@@ -176,7 +176,10 @@ Window {
         objectName: "desktopClock"
         anchors.right: parent.right
         anchors.rightMargin: 48
-        y: wordmark.y
+        // The clock renders smaller than the wordmark; matching font
+        // baselines keeps their visible bottoms aligned instead of leaving
+        // the clock floating above the title.
+        anchors.baseline: wordmark.baseline
         text: Qt.formatTime(desktop.currentTime, "h:mm AP")
         color: wordmark.color
         opacity: wordmark.opacity
