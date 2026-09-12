@@ -17,32 +17,34 @@ Window {
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
     property var displayBridgeApi: typeof displayBridge === "undefined" ? ({enabled: false}) : displayBridge
-    property var minimizedChats: []
-    readonly property int minimizedChatCount: minimizedChats.length
+    property var awayChats: []
+    readonly property int awayChatCount: awayChats.length
     property date currentTime: new Date()
     Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backendApi.config.reduced_motion === true
-    function removeMinimizedChat(window) {
+    function removeAwayChat(window) {
         var remaining = []
-        for (var i = 0; i < minimizedChats.length; ++i) {
-            if (minimizedChats[i] !== window)
-                remaining.push(minimizedChats[i])
+        for (var i = 0; i < awayChats.length; ++i) {
+            if (awayChats[i] !== window)
+                remaining.push(awayChats[i])
         }
-        minimizedChats = remaining
+        awayChats = remaining
     }
-    function trackMinimizedChat(window) {
-        removeMinimizedChat(window)
-        var updated = minimizedChats.slice()
+    function trackAwayChat(window) {
+        removeAwayChat(window)
+        var updated = awayChats.slice()
         updated.push(window)
-        minimizedChats = updated
+        awayChats = updated
     }
-    function restoreMinimizedChat() {
-        var pending = minimizedChats.slice()
+    function restoreAwayChat() {
+        var pending = awayChats.slice()
         while (pending.length > 0) {
             var window = pending.pop()
-            minimizedChats = pending.slice()
-            if (!window || window.visibility !== Window.Minimized)
+            awayChats = pending.slice()
+            if (!window || window.isClosing)
+                continue
+            if (window.visibility !== Window.Minimized && window.visibility !== Window.Hidden)
                 continue
             window.showNormal()
             window.raise()
@@ -54,7 +56,7 @@ Window {
     function openChat() {
         if (sessionControlApi.enabled)
             return null
-        var restored = restoreMinimizedChat()
+        var restored = restoreAwayChat()
         if (restored)
             return restored
         var window = chatComponent.createObject(desktop, {
@@ -66,8 +68,8 @@ Window {
         })
         if (!window)
             return null
-        window.minimized.connect(function() { desktop.trackMinimizedChat(window) })
-        window.removed.connect(function() { desktop.removeMinimizedChat(window) })
+        window.putAway.connect(function() { desktop.trackAwayChat(window) })
+        window.removed.connect(function() { desktop.removeAwayChat(window) })
         window.show()
         window.raise()
         window.requestActivate()

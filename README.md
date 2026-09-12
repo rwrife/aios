@@ -145,8 +145,8 @@ AI models also supports [ChatGPT subscription sign-in](docs/chatgpt-subscription
 including device-code login from outside a VM, model selection, and usage status.
 
 The softly animated blob at the bottom center restores the most recently
-minimized chat, or opens a new chat window and conversation when none are
-minimized. Qwen3 0.6B Q4_K_M is bundled and starts automatically in
+minimized or hidden chat, or opens a new chat window and conversation when none
+are out of sight. Qwen3 0.6B Q4_K_M is bundled and starts automatically in
 non-thinking mode for offline chat on first boot. Use the ellipsis menu
 to switch back to the starter model, import a GGUF, or configure a compatible
 remote endpoint. The composer keeps attachments and Voice understated. Voice

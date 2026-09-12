@@ -423,17 +423,36 @@ TestCase {
         var second = main.openChat()
         minimize(first)
         minimize(second)
-        compare(main.minimizedChatCount, 2)
+        compare(main.awayChatCount, 2)
 
         compare(main.openChat(), second)
         compare(backend.createSessionCalls, 2)
-        compare(main.minimizedChatCount, 1)
+        compare(main.awayChatCount, 1)
         tryVerify(function() { return second.visibility !== Window.Minimized }, 1000)
 
         compare(main.openChat(), first)
         compare(backend.createSessionCalls, 2)
-        compare(main.minimizedChatCount, 0)
+        compare(main.awayChatCount, 0)
         tryVerify(function() { return first.visibility !== Window.Minimized }, 1000)
+    }
+
+    function test_window_manager_hidden_chats_restore_without_new_sessions() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        compare(backend.createSessionCalls, 1)
+
+        // The window manager hid the frameless chat (focus-out, desktop
+        // click): the orb must bring that same window and session back
+        // instead of stacking a duplicate chat on top of it.
+        chat.hide()
+        tryCompare(chat, "visibility", Window.Hidden)
+        compare(main.awayChatCount, 1)
+
+        compare(main.openChat(), chat)
+        compare(backend.createSessionCalls, 1)
+        compare(main.awayChatCount, 0)
+        tryVerify(function() { return chat.visibility !== Window.Hidden }, 1000)
+        compare(chat.session.closeCalls, 0)
     }
 
     function test_closing_minimized_chat_removes_it_from_tracking() {
@@ -441,11 +460,11 @@ TestCase {
         var chat = main.openChat()
         var session = backend.createdSessions[0]
         minimize(chat)
-        compare(main.minimizedChatCount, 1)
+        compare(main.awayChatCount, 1)
 
         chat.close()
         tryCompare(session, "closeCalls", 1)
-        compare(main.minimizedChatCount, 0)
+        compare(main.awayChatCount, 0)
 
         verify(main.openChat() !== null)
         compare(backend.createSessionCalls, 2)

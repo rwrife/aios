@@ -4,9 +4,10 @@ This specification supersedes the terminal-only requirements in the older plans.
 
 AIOS boots into Alpine/OpenRC, Xorg, Openbox, and an ordinary local `aios` user.
 The desktop has an original slow wave animation, one prominent Chat launcher,
-and understated terminal and power icons. The launcher restores minimized chat
-windows from most recently minimized to oldest. When none are minimized, it
-creates a new centered chat window and independent conversation. Existing
+and understated terminal and power icons. The launcher restores chat windows
+that are out of sight (minimized by their button or hidden by the window
+manager), from most recently out of sight to oldest. When none are out of
+sight, it creates a new centered chat window and independent conversation. Existing
 windows retain their own drafts, attachments and generation state. Closing one
 stops only that session. Other development applications remain usable.
 
