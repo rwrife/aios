@@ -6,6 +6,7 @@ import threading
 from aios.browser import Browser
 
 PAGE=b'''<!doctype html><title>AIOS Browser QA</title><h1>Browser controls test</h1><label>Name <input id="name"></label><button onclick="document.querySelector('#result').innerText='Hello '+document.querySelector('#name').value">Greet</button><p id="result"></p><a href="/next">Next page</a>'''
+PAGE += b'<a href="/next" target="_blank">Blank link</a>'
 PAGE += b'<div style="height:1800px"></div><button>Bottom control</button><p>Bottom marker</p>'
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -27,6 +28,11 @@ try:
     page=browser.act({'action':'click','element':link})
     assert page['title']=='Next page',page
     assert browser.act({'action':'back'})['title']=='AIOS Browser QA'
+    page=browser.act({'action':'snapshot'})
+    blank=next(c['element'] for c in page['controls'] if c['label']=='Blank link')
+    page=browser.act({'action':'click','element':blank})
+    assert page['title']=='Next page',page
+    assert browser.act({'action':'back'})['title']=='AIOS Browser QA'
     tabs=browser.act({'action':'tabs'})['tabs']; assert tabs==['main']
     browser.act({'action':'switch','tab':'main'})
     page=browser.act({'action':'navigate','url':url})
@@ -35,7 +41,7 @@ try:
     assert page['viewport']['y']==300,page
     try:
         browser.act({'action':'scroll','direction':'down','amount':5000})
-    except RuntimeError as error:
+    except (ValueError, RuntimeError) as error:
         assert 'between 1 and 2000' in str(error).lower(),error
     else:
         raise AssertionError('Unbounded scroll amount was accepted')

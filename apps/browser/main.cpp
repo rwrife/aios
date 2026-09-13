@@ -962,6 +962,11 @@ private:
   if (getComputedStyle(element).pointerEvents === 'none') return {error:'The selected control is not actionable.'};
   if (element.disabled) return {error:'The selected control is disabled.'};
   if ((element.type || '').toLowerCase() === 'file') return {error:'File upload controls are not available to the browser tool.'};
+  // This browser has exactly one private page and denies new windows, so a
+  // link that asks for a new tab (_blank/_new) would otherwise be a silent
+  // dead end. Redirect it to this page; window.open popups stay blocked.
+  if (element.tagName === 'A' && /^(_blank|_new)$/i.test(element.target || ''))
+    element.setAttribute('target', '_self');
   element.scrollIntoView({block:'center', inline:'nearest'});
   const updated = element.getBoundingClientRect();
   const x = Math.max(0, Math.min(innerWidth - 1, updated.left + updated.width / 2));

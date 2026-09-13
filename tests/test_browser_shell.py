@@ -91,6 +91,23 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('amount.toDouble() > 2000', source)
         self.assertIn('amount.toDouble() != qRound(amount.toDouble())', source)
 
+    def test_new_window_link_requests_continue_in_the_same_page(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        # New-window requests (window.open, popup types) stay blocked outright.
+        self.assertIn('Popup windows are not available in the AIOS browser.', source)
+        # Anchor clicks that would open a new tab are redirected to this page
+        # inside the fixed element-action script (no arbitrary page JS).
+        redirect = source[source.index("if (element.tagName === 'A'"):
+                           source.index('element.scrollIntoView')]
+        self.assertIn('_blank', redirect)
+        self.assertIn("_self", redirect)
+        self.assertIn("setAttribute('target'", redirect)
+
+    def test_browser_qa_covers_new_window_link_continuation(self):
+        qa = (ROOT / 'scripts/test-browser.py').read_text(encoding='utf-8')
+        self.assertIn('Blank link', qa)
+        self.assertIn('target="_blank"', qa)
+
 
 if __name__ == '__main__':
     unittest.main()
