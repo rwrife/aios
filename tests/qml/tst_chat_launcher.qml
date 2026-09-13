@@ -1,7 +1,9 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Window
 import QtTest
 import "../../apps/shell"
+import "../../apps/shell/Markdown.js" as Markdown
 
 TestCase {
     id: test
@@ -500,5 +502,85 @@ TestCase {
 
         verify(main.openChat() !== null)
         compare(backend.createSessionCalls, 2)
+    }
+
+    function test_markdown_converter_formats_common_blocks() {
+        var colors = { ink: "#f1f5f6", muted: "#b2c3cd", code: "#203340", accent: "#bde4e6" }
+        var html = Markdown.toHtml("# Title\n\nHello **world** with `code`.\n\n- one\n- two\n\n1. first\n2. second\n\n```c\nint x = 1 < 2;\n```\n\n> quoted\n\n[site](https://example.com)", colors)
+        verify(html.indexOf("<h2") >= 0, "heading rendered: " + html)
+        verify(html.indexOf("<strong>world</strong>") >= 0)
+        verify(html.indexOf("font-family:monospace") >= 0)
+        verify(html.indexOf("<li") >= 0)
+        // Fenced code keeps its content escaped, not executed as markup.
+        verify(html.indexOf("<pre") >= 0)
+        verify(html.indexOf("int x = 1 &lt; 2;") >= 0)
+        verify(html.indexOf("<blockquote") >= 0)
+        verify(html.indexOf("href=\"https://example.com\"") >= 0)
+    }
+
+    function test_markdown_converter_escapes_hostile_input() {
+        var colors = { ink: "#f1f5f6", muted: "#b2c3cd", code: "#203340", accent: "#bde4e6" }
+        var html = Markdown.toHtml("<script>alert(1)</script> and [x](javascript:alert(1))", colors)
+        verify(html.indexOf("<script>") === -1, "script tag escaped: " + html)
+        verify(html.indexOf("&lt;script&gt;") >= 0)
+        // A javascript: target must never become a live anchor.
+        verify(html.indexOf("href=\"javascript:") === -1)
+        compare(Markdown.toHtml("", colors), "")
+    }
+
+    function collectNamed(root, name, found) {
+        var acc = found || []
+        if (!root)
+            return acc
+        if (root.objectName === name)
+            acc.push(root)
+        var children = root.children || []
+        for (var i = 0; i < children.length; ++i)
+            collectNamed(children[i], name, acc)
+        var data = root.data || []
+        for (var j = 0; j < data.length; ++j)
+            collectNamed(data[j], name, acc)
+        return acc
+    }
+
+    function test_assistant_replies_render_as_markdown() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        var session = backend.createdSessions[0]
+        session.messages = [
+            { role: "user", content: "use **bold** literally" },
+            { role: "assistant", content: "Try **this**:\n\n```\nplain code\n```" }
+        ]
+        session.changed()
+        var convo = findChild(chat, "conversation")
+        tryCompare(convo, "count", 2)
+        convo.forceLayout()
+        // Reach the live delegates through the view instead of walking the
+        // object tree: recycled delegate instances can linger unparented.
+        var plain = null
+        var rich = null
+        tryVerify(function() {
+            plain = null
+            rich = null
+            for (var i = 0; i < convo.count; ++i) {
+                var delegate = convo.itemAtIndex(i)
+                if (!delegate) return false
+                var item = collectNamed(delegate, "replyText")[0]
+                if (!item) return false
+                if (item.textFormat === TextEdit.PlainText) plain = item
+                if (item.textFormat === TextEdit.RichText) rich = item
+            }
+            return plain !== null && rich !== null
+        }, 3000)
+        // The user echo stays plain text so typed markup is never reinterpreted.
+        compare(plain.text, "use **bold** literally")
+        // The assistant reply is rich text whose Qt re-serialization shows the
+        // markdown consumed: bold spans, monospace code, no literal markers.
+        compare(rich.textFormat, TextEdit.RichText)
+        verify(rich.text.indexOf("**") === -1, "markdown left raw: " + rich.text)
+        verify(rich.text.indexOf("```") === -1, "fence left raw: " + rich.text)
+        verify(rich.text.indexOf("font-weight:700") >= 0, "bold not rendered: " + rich.text)
+        verify(rich.text.indexOf("monospace") >= 0, "code block not rendered: " + rich.text)
+        verify(rich.text.indexOf("plain code") >= 0)
     }
 }
