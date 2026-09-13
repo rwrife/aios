@@ -2,6 +2,48 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-13 20:07 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges, no blocked PRs.
+- Open issues: 27 at selection; all unassigned except #71 (rwrife, browser-mcp in-flight); #71 skipped as assigned-elsewhere.
+- Selected issue: https://github.com/rwrife/aios/issues/75 — "Opening another browser instance".
+  Rationale: "open X" is a primary AI-only-OS command path; the agent claiming a
+  browser is open after the user closed it breaks trust in the single interaction
+  point, and the fix is fully verifiable headless via the real compiled browser.
+- Claim: `gh issue edit 75 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Root cause: each chat's agent talks to its browser through the long-lived
+  `Browser` client in `apps/aios/browser.py`, which tracked only "never opened"
+  vs "process alive". When the user closed the window (process exits, or WM
+  kills it), a later `navigate` died client-side with "Open the browser first."
+  while the model — having seen a successful open earlier in the conversation —
+  often just reported the browser as opened without calling any tool.
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-75`):
+  - `apps/aios/browser.py`: a dead process is now a "closed window" state —
+    `navigate` transparently relaunches the browser and sends `open` (so
+    "open linkedin" reopens the page in a fresh window), other page actions
+    raise "The browser window was closed…", and the tool description teaches
+    the user can close the window at any time.
+  - `apps/aios/agent.py` POLICY: never assume an earlier open is still on
+    screen; report open only from the newest tool result; re-open via open/navigate.
+  - `scripts/test-browser.py`: new QA journey — SIGTERM the browser process,
+    assert snapshot reports "window was closed", assert `navigate` reopens the
+    page. `docs/browser.md` updated.
+- Verification (targeted native-execution + suite evidence, not VM green):
+  - Real compiled `aios-browser` (fresh `origin/main` build, Alpine 3.23 Qt
+    6.10.3 container): full `scripts/test-browser.py` GREEN with the fix
+    client (all prior asserts + new closed-window journey PASS).
+  - RED/GREEN: identical harness against main's client FAILs at the new
+    assert with the old "Open the browser first." error.
+  - Python suites: `test_browser_agent`+`test_toolhost`+`test_browser_shell`
+    101/101 (3 new regression tests). Full `scripts/test.sh` 457 tests with
+    only the known baseline failure
+    `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`
+    (pre-existing on main).
+  - Not verified: real Alpine/QEMU X11 session with Chromium sandbox enabled
+    (no display/VM on this runner); stated in the PR, and the issue stays open
+    for that release QA.
+- New PR: PENDING — see final entry below.
+
 ## 2026-09-13 12:55 UTC
 
 - PR lane: 1 open PR at start — https://github.com/rwrife/aios/pull/113 (#71 browser actions, authored by rwrife). It documented a never-executed native surface (`apps/browser/main.cpp` scroll path) and was held open under the native-surface gate. This run closed that gap: in an Alpine 3.23 Qt 6.10.3 Docker container the PR head compiled cleanly (`ninja aios-browser`), and the compiled binary was executed headless (`QT_QPA_PLATFORM=offscreen`, non-root, local HTTP server). Live probes: `scroll amount=300` → viewport.y==300; default up/down == 300 px; raw-socket probes bypassing the Python validator proved C++-side re-validation (5000/0/300.5 rejected with "whole-pixel…between 1 and 2000", boundary 1/2000 accepted). PR body updated with this evidence, then merged (squash 7e5b834dc3cc41969520fdcde398c283568f47fc, 2026-09-13T12:31:12Z). Issue #71 stays OPEN (Progresses linkage — in-VM/sandboxed release QA and live chat-phrasing observation still pending); assignment retained as in-flight lock.

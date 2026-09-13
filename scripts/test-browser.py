@@ -2,7 +2,10 @@
 """Run as a normal user in an X11 session with aios-browser installed."""
 import http.server
 import json
+import os
+import signal
 import threading
+import time
 from aios.browser import Browser
 
 PAGE=b'''<!doctype html><title>AIOS Browser QA</title><h1>Browser controls test</h1><label>Name <input id="name"></label><button onclick="document.querySelector('#result').innerText='Hello '+document.querySelector('#name').value">Greet</button><p id="result"></p><a href="/next">Next page</a>'''
@@ -51,6 +54,23 @@ try:
             break
     assert 'Bottom marker' in page['text'],page
     assert any(c['label']=='Bottom control' for c in page['controls'])
+    # The user closing the window must not leave the agent asserting a live browser.
+    os.kill(browser.process.pid, signal.SIGTERM)
+    exited=False
+    for _ in range(100):
+        if browser.process.poll() is not None:
+            exited=True; break
+        time.sleep(0.05)
+    assert exited,'Browser process did not exit after window close'
+    try:
+        browser.act({'action':'snapshot'})
+    except ValueError as error:
+        assert 'window was closed' in str(error).lower(),error
+    else:
+        raise AssertionError('Snapshot after user-closed window was reported as live')
+    page=browser.act({'action':'navigate','url':url})
+    assert page['title']=='AIOS Browser QA',page
+    print('PASS: user-closed window reports closed and navigate reopens the page',flush=True)
     try:
         browser.act({'action':'navigate','url':'http://127.0.0.1:1/'})
     except RuntimeError as error:
