@@ -75,6 +75,22 @@ class BrowserShellTests(unittest.TestCase):
         self.assertIn('setWindowFlag(Qt::CustomizeWindowHint)', source)
         self.assertIn('setWindowFlag(Qt::WindowMinimizeButtonHint, false)', source)
 
+    def test_scroll_moves_about_300_pixels_and_accepts_bounded_amount(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        client = (ROOT / 'apps/aios/browser.py').read_text(encoding='utf-8')
+        self.assertIn('int pixels = 300;', source)
+        self.assertIn('window.scrollBy(0, %1 * %2)', source)
+        self.assertIn('Choose a whole-pixel scroll amount between 1 and 2000.', source)
+        self.assertIn('allowedFields.insert("amount")', source)
+        self.assertIn('"amount"', client)
+        self.assertIn('"type": "integer"', client)
+
+    def test_scroll_amount_rejects_out_of_range_values(self):
+        source = (ROOT / 'apps/browser/main.cpp').read_text(encoding='utf-8')
+        self.assertIn('amount.toDouble() < 1', source)
+        self.assertIn('amount.toDouble() > 2000', source)
+        self.assertIn('amount.toDouble() != qRound(amount.toDouble())', source)
+
 
 if __name__ == '__main__':
     unittest.main()

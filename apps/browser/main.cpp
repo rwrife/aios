@@ -665,8 +665,10 @@ private:
             allowedFields.insert("url");
         else if (action == "click" || action == "type" || action == "press")
             allowedFields.insert("element");
-        else if (action == "scroll")
+        else if (action == "scroll") {
             allowedFields.insert("direction");
+            allowedFields.insert("amount");
+        }
         else if (action == "switch")
             allowedFields.insert("tab");
         if (action == "type" || action == "press")
@@ -920,8 +922,21 @@ private:
                 failPending("Choose up or down.");
                 return;
             }
-            script = QString("window.scrollBy(0, %1 * innerHeight * 0.75); ({ok:true})")
-                .arg(direction == "up" ? -1 : 1);
+            int pixels = 300;
+            if (request.contains("amount")) {
+                const QJsonValue amount = request.value("amount");
+                if (!amount.isDouble()
+                        || amount.toDouble() < 1
+                        || amount.toDouble() > 2000
+                        || amount.toDouble() != qRound(amount.toDouble())) {
+                    failPending("Choose a whole-pixel scroll amount between 1 and 2000.");
+                    return;
+                }
+                pixels = qRound(amount.toDouble());
+            }
+            script = QString("window.scrollBy(0, %1 * %2); ({ok:true})")
+                .arg(direction == "up" ? -1 : 1)
+                .arg(pixels);
         } else {
             int generation = 0;
             int index = 0;

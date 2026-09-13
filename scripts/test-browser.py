@@ -31,6 +31,14 @@ try:
     browser.act({'action':'switch','tab':'main'})
     page=browser.act({'action':'navigate','url':url})
     assert not any(c['label']=='Bottom control' for c in page['controls'])
+    page=browser.act({'action':'scroll','direction':'down','amount':300})
+    assert page['viewport']['y']==300,page
+    try:
+        browser.act({'action':'scroll','direction':'down','amount':5000})
+    except RuntimeError as error:
+        assert 'between 1 and 2000' in str(error).lower(),error
+    else:
+        raise AssertionError('Unbounded scroll amount was accepted')
     for _ in range(30):
         page=browser.act({'action':'scroll','direction':'down'})
         if any(c['label']=='Bottom control' for c in page['controls']):
