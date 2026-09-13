@@ -148,6 +148,24 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIsNone(browser.process)
         self.assertEqual(browser.act({"action": "close"}), {"closed": True})
 
+    def test_scroll_amount_bounds_are_client_validated(self):
+        browser = Browser()
+        browser.process = type("Proc", (), {"poll": lambda self: None})()
+        browser.socket = "unused.sock"
+        for amount in (0, 2001, -5, "300", 30.5, True):
+            with self.subTest(amount=amount), self.assertRaisesRegex(ValueError, "between 1 and 2000"):
+                browser.act({"action": "scroll", "direction": "down", "amount": amount})
+        with patch("aios.browser.call", return_value={"ok": True}) as call:
+            self.assertEqual(browser.act({"action": "scroll", "amount": 300}), {"ok": True})
+        call.assert_called_once_with("unused.sock", {"action": "scroll", "amount": 300})
+        with patch("aios.browser.call", return_value={"ok": True}) as call:
+            self.assertEqual(browser.act({"action": "scroll", "direction": "up"}), {"ok": True})
+        call.assert_called_once_with("unused.sock", {"action": "scroll", "direction": "up"})
+
+    def test_policy_teaches_website_and_scroll_conventions(self):
+        for phrase in ('"open cnn"', "https://www.<name>.com", "click on <label>", "300 pixels"):
+            self.assertIn(phrase, agent.POLICY)
+
     def test_browser_uses_chat_theme_and_session_from_environment(self):
         with patch.dict(os.environ, {
             "AIOS_BROWSER_THEME": "violet",

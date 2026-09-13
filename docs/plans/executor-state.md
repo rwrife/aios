@@ -2,6 +2,42 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-13 08:10 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.
+- Open issues: 28 at selection time; none assigned and none PR-linked (none skipped as assigned-elsewhere).
+- Selected issue: https://github.com/rwrife/aios/issues/71 — "browser mcp actions".
+  Rationale: the AI chat is the single interaction point, and browsing via chat
+  is a primary agent surface; the issue's conventions ("open cnn" -> website,
+  "click on X" -> snapshot+click, ~300px scroll) make everyday browser requests
+  work without user micromanagement.
+- Claim: `gh issue edit 71 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation: POLICY lines in `apps/aios/agent.py` teach the generic-name
+  → https://www.<name>.com convention and snapshot-then-click-by-label behavior;
+  the `scroll` action now moves a bounded whole-pixel amount (optional
+  `amount` 1-2000, default 300 px) in `apps/browser/main.cpp`, validated
+  client-side in `apps/aios/browser.py` (tool schema + act()) and again in the
+  browser socket protocol; `docs/browser.md` documents the conventions;
+  `scripts/test-browser.py` (in-VM QA) asserts the 300 px viewport delta and
+  rejection of out-of-range amounts.
+- Verification (targeted + suite evidence, not VM green):
+  - Python suite (`scripts/test.sh`): 453 tests, 1 failure
+    (`test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`),
+    re-confirmed as pre-existing baseline drift by running the same test on
+    untouched `main`.
+  - Targeted: `tests.test_browser_shell` + `tests.test_browser_agent` 61 pass/0 fail
+    (3 new tests: client-side amount bounds, POLICY convention tokens,
+    shell-side amount wiring/validation).
+  - RED/GREEN: with implementation files stashed the new tests FAIL (9 failures),
+    PASS when restored.
+  - Not verified: `aios-browser` C++ does not compile on this runner (no Qt6
+    toolchain) and `scripts/test-browser.py` needs a real Alpine/QEMU X11
+    session, so the new scroll path was not executed live. PR uses
+    `Progresses #71` accordingly; issue stays open pending VM validation.
+  - CI: `Validate` workflow remains `disabled_manually`; branch protection
+    structurally absent.
+- New PR: https://github.com/rwrife/aios/pull/113 — OPEN (Progresses #71; assignment retained as in-flight lock).
+
 ## 2026-09-13 01:50 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.

@@ -52,6 +52,10 @@ TOOL = {
                     "description": "Text to type, or Enter/Tab/Escape for press",
                 },
                 "direction": {"type": "string", "enum": ["up", "down"]},
+                "amount": {
+                    "type": "integer",
+                    "description": "Optional scroll distance in pixels (1-2000); defaults to about 300 pixels",
+                },
                 "tab": {
                     "type": "string",
                     "description": "Handle returned by tabs",
@@ -205,6 +209,10 @@ class Browser:
             self.start()
         elif not self.process or self.process.poll() is not None:
             raise ValueError("Open the browser first.")
+        if action == "scroll" and "amount" in arguments:
+            amount = arguments["amount"]
+            if not isinstance(amount, int) or isinstance(amount, bool) or not 1 <= amount <= 2000:
+                raise ValueError("Choose a whole-pixel scroll amount between 1 and 2000.")
         return call(self.socket, arguments)
 
     def close(self):

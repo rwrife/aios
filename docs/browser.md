@@ -10,7 +10,13 @@ background contours.
 There is no browser launcher on the desktop or in the Openbox menu. Ask chat to
 open a website. A browser is created lazily for that chat and remains available
 between messages until the chat is stopped or closed. The browser has one page,
-not user-visible tabs.
+not user-visible tabs. When a user asks to open a generic name that matches no
+document or application ("open cnn", "open amazon"), the agent convention is to
+treat it as a website request and open https://www.<name>.com, searching first
+when the domain is ambiguous. "Click on <label>" or "go to <label>" means to
+snapshot the page and click the control whose text matches that label. Plain
+"scroll down/up" scrolls about 300 pixels by default; an optional bounded
+whole-pixel `amount` (1-2000) overrides the distance.
 
 Browser is one built-in in the shared per-chat tool registry, alongside the
 application tool and explicitly approved MCP tools. The provider-neutral agent
