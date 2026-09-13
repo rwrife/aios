@@ -34,7 +34,7 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   - Full `scripts/test-browser.py` executed headless against the fixed binary: PASS (open/read/type/click/same-frame+blank-link navigation/back/tabs/scroll-300/scroll-reject incl. new blank-link asserts). Identical harness against main's pre-fix binary FAILS at the blank-link assert (RED/GREEN).
   - Static suites: `tests.test_browser_shell` + `tests.test_browser_agent` 63/63; full `scripts/test.sh` 455 tests with only the known baseline failure `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher` (re-confirmed failing on untouched main this run).
   - Not verified: real Alpine/QEMU X11 session with the Chromium sandbox enabled (no display here); stated in the PR.
-- New PR: https://github.com/rwrife/aios/pull/114 — Progresses #70 (in-VM sandboxed release QA still outstanding); issue assignment retained while the PR is in flight.
+- New PR: https://github.com/rwrife/aios/pull/114 — MERGED (squash commit 162a08ce28e682527c307626aab5892d3d82a10c, 2026-09-13T13:07:23Z). The merge auto-closed #70 via the body's "Fixes #70:" title-adjacent keyword; since the PR's own acceptance linkage was `Progresses` (in-VM sandboxed release QA still pending), the executor reopened #70 (REST `state=open`), posted an evidence comment (issuecomment-5653473608), and released the assignment so a VM-capable runner can claim the remaining release QA. Final state at run end: PR #114 MERGED, #70 OPEN/unassigned, #71 OPEN/rwrife-assigned (PR #113 merged; Progresses linkage), remote branch deleted, worktree removed.
 
 ## 2026-09-13 08:10 UTC
 
