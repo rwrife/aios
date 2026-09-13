@@ -2,6 +2,40 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-13 12:55 UTC
+
+- PR lane: 1 open PR at start — https://github.com/rwrife/aios/pull/113 (#71 browser actions, authored by rwrife). It documented a never-executed native surface (`apps/browser/main.cpp` scroll path) and was held open under the native-surface gate. This run closed that gap: in an Alpine 3.23 Qt 6.10.3 Docker container the PR head compiled cleanly (`ninja aios-browser`), and the compiled binary was executed headless (`QT_QPA_PLATFORM=offscreen`, non-root, local HTTP server). Live probes: `scroll amount=300` → viewport.y==300; default up/down == 300 px; raw-socket probes bypassing the Python validator proved C++-side re-validation (5000/0/300.5 rejected with "whole-pixel…between 1 and 2000", boundary 1/2000 accepted). PR body updated with this evidence, then merged (squash 7e5b834dc3cc41969520fdcde398c283568f47fc, 2026-09-13T12:31:12Z). Issue #71 stays OPEN (Progresses linkage — in-VM/sandboxed release QA and live chat-phrasing observation still pending); assignment retained as in-flight lock.
+- Freshness re-check after merge: 0 open PRs → issue lane unblocked.
+- Open issues: 27 at selection; all unassigned except #71 (retained above); none skipped as assigned-elsewhere.
+- Selected issue: https://github.com/rwrife/aios/issues/70 — "Browser links do not work".
+  Rationale: broken links break the browser tool the AI uses to operate the
+  web on the user's behalf — a core path of the AI-only OS UX.
+- Reproduced first, headlessly: Alpine 3.23 Qt 6.10.3 offscreen container,
+  main's compiled `aios-browser`, page with same-frame + `target="_blank"`
+  links. Same-frame click navigated fine; the `_blank` click silently opened
+  nothing (`createWindow` returned nullptr) while the pending click snapshot
+  still returned the old page — matching the issue report ("clicking on links
+  … appear to do nothing"). Probing also showed returning `this` from
+  `createWindow` does NOT navigate (Qt discards it), which is why the shipped
+  fix redirects anchor targets in the fixed element-action script instead.
+- Claim: `gh issue edit 70 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation (worktree `.worktrees/fix-issue-70-links`): the shared
+  element-action prefix in `apps/browser/main.cpp` now rewrites anchor
+  `target=_blank/_new` to `_self` before `element.click()`, so link clicks
+  that would die against the popup deny continue in the single private page;
+  `window.open`/popup requests remain blocked. Static regression tests in
+  `tests/test_browser_shell.py`; `scripts/test-browser.py` QA now exercises a
+  `target=_blank` link (RED on main's binary, GREEN on the fix) and catches
+  `ValueError` from the client-side scroll validator (pre-existing latent
+  crash in the in-VM QA script introduced by #113, fixed in the same batch to
+  unblock release QA). `docs/browser.md` updated.
+- Verification (targeted native-execution evidence, not VM green):
+  - Fix compiled cleanly with Alpine 3.23 Qt 6.10.3 (`ninja aios-browser`).
+  - Full `scripts/test-browser.py` executed headless against the fixed binary: PASS (open/read/type/click/same-frame+blank-link navigation/back/tabs/scroll-300/scroll-reject incl. new blank-link asserts). Identical harness against main's pre-fix binary FAILS at the blank-link assert (RED/GREEN).
+  - Static suites: `tests.test_browser_shell` + `tests.test_browser_agent` 63/63; full `scripts/test.sh` 455 tests with only the known baseline failure `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher` (re-confirmed failing on untouched main this run).
+  - Not verified: real Alpine/QEMU X11 session with the Chromium sandbox enabled (no display here); stated in the PR.
+- New PR: https://github.com/rwrife/aios/pull/114 — Progresses #70 (in-VM sandboxed release QA still outstanding); issue assignment retained while the PR is in flight.
+
 ## 2026-09-13 08:10 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.

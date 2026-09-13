@@ -46,9 +46,12 @@ registration. If the window is closed manually, the next `open` action starts a
 fresh browser.
 
 Qt WebEngine and its Chromium renderer run as the ordinary desktop user with
-the renderer sandbox enabled. Browser permissions, popup windows, downloads,
+the renderer sandbox enabled. Browser permissions, downloads,
 certificate exceptions, clipboard access, screen capture and fullscreen
-requests are denied by default. The shared tool host accepts only validated
+requests are denied by default. A link click that asks for a new tab
+(`target=_blank`/`_new`) is redirected to the same single private page instead
+of being silently dropped, so a link click is never a dead end; `window.open`
+popups stay denied. The shared tool host accepts only validated
 registry operations. Web content is marked untrusted and the agent is instructed
 to follow the user's task rather than page instructions. The tool loop executes
 only completed structured calls (never model prose), with at most eight rounds
