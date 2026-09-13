@@ -43,7 +43,10 @@ state survives between messages in that chat; other chats have separate
 profiles and pages. Closing the chat or pressing Stop terminates its tool host,
 browser, and MCP children and removes the browser's profile and runtime
 registration. If the window is closed manually, the next `open` action starts a
-fresh browser.
+fresh browser; `navigate` also reopens the requested page directly, while other
+page actions report that the window was closed. The agent is taught never to
+assume an earlier open is still on screen and to report the browser as open only
+from the newest tool result.
 
 Qt WebEngine and its Chromium renderer run as the ordinary desktop user with
 the renderer sandbox enabled. Browser permissions, downloads,

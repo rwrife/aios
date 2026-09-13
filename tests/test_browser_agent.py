@@ -162,6 +162,28 @@ class BrowserAgentTests(unittest.TestCase):
             self.assertEqual(browser.act({"action": "scroll", "direction": "up"}), {"ok": True})
         call.assert_called_once_with("unused.sock", {"action": "scroll", "direction": "up"})
 
+    def test_user_closed_window_reopens_on_navigate(self):
+        browser = Browser()
+        browser.process = type("Proc", (), {"poll": lambda self: 1})()
+        browser.socket = "stale.sock"
+        for action in ("snapshot", "back", "reload", "click"):
+            with self.subTest(action=action), self.assertRaisesRegex(ValueError, "window was closed"):
+                browser.act({"action": action, "element": "e1"} if action == "click" else {"action": action})
+        with patch.object(Browser, "start") as start, patch(
+            "aios.browser.call", return_value={"title": "Reopened"}
+        ) as call:
+            self.assertEqual(
+                browser.act({"action": "navigate", "url": "http://example.com/x"}),
+                {"title": "Reopened"},
+            )
+        start.assert_called_once()
+        call.assert_called_once_with("stale.sock", {"action": "open", "url": "http://example.com/x"})
+
+    def test_policy_and_tool_teach_closed_window_recovery(self):
+        for phrase in ("close the browser window at any time", "navigate reopens", "newest tool result"):
+            self.assertIn(phrase, agent.POLICY)
+        self.assertIn("close the window at", BROWSER_TOOL["function"]["description"])
+
     def test_policy_teaches_website_and_scroll_conventions(self):
         for phrase in ('"open cnn"', "https://www.<name>.com", "click on <label>", "300 pixels"):
             self.assertIn(phrase, agent.POLICY)
