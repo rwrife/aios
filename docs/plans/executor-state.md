@@ -5,7 +5,7 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 ## 2026-09-13 20:07 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges, no blocked PRs.
-- Open issues: 27 at selection; all unassigned except #71 (rwrife, browser-mcp in-flight); #71 skipped as assigned-elsewhere.
+- Open issues: 28 at selection; all unassigned except #71 (rwrife, browser-mcp in-flight); #71 skipped as assigned-elsewhere. Other unassigned hardware/recognition/voice stage chains left for device-capable runners.
 - Selected issue: https://github.com/rwrife/aios/issues/75 — "Opening another browser instance".
   Rationale: "open X" is a primary AI-only-OS command path; the agent claiming a
   browser is open after the user closed it breaks trust in the single interaction
@@ -42,7 +42,7 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   - Not verified: real Alpine/QEMU X11 session with Chromium sandbox enabled
     (no display/VM on this runner); stated in the PR, and the issue stays open
     for that release QA.
-- New PR: PENDING — see final entry below.
+- New PR: https://github.com/rwrife/aios/pull/116 — MERGED (squash commit 944f992902d7ee4c7e64eee55ffb5cc83be8bc4e, 2026-09-13T20:37:52Z). Issue #75 intentionally stays OPEN (Progresses linkage — in-VM/QEMU sandboxed release QA of the new closed-window journey still pending); assignment released after merge so a VM-capable runner can finish that QA. Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; worktree removed.
 
 ## 2026-09-13 12:55 UTC
 
