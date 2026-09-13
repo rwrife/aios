@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Window
 import QtQuick.Dialogs
 import "WindowSizing.js" as WindowSizing
+import "Markdown.js" as Markdown
 
 Window {
     id: chat
@@ -184,7 +185,26 @@ Window {
                     width: conversation.width - 12; spacing: 7
                     onHeightChanged: conversation.scrollToLatest()
                     Text { text: modelData.role === "user" ? "You" : "AI"; color: theme.muted; opacity: 0.65; font.pixelSize: 11 }
-                    TextEdit { id: reply; width: parent.width; text: modelData.display_text || modelData.content || "…"; color: theme.ink; font.pixelSize: 16; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText }
+                    TextEdit {
+                        id: reply
+                        objectName: "replyText"
+                        width: parent.width
+                        // Assistant replies arrive as Markdown and render through the
+                        // shared converter; user messages stay plain so typed input is
+                        // never reinterpreted as markup.
+                        text: {
+                            var raw = modelData.display_text || modelData.content || "…"
+                            return modelData.role === "assistant"
+                                ? Markdown.toHtml(raw, { ink: theme.ink, muted: theme.muted, code: theme.input, accent: theme.accent })
+                                : raw
+                        }
+                        color: theme.ink
+                        font.pixelSize: 16
+                        wrapMode: TextEdit.Wrap
+                        readOnly: true
+                        selectByMouse: true
+                        textFormat: modelData.role === "assistant" ? TextEdit.RichText : TextEdit.PlainText
+                    }
                     Row {
                         visible: modelData.role === "assistant" && modelData.content.length > 0 && !session.busy
                         spacing: 2; opacity: reply.activeFocus || replyActions.containsMouse ? 1 : 0.45
