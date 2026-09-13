@@ -2,6 +2,40 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-13 01:50 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.
+- Open issues: 29 at selection time; none assigned and none PR-linked (none skipped as assigned-elsewhere).
+- Selected issue: https://github.com/rwrife/aios/issues/69 — "Add markdown and code block support".
+  Rationale: the AI chat is the single interaction point of the OS, and every
+  model reply arrives as raw Markdown; the chat rendering it as plain text
+  garbles the primary UX surface daily. Fully verifiable headless via the QML
+  harness.
+- Claim: `gh issue edit 69 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation: new `apps/shell/Markdown.js` (dependency-free, `.pragma
+  library` Markdown→HTML converter: headings, lists, fenced/inline code,
+  bold/italic/strikethrough, blockquotes, rules, http(s)/mailto links only,
+  full HTML escaping of input); `ChatWindow.qml` renders assistant replies
+  through it as theme-aware rich text (ink/muted/input/accent roles from
+  Theme.qml) while user messages stay PlainText; `Markdown.js` added to the
+  shell CMake resource list. Copy/read-aloud still use the original Markdown.
+- Verification (targeted QML-suite evidence, not full-harness green):
+  - Alpine 3.23 Qt 6.10.3 `qmltestrunner` offscreen: `tst_chat_launcher`
+    22 pass/0 fail (3 new regression tests: converter blocks, hostile-input
+    escaping, end-to-end delegate rendering); `tst_setup` 9, `tst_local_models`
+    6, `tst_theme` 12, `tst_chat_scroll` 6, `tst_subscription` 7,
+    `tst_app_host` 14 — all pass.
+  - RED/GREEN: new delegate test FAILs with the ChatWindow.qml change stashed
+    (21 pass/1 fail), PASSes restored.
+  - Python suite (`scripts/test.sh`): 449 tests, 1 failure
+    (`test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`),
+    pre-existing baseline drift on main (untouched by this change).
+  - Not verified: in-VM QEMU GUI session (no display on this runner).
+  - CI: `Validate` workflow remains `disabled_manually`; branch protection
+    structurally absent, so merge was gated on fresh local verification.
+- New PR: https://github.com/rwrife/aios/pull/111 — MERGED (squash commit 018f0d3f409872c2abb883c65d8e427331928275, 2026-09-13T01:48:25Z); issue #69 closed at merge; assignment retained through the PR, cleared by the Closes linkage.
+- Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; worktree removed.
+
 ## 2026-09-12 18:55 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges before issue work, no blocked PRs.
