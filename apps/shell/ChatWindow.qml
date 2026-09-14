@@ -14,6 +14,7 @@ Window {
     property var profileControl: null
     property bool ownsProfileControl: false
     property bool osAuthenticationCompleted: false
+    property var debugWindow: null
     title: "AIOS Chat"
     visible: true
     flags: Qt.application.arguments.indexOf("--chat") >= 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint
@@ -91,6 +92,19 @@ Window {
         conversation.cancelFlick(); conversation.followLatest = true
         session.send(label); conversation.scrollToLatest()
     }
+    function openDebugWindow() {
+        if (!debugWindow)
+            debugWindow = debugWindowComponent.createObject(chat, {
+                session: chat.session,
+                theme: chat.theme
+            })
+        if (debugWindow) {
+            debugWindow.show()
+            debugWindow.raise()
+            debugWindow.requestActivate()
+        }
+    }
+    Component { id: debugWindowComponent; ChatDebugWindow {} }
     Rectangle {
         objectName: "chatWindowSurface"
         anchors.fill: parent
@@ -139,6 +153,7 @@ Window {
                 objectName: "chatWindowControls"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                WindowControlButton { objectName: "chatDebugButton"; theme: chat.theme; symbol: "🐞"; tip: "Open raw model debug trace"; onClicked: chat.openDebugWindow() }
                 WindowControlButton { objectName: "chatSettingsButton"; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
                 WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
                 WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }

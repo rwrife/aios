@@ -625,18 +625,31 @@ class AgentSession:
                     if key not in ("action", "runtime", "template")
                 }
             if timeout is None:
+                core.debug_event("tool.call", {
+                    "name": name,
+                    "arguments": host_arguments,
+                })
                 result = toolhost.call(self.tool_socket, name, host_arguments)
             else:
+                core.debug_event("tool.call", {
+                    "name": name,
+                    "arguments": host_arguments,
+                })
                 result = toolhost.call(
                     self.tool_socket, name, host_arguments, timeout=timeout)
             _tool_result_json(result)
         except (OSError, ValueError, RuntimeError) as error:
+            core.debug_event("tool.error", {
+                "name": name,
+                "error": _safe_error_text(str(error), "Tool action failed."),
+            })
             if application_action == "launch":
                 self._application_failure = (
                     _safe_error_text(str(error), "The application tool failed.")
                     if isinstance(error, ValueError) else "The application tool failed."
                 )
             raise
+        core.debug_event("tool.result", {"name": name, "result": result})
         if application_action is not None:
             if (application_action == "launch" and isinstance(result, dict)
                     and result.get("error")):
@@ -755,6 +768,7 @@ def openai_chat(
         body = _request_body(
             {"model": model, "messages": history, "tools": tools, "tool_choice": tool_choice, "stream": True}
         )
+        core.debug_event("llm.request", body)
         remaining = _remaining_time(deadline, clock)
         with core.request(
             "/chat/completions",
@@ -763,6 +777,7 @@ def openai_chat(
             profile=profile,
         ) as response:
             for event in core.sse_events(response):
+                core.debug_event("llm.response", event)
                 _remaining_time(deadline, clock)
                 if event == "[DONE]":
                     break
