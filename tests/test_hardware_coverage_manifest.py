@@ -185,6 +185,14 @@ class ManifestStructureTests(unittest.TestCase):
         missing = required_modules - modules_present
         self.assertEqual(missing, set(), f'missing required module coverage: {missing}')
 
+    def test_virtio_net_records_the_pci_transport_driver(self):
+        entry = next(
+            item for item in self.manifest['entries']
+            if item['id'] == 'ethernet-virtio-net'
+        )
+        self.assertIn('virtio_pci', entry['kernel_module'])
+        self.assertIn('virtio_net', entry['kernel_module'])
+
 
 class IdentifierContractTests(unittest.TestCase):
     def setUp(self):

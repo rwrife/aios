@@ -2250,6 +2250,7 @@
         "subsystem_id_status": "not_applicable"
       },
       "kernel_module": [
+        "virtio_pci",
         "virtio_net"
       ],
       "module_dependencies": [

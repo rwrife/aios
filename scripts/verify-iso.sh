@@ -93,7 +93,15 @@ for tool in xorriso unsquashfs python3; do
 done
 
 work=$(mktemp -d)
-cleanup() { rm -rf "$work"; }
+cleanup() {
+  # xorriso preserves read-only modes from the ISO. Restore owner write/search
+  # permission before removing the extracted tree, and never replace the
+  # validator's exit status with a cleanup failure.
+  chmod -R u+rwX "$work" 2>/dev/null || true
+  rm -rf "$work" 2>/dev/null || {
+    echo "Warning: could not fully remove verification workspace: $work" >&2
+  }
+}
 trap cleanup EXIT
 trap 'cleanup; exit 1' INT TERM HUP
 
@@ -101,9 +109,12 @@ apkovl_name=$(xorriso -indev "$iso" -find / -maxdepth 1 -name '*.apkovl.tar.gz' 
   | tr -d "'" | sed -n 's|^/||p' | head -n 1)
 [ -n "$apkovl_name" ] || { echo "No *.apkovl.tar.gz found in $iso_name" >&2; exit 1; }
 
+mkdir -p "$work/root"
 xorriso -osirrox on -indev "$iso" \
-  -extract /apks "$work/root/apks" \
-  -extract /boot "$work/root/boot" \
+  -extract /apks "$work/root/apks" >/dev/null 2>&1
+xorriso -osirrox on -indev "$iso" \
+  -extract /boot "$work/root/boot" >/dev/null 2>&1
+xorriso -osirrox on -indev "$iso" \
   -extract "/$apkovl_name" "$work/root/$apkovl_name" >/dev/null 2>&1
 
 modloop=$(find "$work/root/boot" -maxdepth 1 -name 'modloop-*' -type f -print 2>/dev/null \
