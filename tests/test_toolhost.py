@@ -67,6 +67,10 @@ class FakeApplications:
         self.calls.append(("create", payload))
         return {"id": "draft-1"}
 
+    def build(self, payload):
+        self.calls.append(("build", payload))
+        return {"id": "draft-1", "written": True, "launched": True, "runtime": "web"}
+
     def read(self, payload):
         self.calls.append(("read", payload))
         return "<!doctype html><title>Example</title>"
@@ -274,6 +278,33 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(applications.calls[-1][0], "create")
         self.assertEqual(applications.calls[-1][1]["template"], "calculator")
 
+    def test_default_toolhost_disables_baked_application_templates(self):
+        applications = FakeApplications()
+        with mock.patch.object(toolhost, "ApplicationStore", return_value=applications) as factory:
+            host = ToolHost(browser=FakeBrowser(), mcp=FakeMcp())
+        self.addCleanup(host.close)
+        factory.assert_called_once_with(native_templates=())
+
+    def test_integrated_terminal_and_settings_are_searchable_and_launchable(self):
+        applications = FakeApplications()
+        host = ToolHost(browser=FakeBrowser(), applications=applications, mcp=FakeMcp())
+        for query, app_id, name, title in (
+            ("open terminal", "terminal-00000000", "terminal", "Terminal"),
+            ("open settings", "settings-00000000", "settings", "Settings"),
+        ):
+            with self.subTest(query=query), mock.patch.object(
+                toolhost.os_settings,
+                "open_application",
+                return_value={"opened": True},
+            ) as open_application:
+                match = host.call("application", {"action": "search", "query": query})["matches"][0]
+                self.assertEqual(match["id"], app_id)
+                self.assertEqual(match["runtime"], "integrated")
+                launched = host.call("application", {"action": "launch", "id": app_id})
+                self.assertEqual(launched["title"], title)
+                self.assertTrue(launched["launched"])
+                open_application.assert_called_once_with(name)
+
     def test_browser_application_and_mcp_dispatch_requires_advertisement(self):
         browser = FakeBrowser(result={"snapshot": True})
         applications = FakeApplications()
@@ -285,6 +316,12 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(host.call("application", {"action": "search", "query": "hello"}), {"matches": [{"id": "match-1"}]})
         self.assertEqual(host.call("application", {"action": "read", "id": "draft-1"}), {"html": "<!doctype html><title>Example</title>"})
         self.assertEqual(host.call("application", {"action": "create", "title": "App", "request": "Build app"}), {"id": "draft-1"})
+        self.assertTrue(host.call("application", {
+            "action": "build",
+            "title": "App",
+            "request": "Build app",
+            "html": "<!doctype html>",
+        })["launched"])
         with self.assertRaises(ValueError):
             host.call("mcp_fixture_echo", {"value": 1})
 
@@ -296,6 +333,7 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(applications.calls[0], ("search", {"action": "search", "query": "hello"}))
         self.assertEqual(applications.calls[1], ("read", {"action": "read", "id": "draft-1"}))
         self.assertEqual(applications.calls[2], ("create", {"action": "create", "title": "App", "request": "Build app"}))
+        self.assertEqual(applications.calls[3][0], "build")
         self.assertEqual(mcp.calls, [("mcp_fixture_echo", {"value": 1})])
 
     def test_unadvertised_prefixed_names_and_definition_changes_are_rejected(self):

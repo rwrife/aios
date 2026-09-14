@@ -502,6 +502,18 @@ private:
                                 reply = {{"result", QJsonObject{{"requested", true}}}};
                             } else reply = {{"error", "Date & Time settings are unavailable on the protected desktop."}};
                         }
+                    } else if (action == "open_application" && request.size() == 2) {
+                        const auto name = request.value("name").toString();
+                        if (name == "terminal") {
+                            reply = {{"result", QJsonObject{{"opened", QProcess::startDetached("aios-terminal", {})}}}};
+                        } else if (name == "settings") {
+                            if (qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET")) {
+                                emit (owner ? owner : this)->settingsRequested("");
+                                reply = {{"result", QJsonObject{{"requested", true}}}};
+                            } else {
+                                reply = {{"error", "Settings are unavailable on the protected desktop."}};
+                            }
+                        }
                     } else if (action == "authenticate" && request.size() == 1) {
                         authenticationState = "unavailable";
                         emit authenticationRequested();
