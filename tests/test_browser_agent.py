@@ -256,6 +256,46 @@ class BrowserAgentTests(unittest.TestCase):
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
     @patch("aios.agent.toolhost.list_tools", return_value={
+        "tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_integrated_application_name_is_normalized_for_direct_launch(self, _tools, _config):
+        warnings = []
+        skill = skills._load_skill_dir(
+            Path(__file__).resolve().parents[1] / "apps/skills/application-builder", warnings)
+        self.assertEqual(warnings, [])
+        responses = [
+            stream([{"tool_calls": [{
+                "index": 0, "id": "terminal", "function": {"name": "application",
+                "arguments": json.dumps({"action": "launch", "id": "terminal"})},
+            }]}], "tool_calls"),
+            stream([{"content": "Terminal is open."}]),
+        ]
+        with patch("aios.agent.core.request", side_effect=responses), patch(
+            "aios.agent.toolhost.call",
+            return_value={
+                "id": "terminal-00000000",
+                "title": "Terminal",
+                "launched": True,
+                "runtime": "integrated",
+            },
+        ) as call:
+            events = list(agent.openai_chat(
+                agent.AgentSession(
+                    [{"role": "user", "content": "open terminal"}],
+                    "tools.sock",
+                    catalog=[skill],
+                )
+            ))
+
+        call.assert_called_once_with(
+            "tools.sock",
+            "application",
+            {"action": "launch", "id": "terminal-00000000"},
+            timeout=60,
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Terminal is open."})
+
+    @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
+    @patch("aios.agent.toolhost.list_tools", return_value={
         "tools": [application_tool(("calculator",))], "warnings": []})
     def test_same_chat_recreate_requires_new_build_before_launch(self, _tools, _config):
         warnings = []

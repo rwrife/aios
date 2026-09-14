@@ -480,6 +480,10 @@ class AgentSession:
                 if normalized_id != app_id:
                     arguments = {**arguments, "id": normalized_id}
         if application_action == "launch":
+            integrated_id = toolhost.integrated_application_id(arguments.get("id"))
+            if integrated_id is not None:
+                arguments = {**arguments, "id": integrated_id}
+        if application_action == "launch":
             canonical_id = self._application_last_created_id
             if canonical_id is None and len(self._application_search_ids) == 1:
                 canonical_id = self._application_search_ids[0]
