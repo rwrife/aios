@@ -17,7 +17,7 @@ from typing import Any
 from .applications import APPLICATION_TOOL, ApplicationStore
 from .browser import TOOL as BROWSER_TOOL, Browser
 from .mcp import McpRegistry
-from . import os_settings
+from . import os_command, os_settings
 
 REQUEST_LIMIT = 128 * 1024
 RESPONSE_LIMIT = 2 * 1024 * 1024
@@ -137,7 +137,7 @@ def _definition_name(definition: Any) -> str | None:
 def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> list[dict[str, Any]]:
     tools = []
     names = set()
-    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL):
+    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL, os_command.TOOL):
         name = _definition_name(definition)
         if name is None or name in names:
             raise RuntimeError("Built-in tool definitions are invalid.")
@@ -454,6 +454,8 @@ class ToolHost:
             result = self._call_application(arguments)
         elif name == "os_settings":
             result = os_settings.act(arguments)
+        elif name == "os_command":
+            result = os_command.act(arguments)
         elif name in self._advertised_mcp:
             result = self.mcp.call(name, arguments)
         else:

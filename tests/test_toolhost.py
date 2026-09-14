@@ -240,7 +240,7 @@ class ToolHostTests(unittest.TestCase):
         definitions = host.definitions()
 
         names = [item["function"]["name"] for item in definitions["tools"]]
-        self.assertEqual(names, ["browser", "application", "os_settings", "mcp_alpha_tool"])
+        self.assertEqual(names, ["browser", "application", "os_settings", "os_command", "mcp_alpha_tool"])
         self.assertEqual(definitions["warnings"], ["MCP retained warning."])
 
         parameters = BROWSER_TOOL["function"]["parameters"]
@@ -254,6 +254,12 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(parameters["properties"]["element"]["description"], "Element ID from the most recent snapshot")
         self.assertEqual(parameters["properties"]["text"]["description"], "Text to type, or Enter/Tab/Escape for press")
         self.assertEqual(parameters["properties"]["tab"]["description"], "Handle returned by tabs")
+
+    def test_os_command_dispatch(self):
+        host = ToolHost(browser=FakeBrowser(), applications=FakeApplications(), mcp=FakeMcp())
+        with mock.patch.object(toolhost.os_command, "act", return_value={"exit_code": 0, "stdout": "hi\n"}) as act:
+            self.assertEqual(host.call("os_command", {"command": "echo", "args": ["hi"]}), {"exit_code": 0, "stdout": "hi\n"})
+            act.assert_called_once_with({"command": "echo", "args": ["hi"]})
 
     def test_application_definition_reflects_native_capability_and_dispatches(self):
         class NativeApplications(FakeApplications):
@@ -383,7 +389,7 @@ class ToolHostTests(unittest.TestCase):
         result = host.definitions()
         names = [item["function"]["name"] for item in result["tools"]]
 
-        self.assertEqual(names[:4], ["browser", "application", "os_settings", "mcp_first"])
+        self.assertEqual(names[:5], ["browser", "application", "os_settings", "os_command", "mcp_first"])
         self.assertEqual(len(names), MAX_TOOLS)
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(result["warnings"][0], "MCP original warning.")
@@ -402,7 +408,7 @@ class ToolHostTests(unittest.TestCase):
         self.assertLessEqual(len(encoded), RESPONSE_LIMIT)
         self.assertEqual(names[:2], ["browser", "application"])
         self.assertIn(SAFE_MCP_BUDGET_WARNING, result["warnings"])
-        self.assertLess(len(names), len(large_definitions) + 3)
+        self.assertLess(len(names), len(large_definitions) + 4)
 
         omitted = next(name for name in [item["function"]["name"] for item in large_definitions] if name not in names)
         kept = next(name for name in names if name.startswith("mcp_big_"))

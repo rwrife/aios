@@ -6,7 +6,7 @@ There are three related pieces:
 - **Agent Skills** are installed instructions and metadata that describe how to
   handle a class of requests. A skill can narrow which tools are available.
 - **Built-in tools** are AIOS-owned functions. The current registry includes
-  `browser`, `application`, and `os_settings`.
+  `browser`, `application`, `os_settings`, and `os_command`.
 - **MCP tools** come from explicitly configured local Model Context Protocol
   servers. AIOS validates and renames them before advertising them to a model.
 
@@ -107,7 +107,50 @@ operations. Each extension should advertise exact inputs, return bounded
 non-secret results and actual completion state, and reuse existing service
 authorization. Opening a panel alone is not automation of every control inside
 it. Unsupported settings must be reported rather than emulated through model
-prose or arbitrary command execution.
+prose or a generic shell.
+
+### OS commands
+
+The image ships `os-commands` for file and allowlisted-program requests. It
+does not narrow `allowed-tools`. The built-in `os_command` tool works without
+MCP configuration.
+
+| Request | Structured call | Result |
+| --- | --- | --- |
+| List a directory | `{"command":"ls","args":["-la","/home/aios"]}` | Directory listing on stdout, `exit_code` 0 |
+| Read a file | `{"command":"cat","args":["notes.txt"],"cwd":"/home/aios"}` | File bytes as text, truncated at 32KiB per stream |
+| Print text | `{"command":"echo","args":["hello"]}` | `hello` on stdout; this does not write a file |
+| Write a file | `{"command":"tee","args":["notes.txt"],"stdin":"hello\n","cwd":"/home/aios"}` | Writes stdin to the path and echoes it |
+| Working directory | `{"command":"pwd"}` | Default cwd is `HOME` |
+
+The tool host executes the resolved `/bin` or `/usr/bin` program with an argv
+array. It never uses a shell, so pipes, redirects, globs, and `~` are ordinary
+argument strings. Unlisted binaries, including `sh`, `bash`, `busybox`, `find`, `sudo`,
+and interpreters, are rejected before launch. `stdin` is `/dev/null` unless the
+call supplies a bounded string. Each stream is truncated at 32KiB; a 10-second
+timeout kills the process. The result includes `command`, `path`, `argv`,
+`cwd`, `exit_code`, `stdout`, `stderr`, and `truncated`.
+
+For a separate local MCP client, the same implementation is available as
+`python3 -m aios.os_command`. Configure it with an explicit tool allowlist:
+
+```json
+{
+  "servers": {
+    "os-command": {
+      "command": "python3",
+      "args": ["-m", "aios.os_command"],
+      "tools": ["os_command"]
+    }
+  }
+}
+```
+
+AIOS advertises this optional tool as `mcp_os-command_os_command`. Prefer the
+built-in tool inside AIOS. Destructive programs (`rm`, `rmdir`, overwriting
+`mv`) still run as the desktop user when requested; the skill forbids using
+them without an explicit path from the user. This is not a generic shell and
+must not be extended into one.
 
 ### Discovery
 
