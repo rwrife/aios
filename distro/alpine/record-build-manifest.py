@@ -398,10 +398,11 @@ def build_manifest(args: argparse.Namespace) -> dict:
     if root is None:
         work = args.work_dir or Path(tempfile.mkdtemp(prefix="aios-build-manifest-"))
         work.mkdir(parents=True, exist_ok=True)
-        root = work / "iso"
-        if root.exists():
-            shutil.rmtree(root)
-        root.mkdir(parents=True)
+        # xorriso preserves restrictive directory modes from the ISO. Reusing
+        # one fixed extraction path in the persistent build cache can therefore
+        # make the next build unable to remove a prior tree. Use an isolated
+        # directory for each recording instead.
+        root = Path(tempfile.mkdtemp(prefix="iso-", dir=work))
         cleanup = None if args.keep_extraction else root
         error = run_xorriso_extract(args.iso, "/apks", root / "apks")
         if error:

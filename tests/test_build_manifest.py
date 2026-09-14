@@ -335,6 +335,11 @@ class ManifestRecorderTests(unittest.TestCase):
         self.run_recorder(['--skip-index-fetch'])
         self.assertEqual(first, self.output.read_text(encoding='utf-8'))
 
+    def test_repeated_recording_uses_isolated_extraction_directories(self):
+        text = SCRIPT.read_text(encoding='utf-8')
+        self.assertIn('tempfile.mkdtemp(prefix="iso-", dir=work)', text)
+        self.assertNotIn('root = work / "iso"', text)
+
     # -- integration with the inspector ----------------------------------
 
     def test_inspector_verifies_a_freshly_recorded_manifest(self):
