@@ -240,7 +240,17 @@ class ToolHostTests(unittest.TestCase):
         definitions = host.definitions()
 
         names = [item["function"]["name"] for item in definitions["tools"]]
-        self.assertEqual(names, ["browser", "application", "os_settings", "os_command", "mcp_alpha_tool"])
+        self.assertEqual(
+            names,
+            [
+                "browser",
+                "application",
+                "build_application",
+                "os_settings",
+                "os_command",
+                "mcp_alpha_tool",
+            ],
+        )
         self.assertEqual(definitions["warnings"], ["MCP retained warning."])
 
         parameters = BROWSER_TOOL["function"]["parameters"]
@@ -389,7 +399,17 @@ class ToolHostTests(unittest.TestCase):
         result = host.definitions()
         names = [item["function"]["name"] for item in result["tools"]]
 
-        self.assertEqual(names[:5], ["browser", "application", "os_settings", "os_command", "mcp_first"])
+        self.assertEqual(
+            names[:6],
+            [
+                "browser",
+                "application",
+                "build_application",
+                "os_settings",
+                "os_command",
+                "mcp_first",
+            ],
+        )
         self.assertEqual(len(names), MAX_TOOLS)
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(result["warnings"][0], "MCP original warning.")
@@ -406,7 +426,7 @@ class ToolHostTests(unittest.TestCase):
         encoded = json.dumps({"result": result}, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
 
         self.assertLessEqual(len(encoded), RESPONSE_LIMIT)
-        self.assertEqual(names[:2], ["browser", "application"])
+        self.assertEqual(names[:3], ["browser", "application", "build_application"])
         self.assertIn(SAFE_MCP_BUDGET_WARNING, result["warnings"])
         self.assertLess(len(names), len(large_definitions) + 4)
 

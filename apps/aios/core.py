@@ -265,7 +265,7 @@ def sse_events(stream):
         yield "\n".join(data)
 
 
-def chat(messages):
+def chat(messages, profile="current"):
     config = load_config()
     if config['mode'] == 'chatgpt':
         from .subscription import chat as subscription_chat
@@ -276,10 +276,10 @@ def chat(messages):
     if not messages or any(m.get("role") not in ("user", "assistant", "system") or
                            not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Invalid conversation.")
-    model = model_name("current")
+    model = model_name(profile)
     messages = [{"role": m["role"], "content": m["content"]} for m in messages]
     finished = False
-    with request("/chat/completions", {"model": model, "messages": messages, "stream": True}, profile="current") as response:
+    with request("/chat/completions", {"model": model, "messages": messages, "stream": True}, profile=profile) as response:
         for event in sse_events(response):
             if event == "[DONE]":
                 return
