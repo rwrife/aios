@@ -188,6 +188,13 @@ class BrowserAgentTests(unittest.TestCase):
         for phrase in ('"open cnn"', "https://www.<name>.com", "click on <label>", "300 pixels"):
             self.assertIn(phrase, agent.POLICY)
 
+    def test_policy_teaches_choice_block_convention(self):
+        for phrase in ("```Choose", "2-6 short option lines", "renders as clickable buttons"):
+            self.assertIn(phrase, agent.POLICY)
+        # The prompt must discourage asking when a default is clear, which is
+        # the behavior the issue reports (agents stalling on native-vs-web).
+        self.assertIn("pick it and state the choice", agent.POLICY)
+
     def test_browser_uses_chat_theme_and_session_from_environment(self):
         with patch.dict(os.environ, {
             "AIOS_BROWSER_THEME": "violet",

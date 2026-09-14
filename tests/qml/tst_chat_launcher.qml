@@ -57,10 +57,11 @@ TestCase {
             property var attachments: []
             property string status: ""
             property int closeCalls: 0
+            property var sentMessages: []
             signal changed()
             signal transcribed(string text)
             function closeSession() { closeCalls += 1 }
-            function send(text) {}
+            function send(text) { sentMessages = sentMessages.concat([text]) }
             function copy(text) {}
             function readReply(text) {}
             function removeAttachment(index) {}
@@ -528,18 +529,23 @@ TestCase {
         compare(Markdown.toHtml("", colors), "")
     }
 
-    function collectNamed(root, name, found) {
+    function collectNamed(root, name, found, seen) {
         var acc = found || []
+        var visited = seen || []
         if (!root)
             return acc
+        for (var s = 0; s < visited.length; ++s)
+            if (visited[s] === root)
+                return acc
+        visited.push(root)
         if (root.objectName === name)
             acc.push(root)
         var children = root.children || []
         for (var i = 0; i < children.length; ++i)
-            collectNamed(children[i], name, acc)
+            collectNamed(children[i], name, acc, visited)
         var data = root.data || []
         for (var j = 0; j < data.length; ++j)
-            collectNamed(data[j], name, acc)
+            collectNamed(data[j], name, acc, visited)
         return acc
     }
 
@@ -582,5 +588,74 @@ TestCase {
         verify(rich.text.indexOf("font-weight:700") >= 0, "bold not rendered: " + rich.text)
         verify(rich.text.indexOf("monospace") >= 0, "code block not rendered: " + rich.text)
         verify(rich.text.indexOf("plain code") >= 0)
+    }
+
+    function test_choice_block_parses_conservatively() {
+        var parsed = Markdown.splitChoices("Which style should I build?\n\n```Choose\nNative app\nWeb app\n```")
+        compare(parsed.choices.length, 2)
+        compare(parsed.choices[0], "Native app")
+        compare(parsed.choices[1], "Web app")
+        verify(parsed.text.indexOf("Which style") >= 0)
+        verify(parsed.text.indexOf("```") === -1)
+        // Plain fence with the keyword on the first inner line also parses.
+        compare(Markdown.splitChoices("```\nChoose:\nA\nB\n```").choices.join("|"), "A|B")
+        // Fail-closed: incomplete, single-option, oversized, and ordinary
+        // fences keep their full text and produce no buttons.
+        compare(Markdown.splitChoices("```Choose\nOnly one\n").choices.length, 0)
+        compare(Markdown.splitChoices("```Choose\nOne\n```").choices.length, 0)
+        compare(Markdown.splitChoices("```Choose\nA\nB\nC\nD\nE\nF\nG\n```").choices.length, 0)
+        var kept = Markdown.splitChoices("```py\nx = 1\n```\n")
+        compare(kept.choices.length, 0)
+        verify(kept.text.indexOf("```py") >= 0)
+        // A list-marker line inside the block still yields a clean label.
+        compare(Markdown.splitChoices("```Choose\n- Native\n- Web\n```").choices.join("|"), "Native|Web")
+    }
+
+    function test_choice_buttons_send_the_selection() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        var session = backend.createdSessions[0]
+        session.messages = [
+            { role: "user", content: "build me an app" },
+            { role: "assistant", content: "How should it be built?\n\n```Choose\nNative app\nWeb app\n```" }
+        ]
+        session.changed()
+        var convo = findChild(chat, "conversation")
+        tryCompare(convo, "count", 2)
+        convo.forceLayout()
+        var buttons = null
+        tryVerify(function() {
+            var delegate = convo.itemAtIndex(1)
+            if (!delegate) return false
+            buttons = collectNamed(delegate, "choiceButton")
+            return buttons.length === 2
+        }, 3000)
+        compare(buttons[0].text, "Native app")
+        compare(buttons[1].text, "Web app")
+        // The reply body renders without the raw fence markers.
+        var body = collectNamed(convo.itemAtIndex(1), "replyText")[0]
+        verify(body.text.indexOf("```") === -1, "fence leaked into body: " + body.text)
+        mouseClick(buttons[1])
+        compare(session.sentMessages, ["Web app"])
+    }
+
+    function test_choice_buttons_only_offer_the_latest_reply() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        var session = backend.createdSessions[0]
+        session.messages = [
+            { role: "assistant", content: "```Choose\nA\nB\n```" },
+            { role: "user", content: "A" },
+            { role: "assistant", content: "Done." }
+        ]
+        session.changed()
+        var convo = findChild(chat, "conversation")
+        tryCompare(convo, "count", 3)
+        convo.forceLayout()
+        tryVerify(function() { return convo.itemAtIndex(2) !== null }, 3000)
+        // An answered/older choice block stops offering buttons once a newer
+        // reply exists, so a stale question never steals a later click.
+        compare(collectNamed(convo.itemAtIndex(0), "choiceButton").length, 0)
+        compare(collectNamed(convo.itemAtIndex(2), "choiceButton").length, 0)
     }
 }

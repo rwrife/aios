@@ -83,6 +83,14 @@ Window {
         conversation.cancelFlick(); conversation.followLatest = true
         session.send(composer.text); composer.clear(); conversation.scrollToLatest()
     }
+    //! A reply's ```Choose fence is answered by sending the chosen label back
+    //! verbatim, exactly as if the user had typed it, so the agent receives a
+    //! normal user message and can act on the selection in the next turn.
+    function sendChoice(label) {
+        if (session.busy || session.recording) return
+        conversation.cancelFlick(); conversation.followLatest = true
+        session.send(label); conversation.scrollToLatest()
+    }
     Rectangle {
         objectName: "chatWindowSurface"
         anchors.fill: parent
@@ -180,8 +188,15 @@ Window {
                     }
                 }
                 delegate: Column {
+                    id: messageRow
                     required property var message
+                    required property int index
                     readonly property var modelData: message
+                    // A ```Choose fence in an assistant reply becomes clickable
+                    // options; everything else (and user input) renders as before.
+                    readonly property var choiceBlock: modelData.role === "assistant"
+                        ? Markdown.splitChoices(modelData.display_text || modelData.content || "…")
+                        : { text: modelData.display_text || modelData.content || "…", choices: [] }
                     width: conversation.width - 12; spacing: 7
                     onHeightChanged: conversation.scrollToLatest()
                     Text { text: modelData.role === "user" ? "You" : "AI"; color: theme.muted; opacity: 0.65; font.pixelSize: 11 }
@@ -189,21 +204,39 @@ Window {
                         id: reply
                         objectName: "replyText"
                         width: parent.width
+                        visible: choiceBlock.text.trim().length > 0
                         // Assistant replies arrive as Markdown and render through the
                         // shared converter; user messages stay plain so typed input is
                         // never reinterpreted as markup.
-                        text: {
-                            var raw = modelData.display_text || modelData.content || "…"
-                            return modelData.role === "assistant"
-                                ? Markdown.toHtml(raw, { ink: theme.ink, muted: theme.muted, code: theme.input, accent: theme.accent })
-                                : raw
-                        }
+                        text: modelData.role === "assistant"
+                            ? Markdown.toHtml(choiceBlock.text, { ink: theme.ink, muted: theme.muted, code: theme.input, accent: theme.accent })
+                            : choiceBlock.text
                         color: theme.ink
                         font.pixelSize: 16
                         wrapMode: TextEdit.Wrap
                         readOnly: true
                         selectByMouse: true
                         textFormat: modelData.role === "assistant" ? TextEdit.RichText : TextEdit.PlainText
+                    }
+                    Flow {
+                        objectName: "choiceActions"
+                        visible: choiceBlock.choices.length > 0 && !session.busy
+                        width: parent.width
+                        spacing: 8
+                        Repeater {
+                            objectName: "choiceActionsRepeater"
+                            // Only the newest reply offers buttons: once the
+                            // conversation moved on the answered question must
+                            // not steal a later click, so no buttons even exist.
+                            model: messageRow.index === conversation.count - 1 ? choiceBlock.choices : []
+                            delegate: QuietButton {
+                                required property string modelData
+                                objectName: "choiceButton"
+                                text: modelData
+                                tip: "Answer: " + modelData
+                                onClicked: chat.sendChoice(modelData)
+                            }
+                        }
                     }
                     Row {
                         visible: modelData.role === "assistant" && modelData.content.length > 0 && !session.busy

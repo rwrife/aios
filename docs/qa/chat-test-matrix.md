@@ -8,6 +8,8 @@ and fake-backend tests do not establish working inference or hardware support.
 - [x] QEMU UEFI offline boot to ordinary-user launcher (r10, 4 GiB)
 - [x] Two launcher activations created independent centered windows/sessions with isolated histories and closure (r7)
 - [x] Source-level QML tests restore minimized or hidden chats newest-first before creating another session
+- [x] Source-level QML tests turn a reply's ```Choose fence into buttons that send the chosen label, newest reply only
+- [ ] Choice buttons clicked in a real QEMU session answer the agent's question
 - [x] Real starter-model response on CPU (r4/r7)
 - [x] Real compatible remote endpoint response (HTTPS test server)
 - [ ] Download/import/configuration and invalid credentials
