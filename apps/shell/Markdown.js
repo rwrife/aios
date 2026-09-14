@@ -95,6 +95,56 @@ function isHeadingLine(line) {
     return /^\s{0,3}#{1,6}\s+/.test(line)
 }
 
+// splitChoices extracts an option-picker fence from a reply so the chat can
+// render the options as clickable buttons instead of a code block. The wire
+// contract taught by the agent POLICY is:
+//
+//     ```Choose
+//     Native app
+//     Web app
+//     ```
+//
+// The fence may also be plain ``` whose first inner line is "Choose" (or
+// "Choose:"). Parsing is fail-closed: anything incomplete, oversized, or
+// malformed stays in `text` and renders as the ordinary code block the fence
+// already is, so a half-streamed or mis-formatted block can never lose the
+// user's content. Returns { text: string, choices: [string] }.
+function splitChoices(text) {
+    var raw = text === undefined || text === null ? "" : String(text)
+    var noBlock = { text: raw, choices: [] }
+    if (raw.length === 0) return noBlock
+    var lines = raw.replace(/\r\n?/g, "\n").split("\n")
+    var openIndex = -1
+    var marker = ""
+    var optionStart = -1
+    for (var i = 0; i < lines.length && openIndex < 0; ++i) {
+        if (!isFence(lines[i])) continue
+        marker = fenceMarker(lines[i])
+        var tag = lines[i].trim().slice(marker.length).trim().replace(/:$/, "").toLowerCase()
+        if (tag === "choose") { openIndex = i; optionStart = i + 1; continue }
+        // Plain fence: the keyword may sit on the first inner line instead.
+        var next = i + 1 < lines.length ? lines[i + 1].trim().replace(/:$/, "").toLowerCase() : ""
+        if (next === "choose") { openIndex = i; optionStart = i + 2 }
+    }
+    if (openIndex < 0) return noBlock
+    var choices = []
+    var closeIndex = -1
+    for (var j = optionStart; j < lines.length; ++j) {
+        var line = lines[j]
+        if (line.indexOf(marker) === 0 && line.trim() === marker) { closeIndex = j; break }
+        var label = line.trim().replace(/^([-*+]|\d+[.)])\s+/, "").trim()
+        if (label.length === 0) continue
+        if (label.length > 120) { openIndex = -1; break }
+        choices.push(label)
+    }
+    // Incomplete or degenerate blocks fall back to plain rendering: during
+    // streaming the block only appears as buttons once it is closed.
+    if (openIndex < 0 || closeIndex < 0 || choices.length < 2 || choices.length > 6)
+        return noBlock
+    var rest = lines.slice(0, openIndex).concat(lines.slice(closeIndex + 1))
+    return { text: rest.join("\n"), choices: choices }
+}
+
 // toHtml converts raw Markdown into the HTML subset Qt rich text renders.
 // `colors` provides { ink, muted, code } theme strings from Theme.qml.
 function toHtml(text, colors) {
