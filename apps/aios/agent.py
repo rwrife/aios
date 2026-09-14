@@ -923,12 +923,14 @@ def select_provider(session, config):
 
 def chat(messages, tool_socket):
     session = AgentSession(messages, tool_socket)
-    integrated_events = session.integrated_application_events()
+    integrated_events = getattr(
+        session, "integrated_application_events", lambda: None)()
     if integrated_events is not None:
         yield from integrated_events
         return
     provider, profile = select_provider(session, core.load_config())
-    application_request = session.generated_application_request()
+    application_request = getattr(
+        session, "generated_application_request", lambda: None)()
     if application_request is not None:
         session.tools()
         search_arguments = {"action": "search", "query": application_request}
