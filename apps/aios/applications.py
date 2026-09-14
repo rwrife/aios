@@ -87,6 +87,13 @@ APPLICATION_TOOL = {
                 },
             },
             "required": ["action"],
+            "allOf": [{
+                "if": {
+                    "properties": {"action": {"const": "build"}},
+                    "required": ["action"],
+                },
+                "then": {"required": ["html"]},
+            }],
             "additionalProperties": False,
         },
     },

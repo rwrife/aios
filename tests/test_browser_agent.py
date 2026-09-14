@@ -846,6 +846,60 @@ class BrowserAgentTests(unittest.TestCase):
             ],
         )
 
+    @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
+    @patch("aios.agent.toolhost.list_tools", return_value={
+        "tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_build_without_html_is_returned_to_model_and_retried(self, _tools, _config):
+        html = "<!doctype html><title>Text Editor</title><textarea></textarea>"
+        responses = [
+            stream([{"tool_calls": [{
+                "index": 0, "id": "missing-html", "function": {"name": "application",
+                "arguments": json.dumps({"action": "build"})},
+            }]}], "tool_calls"),
+            stream([{"content": "Please provide the HTML document."}]),
+            stream([{"tool_calls": [{
+                "index": 0, "id": "complete-build", "function": {"name": "application",
+                "arguments": json.dumps({"action": "build", "html": html})},
+            }]}], "tool_calls"),
+            stream([{"content": "Text Editor is open."}]),
+        ]
+        with patch("aios.agent.core.request", side_effect=responses), patch(
+            "aios.agent.toolhost.call",
+            side_effect=[
+                RuntimeError("Provide the complete HTML document."),
+                {
+                    "id": "text-editor-12345678",
+                    "title": "Text Editor",
+                    "written": True,
+                    "launched": True,
+                    "runtime": "web",
+                },
+            ],
+        ) as call:
+            events = list(agent.openai_chat(
+                self._application_session("create a text editor app")))
+
+        self.assertEqual([event["text"] for event in events if event["type"] == "token"],
+                         ["Text Editor is open."])
+        self.assertEqual(
+            [item.args[2] for item in call.call_args_list],
+            [
+                {
+                    "action": "build",
+                    "title": "Text Editor",
+                    "request": "create a text editor app",
+                    "runtime": "web",
+                },
+                {
+                    "action": "build",
+                    "html": html,
+                    "title": "Text Editor",
+                    "request": "create a text editor app",
+                    "runtime": "web",
+                },
+            ],
+        )
+
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
     def test_dispatch_enforces_json_and_size_bounds(self, _list_tools):
         session = agent.AgentSession([{"role": "user", "content": "hello"}], "tools.sock", catalog=[])
