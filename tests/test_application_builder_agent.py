@@ -141,7 +141,10 @@ class _ModelState:
         _require(body.get("tool_choice") == "auto", "Tool choice must remain automatic.")
         _require(set(body) == {"model", "messages", "tools", "tool_choice", "stream"}, "Unexpected request fields.")
         tool_names = [tool["function"]["name"] for tool in body["tools"]]
-        _require(tool_names == ["activate_skill", "application"], f"Unexpected tools: {tool_names!r}")
+        _require(
+            tool_names == ["activate_skill", "application", "build_application"],
+            f"Unexpected tools: {tool_names!r}",
+        )
         system = body["messages"][0]
         _require(system.get("role") == "system", "The first message must be the system prompt.")
         prompt = system.get("content", "")
@@ -417,7 +420,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                         time.sleep(0.02)
                 self.assertEqual(
                     [tool["function"]["name"] for tool in listed["tools"]],
-                    ["browser", "application", "os_settings"],
+                    ["browser", "application", "build_application", "os_settings"],
                 )
                 self.assertEqual(listed["warnings"], [])
 

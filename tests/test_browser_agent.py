@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from aios import agent, skills, toolhost
-from aios.applications import APPLICATION_TOOL, application_tool
+from aios.applications import APPLICATION_TOOL, BUILD_APPLICATION_TOOL, application_tool
 from aios.browser import Browser, TOOL as BROWSER_TOOL, discover, web_url
 from aios.skills import Skill
 
@@ -256,7 +256,7 @@ class BrowserAgentTests(unittest.TestCase):
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
     @patch("aios.agent.toolhost.list_tools", return_value={
-        "tools": [clone(APPLICATION_TOOL)], "warnings": []})
+        "tools": [clone(APPLICATION_TOOL), clone(BUILD_APPLICATION_TOOL)], "warnings": []})
     def test_integrated_application_name_is_normalized_for_direct_launch(self, _tools, _config):
         warnings = []
         skill = skills._load_skill_dir(
@@ -888,18 +888,18 @@ class BrowserAgentTests(unittest.TestCase):
 
     @patch("aios.agent.core.load_config", return_value={"mode": "local", "model": "test"})
     @patch("aios.agent.toolhost.list_tools", return_value={
-        "tools": [clone(APPLICATION_TOOL)], "warnings": []})
+        "tools": [clone(APPLICATION_TOOL), clone(BUILD_APPLICATION_TOOL)], "warnings": []})
     def test_build_without_html_is_returned_to_model_and_retried(self, _tools, _config):
         html = "<!doctype html><title>Text Editor</title><textarea></textarea>"
         responses = [
             stream([{"tool_calls": [{
-                "index": 0, "id": "missing-html", "function": {"name": "application",
-                "arguments": json.dumps({"action": "build"})},
+                "index": 0, "id": "missing-html", "function": {"name": "build_application",
+                "arguments": json.dumps({})},
             }]}], "tool_calls"),
             stream([{"content": "Please provide the HTML document."}]),
             stream([{"tool_calls": [{
-                "index": 0, "id": "complete-build", "function": {"name": "application",
-                "arguments": json.dumps({"action": "build", "html": html})},
+                "index": 0, "id": "complete-build", "function": {"name": "build_application",
+                "arguments": json.dumps({"html": html})},
             }]}], "tool_calls"),
             stream([{"content": "Text Editor is open."}]),
         ]
@@ -925,20 +925,83 @@ class BrowserAgentTests(unittest.TestCase):
             [item.args[2] for item in call.call_args_list],
             [
                 {
-                    "action": "build",
                     "title": "Text Editor",
                     "request": "create a text editor app",
-                    "runtime": "web",
                 },
                 {
-                    "action": "build",
                     "html": html,
                     "title": "Text Editor",
                     "request": "create a text editor app",
-                    "runtime": "web",
                 },
             ],
         )
+
+    @patch("aios.agent.toolhost.list_tools", return_value={
+        "tools": [clone(APPLICATION_TOOL), clone(BUILD_APPLICATION_TOOL)], "warnings": []})
+    def test_chat_controller_generates_html_then_builds_without_model_tool_calls(self, _tools):
+        html = "<!doctype html><html><head><title>Todo List</title></head><body><input></body></html>"
+        warnings = []
+        skill = skills._load_skill_dir(
+            Path(__file__).resolve().parents[1] / "apps/skills/application-builder", warnings)
+        self.assertEqual(warnings, [])
+        with patch("aios.agent.skills.load_skills", return_value=([skill], [])), \
+                patch("aios.agent.core.load_config", return_value={
+                "mode": "local", "model": "test", "agent_mode": "current"}), \
+                patch("aios.agent.core.chat", return_value=iter((html,))) as generate, \
+                patch("aios.agent.toolhost.call", side_effect=[
+                    {"matches": []},
+                    {
+                        "id": "todo-list-12345678",
+                        "title": "Todo List",
+                        "written": True,
+                        "launched": True,
+                        "runtime": "web",
+                    },
+                ]) as call:
+            events = list(agent.chat(
+                [{"role": "user", "content": "create a todo list app"}],
+                "tools.sock",
+            ))
+
+        generate.assert_called_once()
+        self.assertEqual(
+            [(item.args[1], item.args[2]) for item in call.call_args_list],
+            [
+                ("application", {
+                    "action": "search",
+                    "query": "create a todo list app",
+                }),
+                ("build_application", {
+                    "html": html,
+                    "title": "Todo List",
+                    "request": "create a todo list app",
+                }),
+            ],
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Todo List is open."})
+
+    @patch("aios.agent.toolhost.list_tools", return_value={
+        "tools": [clone(APPLICATION_TOOL), clone(BUILD_APPLICATION_TOOL)], "warnings": []})
+    def test_chat_controller_opens_integrated_application_without_model(self, _tools):
+        with patch("aios.agent.core.load_config") as load_config, \
+                patch("aios.agent.toolhost.call", return_value={
+                    "id": "terminal-00000000",
+                    "title": "Terminal",
+                    "launched": True,
+                    "runtime": "integrated",
+                }) as call:
+            events = list(agent.chat(
+                [{"role": "user", "content": "open terminal"}],
+                "tools.sock",
+            ))
+
+        load_config.assert_not_called()
+        call.assert_called_once_with(
+            "tools.sock",
+            "application",
+            {"action": "launch", "id": "terminal-00000000"},
+        )
+        self.assertEqual(events[-1], {"type": "token", "text": "Terminal is open."})
 
     @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
     def test_dispatch_enforces_json_and_size_bounds(self, _list_tools):

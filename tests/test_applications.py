@@ -19,7 +19,13 @@ from unittest import mock
 from urllib import error, request
 
 import aios.applications as applications
-from aios.applications import APPLICATION_TOOL, NATIVE_TEMPLATES, ApplicationStore, application_tool
+from aios.applications import (
+    APPLICATION_TOOL,
+    BUILD_APPLICATION_TOOL,
+    NATIVE_TEMPLATES,
+    ApplicationStore,
+    application_tool,
+)
 
 
 def _read_json(path: Path):
@@ -90,6 +96,10 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertFalse(parameters["additionalProperties"])
         self.assertIn("action", parameters["properties"])
         self.assertIn("build", parameters["properties"]["action"]["enum"])
+        self.assertEqual(
+            BUILD_APPLICATION_TOOL["function"]["parameters"]["required"],
+            ["html"],
+        )
         self.assertIn("query", parameters["properties"])
         self.assertIn("id", parameters["properties"])
         self.assertIn("title", parameters["properties"])

@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any
 
-from .applications import APPLICATION_TOOL, ApplicationStore
+from .applications import APPLICATION_TOOL, BUILD_APPLICATION_TOOL, ApplicationStore
 from .browser import TOOL as BROWSER_TOOL, Browser
 from .mcp import McpRegistry
 from . import os_settings
@@ -137,7 +137,7 @@ def _definition_name(definition: Any) -> str | None:
 def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> list[dict[str, Any]]:
     tools = []
     names = set()
-    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL):
+    for definition in (BROWSER_TOOL, application_definition, BUILD_APPLICATION_TOOL, os_settings.TOOL):
         name = _definition_name(definition)
         if name is None or name in names:
             raise RuntimeError("Built-in tool definitions are invalid.")
@@ -452,6 +452,12 @@ class ToolHost:
             result = self.browser.act(arguments)
         elif name == "application":
             result = self._call_application(arguments)
+        elif name == "build_application":
+            result = self._call_application({
+                "action": "build",
+                "runtime": "web",
+                **arguments,
+            })
         elif name == "os_settings":
             result = os_settings.act(arguments)
         elif name in self._advertised_mcp:

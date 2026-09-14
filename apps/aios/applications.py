@@ -87,13 +87,37 @@ APPLICATION_TOOL = {
                 },
             },
             "required": ["action"],
-            "allOf": [{
-                "if": {
-                    "properties": {"action": {"const": "build"}},
-                    "required": ["action"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+BUILD_APPLICATION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "build_application",
+        "description": (
+            "Build and launch a new sandboxed web application from one complete self-contained HTML document "
+            "authored by the model. Use this when no existing integrated or cached application satisfies the "
+            "user. Never ask the user to provide HTML, source code, a title, or a request description."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Required complete offline HTML document authored by the model.",
                 },
-                "then": {"required": ["html"]},
-            }],
+                "title": {
+                    "type": "string",
+                    "description": "Optional short title; inferred from the user's request when omitted.",
+                },
+                "request": {
+                    "type": "string",
+                    "description": "Optional source request; inferred from the user's message when omitted.",
+                },
+            },
+            "required": ["html"],
             "additionalProperties": False,
         },
     },
