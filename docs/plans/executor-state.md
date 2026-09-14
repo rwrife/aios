@@ -2,6 +2,72 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-14 11:23 UTC
+
+- Repository preflight: `gh repo view rwrife/aios`, REST repository lookup,
+  `git ls-remote --heads origin`, and create/delete temporary ref probe succeeded.
+  Authenticated identity: `gh api user --jq .login` -> `rwrife`.
+- PR snapshot: zero open PRs initially and immediately before selection; zero
+  after implementation merge. No pre-existing PRs merged and no blocked PRs.
+  This snapshot excludes the separate docs-only publication of this state file.
+- Issues: 28 open at selection and after implementation merge.
+  Assigned elsewhere: https://github.com/rwrife/aios/issues/71 (`rwrife`),
+  skipped entirely despite sharing this executor's GitHub identity.
+- Claimed issue: https://github.com/rwrife/aios/issues/81 — App creation skill/prompt.
+  Rationale: avoiding routine metadata and runtime-choice questions keeps the
+  primary AI-only chat interaction moving without inventing OS capabilities.
+- Claim evidence: `gh issue edit 81 --repo rwrife/aios --add-assignee @me`
+  succeeded; `gh issue view 81 --repo rwrife/aios --json assignees` returned
+  only `rwrife` at claim and immediately before push. Claims released: none;
+  assignment retained because a PR exists, per this job's retention policy.
+- New implementation PR: https://github.com/rwrife/aios/pull/120 — MERGED
+  at `2026-09-14T11:23:02Z`, squash commit
+  `aca1e95c489747a98ba75bfc36504c8a3ef5295b`.
+  Readback confirmed MERGED and remote branch deletion. Issue #81 remains OPEN
+  with `rwrife` assigned, intentionally linked with Progresses rather than a
+  closing keyword.
+- Implementation: application-builder instructions infer a short title and
+  source request, choose schema-supported defaults, honor explicit requirements,
+  disclose ephemeral Notes/game state, and preserve cache-first/verified-launch
+  rules. Tool-schema descriptions reinforce metadata inference. Added one
+  AgentSession instruction/schema regression test; docs state evidence limits.
+- Review correction: an attempted implicit-trigger expansion matched quoted
+  examples. It was withdrawn, its tests removed, and trigger frontmatter left
+  byte-identical to main. Independent Codex review of all four final files
+  returned `passed: true`, no security or logic blockers. Matcher unchanged.
+- Verification:
+  - New instruction/schema test first failed on missing guidance, then passed.
+  - Final focused command:
+    `PYTHONPATH=apps:tests python3 -m unittest test_skills test_browser_agent test_applications -q`
+    ran 139 tests: zero failures, one optional native-binary skip.
+  - `bash scripts/test.sh` ran 459 tests: one failure, nine skips, exit 1.
+    Failure: `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`,
+    `AssertionError: 2 != 1`, reproduced on untouched main before implementation.
+    Wrapper stops at unittest, so subsequent shell/XML checks are not claimed.
+  - Initial four-module run including `test_toolhost`: 175 tests, zero failures,
+    one skip. Two later four-module reruns hit `ConnectionRefusedError: [Errno 111]
+    Connection refused` in the unchanged drip-feed test. That test passed in
+    full discovery and individually; untouched main's four-module command passed
+    174 tests with one skip. Timing inconsistency recorded, not claimed as a
+    reproduced main failure.
+  - `git diff --cached --check` passed. No UI/native implementation changed.
+  - No live-model or Alpine/QEMU evaluation performed. These tests verify prompt
+    delivery and schema, not model adherence, generated app UX, or fewer stalls.
+- CI: Validate is `disabled_manually`; no current-head PR runs/checks arrived.
+  Branch protection lookup returned HTTP 403:
+  `Upgrade to GitHub Pro or make this repository public to enable this feature.`
+  This is a repository-plan limitation, not a write-auth blocker. Explicit merge
+  used fresh local changed-scope verification, independent review, CLEAN /
+  MERGEABLE status and exact-head matching; no auto-merge or ISO CI dispatch.
+- Remaining #81 acceptance: live-model/VM behavior checks, offline framework
+  packaging (Node.js/React/Three.js) with a safe expanded application contract,
+  and any broader intent activation. No persistent storage or extra native
+  templates are promised. Existing triggers or explicit/model skill activation
+  remain necessary.
+- Run-state publication: separate docs-only branch/PR after implementation
+  outcome settled; worktrees are disposable and removed at closeout.
+- Self-removal: not triggered; this job remains scheduled every six hours.
+
 ## 2026-09-14 00:50 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked after merge: 0 again). No merges before issue work, no blocked PRs.
