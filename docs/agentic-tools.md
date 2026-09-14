@@ -167,7 +167,35 @@ build intent, such as:
 
 Triggers use phrases such as "need a calculator", "build a timer", or "make an
 application". A bare noun such as "calculator" or a request to explain a
-calculator does not activate the builder.
+calculator does not activate the builder. Utility phrases that do not match an
+existing deterministic trigger can select the builder with an explicit leading
+`/application-builder`, or the model can select it by calling `activate_skill`
+with the exact installed skill name. They do not automatically expand the
+deterministic trigger set.
+
+The builder infers a short title and request description from the user's goal;
+users need not supply internal tool metadata or choose native versus web for
+routine requests. Explicit titles, runtime requirements, and draft-only requests
+still take precedence. It asks only about material ambiguities, and reports
+unsupported requirements rather than silently changing them.
+
+Runtime defaults follow the advertised templates, not an assumed ability to
+compile arbitrary native apps. Calculator prefers native when available. Notes
+and Analog Clock currently use the web fallback, and Solitaire defaults to a
+small offline Klondike game with in-memory state and DOM/CSS or canvas graphics.
+Notes is explicitly a session-only scratchpad, not durable storage. The builder
+must disclose that contents disappear when closed; publishing an app does not
+save its user data.
+
+These defaults do not add framework packaging. The application tool does not
+expose Node.js, a package manager, React, Three.js, build commands, or a persistent
+storage bridge. Apps still use one offline HTML document of at most 16 KiB with
+inline CSS and vanilla JavaScript. Framework bundling and a safe expanded runtime
+contract remain separate work under [#81](https://github.com/rwrife/aios/issues/81).
+A live-model, in-VM evaluation is still needed to measure whether these prompt
+instructions eliminate clarification stalls or influence model skill-selection
+choices. Deterministic tests establish instruction injection into the session and
+advertised schema guidance, not live-model choice behavior.
 
 The skill permits only the `application` tool and requires this workflow:
 
