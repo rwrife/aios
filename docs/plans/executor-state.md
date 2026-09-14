@@ -2,6 +2,49 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-14 00:50 UTC
+
+- PR lane: 0 open PRs at start and at issue selection (freshness re-checked after merge: 0 again). No merges before issue work, no blocked PRs.
+- Open issues: 27 at selection; all unassigned except #71 (rwrife, browser-mcp in-flight from merged PR #113 pending owner VM QA); #71 skipped as assigned-elsewhere. Hardware/recognition/voice stage chains left for device-capable runners.
+- Selected issue: https://github.com/rwrife/aios/issues/82 — "Agent question/choice prompt".
+  Rationale: the chat is the single interaction point; giving the agent a
+  structured way to ask multiple-choice questions (and the chat a click-to-answer
+  UX) removes the daily stall of vague "please specify" prompts and is fully
+  verifiable headless via the QML harness.
+- Claim: `gh issue edit 82 --add-assignee @me` → readback `assignees=[rwrife]` (self); re-checked before push.
+- Implementation (worktree `.worktrees/feat-issue-82-choices`):
+  - `apps/aios/agent.py` POLICY: when genuinely blocked, ask one specific
+    question and offer 2-6 short options in a ```Choose fence; when a reasonable
+    default is clear, pick it and state the choice instead of asking.
+  - `apps/shell/Markdown.js`: `splitChoices()` extracts the fence fail-closed —
+    streaming/incomplete, single-option, >6-option, >120-char-label, or
+    malformed blocks keep rendering as the ordinary code block, so a half-open
+    block can never drop content mid-stream.
+  - `apps/shell/ChatWindow.qml`: assistant replies route through
+    `splitChoices()`; the newest reply's options render as theme-following
+    `QuietButton`s (Theme.qml roles, 4px rhythm) whose click sends the label
+    verbatim via `session.send()`; older/answered blocks stop offering buttons.
+  - Test-harness fix: `collectNamed` now dedupes the children/data
+    double-parenting of delegate items (recycled delegates double-counted).
+  - `docs/qa/chat-test-matrix.md`: source-level row checked; real-QEMU click
+    row left open.
+- Verification (targeted QML-suite evidence, not VM green):
+  - Alpine 3.23 Qt 6.10.3 `qmltestrunner` offscreen: `tst_chat_launcher`
+    25 pass/0 fail (3 new regression tests: parser conservatism, click sends
+    label, newest-reply-only). Re-run with the Sage palette: 25/25.
+  - RED/GREEN: with `ChatWindow.qml`+`Markdown.js` stashed the new tests FAIL
+    (`splitChoices` not a function / buttons never appear), restored → PASS.
+  - Python: `test_browser_agent` 55/55 (new POLICY regression test); full
+    discovery 458 tests with only the known baseline failure
+    `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`
+    (re-confirmed failing on untouched main this run).
+  - Node behavior probe of `splitChoices` (19 assertions incl. tilde fences,
+    list-marker labels, trailing-text retention, fail-closed cases): all pass.
+  - Not verified: real Alpine/QEMU X11 session with a live model emitting the
+    block and a human click (no display/VM on this runner); stated in the PR,
+    and the issue stays open for that release QA.
+- New PR: https://github.com/rwrife/aios/pull/118 — MERGED (squash commit 0dd4333de2ce465b8b85deaad42504d608327987, 2026-09-14T00:47:42Z). Issue #82 intentionally stays OPEN (Progresses linkage — in-VM/QEMU release QA of the click journey still pending); assignment released after merge so a VM-capable runner can finish that QA. Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; worktree removed.
+
 ## 2026-09-13 20:07 UTC
 
 - PR lane: 0 open PRs at start and at issue selection (freshness re-checked). No merges, no blocked PRs.
