@@ -304,6 +304,14 @@ class ToolHostTests(unittest.TestCase):
                 self.assertEqual(launched["title"], title)
                 self.assertTrue(launched["launched"])
                 open_application.assert_called_once_with(name)
+        with mock.patch.object(
+            toolhost.os_settings,
+            "open_application",
+            return_value={"opened": True},
+        ) as open_application:
+            launched = host.call("application", {"action": "launch", "id": "terminal"})
+        self.assertEqual(launched["id"], "terminal-00000000")
+        open_application.assert_called_once_with("terminal")
 
     def test_browser_application_and_mcp_dispatch_requires_advertisement(self):
         browser = FakeBrowser(result={"snapshot": True})

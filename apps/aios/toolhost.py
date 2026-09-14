@@ -76,6 +76,16 @@ _INTEGRATED_APPLICATIONS = {
 }
 
 
+def integrated_application_id(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    for app_id, app in _INTEGRATED_APPLICATIONS.items():
+        if normalized in (app_id, app["name"], app["title"].casefold()):
+            return app_id
+    return None
+
+
 class _ConnectionWriteFailed(Exception):
     pass
 
@@ -473,8 +483,8 @@ class ToolHost:
                 if app["name"] in query_tokens
             ]
             return {"matches": [*integrated, *self.applications.search(arguments)][:5]}
-        if action == "launch" and arguments.get("id") in _INTEGRATED_APPLICATIONS:
-            app_id = arguments["id"]
+        app_id = integrated_application_id(arguments.get("id")) if action == "launch" else None
+        if app_id is not None:
             app = _INTEGRATED_APPLICATIONS[app_id]
             opened = os_settings.open_application(app["name"])
             launched = (
