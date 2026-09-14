@@ -63,11 +63,11 @@ APPLICATION_TOOL = {
                 },
                 "title": {
                     "type": "string",
-                    "description": "Human-readable title for a new application.",
+                    "description": "Human-readable title for a new application. Infer from the user's goal unless a title was supplied; do not ask for routine metadata.",
                 },
                 "request": {
                     "type": "string",
-                    "description": "Normalized source request for a new application.",
+                    "description": "Normalized source request for a new application. Derive from the user's message while preserving explicit requirements; do not ask them to rewrite it.",
                 },
                 "html": {
                     "type": "string",

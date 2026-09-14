@@ -354,6 +354,30 @@ class BrowserAgentTests(unittest.TestCase):
         self.assertIn("Search the cache before creating a new app.", prompt)
         self.assertNotIn("Never show this inactive body.", prompt)
 
+    @patch("aios.agent.toolhost.list_tools", return_value={"tools": [clone(APPLICATION_TOOL)], "warnings": []})
+    def test_application_request_injects_defaults_and_capability_limits(self, _tools):
+        session = self._application_session("/application-builder I need a note taking application")
+        self.assertTrue(session.remote_preferred)
+        self.assertEqual([tool["function"]["name"] for tool in session.tools()],
+                         ["activate_skill", "application"])
+        prompt = session.system_prompt()
+        for instruction in (
+            "Infer a short descriptive `title`",
+            "derive `request` from the user's stated goal",
+            "Do not ask the user for a title, a rewritten request, or a native-versus-web choice",
+            "Honor explicit user requirements",
+            "Solitaire",
+            "Do not promise durable note storage",
+            "Do not assume Node.js, React, Three.js",
+        ):
+            with self.subTest(instruction=instruction):
+                self.assertIn(instruction, prompt)
+        schema = session.tools()[1]["function"]["parameters"]["properties"]
+        self.assertIn("Infer from the user's goal", schema["title"]["description"])
+        self.assertIn("Derive from the user's message", schema["request"]["description"])
+        self.assertNotIn("runtime", schema)
+        self.assertNotIn("template", schema)
+
     @patch("aios.agent.toolhost.list_tools")
     def test_builtin_application_builder_requires_multiword_build_intent(self, list_tools):
         list_tools.return_value = {
