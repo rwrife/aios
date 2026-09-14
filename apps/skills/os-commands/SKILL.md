@@ -2,7 +2,7 @@
 name: os-commands
 description: Runs allowlisted OS programs such as ls, cat, and echo as argv with no shell.
 metadata:
-  aios-triggers: list files, list directory, show file, file contents, working directory, run ls, run cat, run echo, make directory, copy file, move file, delete file, disk usage, find files, search files
+  aios-triggers: list files, list directory, show file, file contents, read file, write file, save file, create file, write, read, working directory, run ls, run cat, run echo, make directory, copy file, move file, delete file, disk usage, find files, search files
   aios-model: current
 ---
 
