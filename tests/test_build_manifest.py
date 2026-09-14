@@ -120,6 +120,115 @@ class ManifestRecorderTests(unittest.TestCase):
         self.assertEqual(manifest['output_closure']['status'], 'unavailable')
         self.assertEqual(manifest['output_closure']['packages'], [])
 
+    def test_records_the_requested_package_worlds(self):
+        hardware = self.base / 'world.hardware'
+        # Exact bytes: the recorder must hash the file as it ships, so the test
+        # writes LF explicitly instead of letting the platform translate them.
+        hardware.write_bytes(b'# firmware\nlinux-firmware-intel\nwireless-regdb\n\n')
+        vm = self.base / 'world.vm'
+        vm.write_bytes(b'open-vm-tools\nqemu-guest-agent\n')
+        manifest = self.run_recorder([
+            '--skip-index-fetch',
+            '--world', f'hardware={hardware}',
+            '--world', f'vm={vm}',
+        ])
+        worlds = {entry['role']: entry for entry in manifest['package_worlds']['worlds']}
+        self.assertEqual(worlds['hardware']['packages'],
+                         ['linux-firmware-intel', 'wireless-regdb'])
+        self.assertEqual(worlds['hardware']['package_count'], 2)
+        self.assertEqual(
+            worlds['hardware']['sha256'],
+            hashlib.sha256(hardware.read_bytes()).hexdigest())
+        # world.vm must stay recorded so virtual hardware support is auditable.
+        self.assertEqual(worlds['vm']['packages'], ['open-vm-tools', 'qemu-guest-agent'])
+        self.assertEqual(manifest['package_worlds']['combined_packages'],
+                         ['linux-firmware-intel', 'open-vm-tools', 'qemu-guest-agent',
+                          'wireless-regdb'])
+
+    def test_missing_world_file_is_reported_not_faked(self):
+        manifest = self.run_recorder([
+            '--skip-index-fetch', '--world', f'hardware={self.base / "absent"}'])
+        world = manifest['package_worlds']['worlds'][0]
+        self.assertEqual(world['status'], 'unavailable')
+        self.assertEqual(world['packages'], [])
+        self.assertNotIn('sha256', world)
+
+    def test_world_content_change_is_visible_in_the_manifest(self):
+        hardware = self.base / 'world.hardware'
+        hardware.write_bytes(b'linux-firmware-intel\n')
+        first = self.run_recorder(['--skip-index-fetch', '--world', f'hardware={hardware}'])
+        hardware.write_bytes(b'linux-firmware-intel\nsof-firmware\n')
+        second = self.run_recorder(['--skip-index-fetch', '--world', f'hardware={hardware}'])
+        self.assertNotEqual(first['package_worlds'], second['package_worlds'])
+
+    def test_a_world_file_is_hashed_byte_for_byte(self):
+        # Comment stripping decides the package list; the digest must still be
+        # the digest of the file itself, newlines included.
+        hardware = self.base / 'world.hardware'
+        hardware.write_bytes(b'linux-firmware-intel\r\nwireless-regdb\r\n')
+        manifest = self.run_recorder(
+            ['--skip-index-fetch', '--world', f'hardware={hardware}'])
+        world = manifest['package_worlds']['worlds'][0]
+        self.assertEqual(world['sha256'], hashlib.sha256(hardware.read_bytes()).hexdigest())
+        self.assertEqual(world['packages'], ['linux-firmware-intel', 'wireless-regdb'])
+
+    def test_embeds_hardware_package_licenses_and_provenance(self):
+        package_manifest = self.base / 'hardware-packages.json'
+        package_manifest.write_text(json.dumps({
+            'alpine_branch': 'v3.23',
+            'world_file': 'distro/alpine/apks/world.hardware',
+            'resolution': {'status': 'resolved-from-repository-index', 'resolved_on': '2026-09-14'},
+            'packages': {
+                'linux-firmware-intel': {
+                    'role': 'firmware', 'repository': 'main',
+                    'version_resolved': '20251125-r1', 'license': 'custom',
+                    'covers': ['intel-wifi-ax210'], 'rationale': 'iwlwifi microcode',
+                },
+            },
+        }), encoding='utf-8')
+        manifest = self.run_recorder([
+            '--skip-index-fetch', '--hardware-package-manifest', str(package_manifest)])
+        embedded = manifest['hardware_packages']
+        self.assertEqual(embedded['status'], 'recorded')
+        self.assertEqual(embedded['alpine_branch'], 'v3.23')
+        record = embedded['packages']['linux-firmware-intel']
+        self.assertEqual(record['license'], 'custom')
+        self.assertEqual(record['repository'], 'main')
+        self.assertEqual(record['covers'], ['intel-wifi-ax210'])
+
+    def test_missing_hardware_package_manifest_is_unavailable(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        self.assertEqual(manifest['hardware_packages']['status'], 'unavailable')
+        self.assertIn('reason', manifest['hardware_packages'])
+
+    # -- metrics ---------------------------------------------------------
+
+    def test_records_size_metrics_from_the_artifacts(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        metrics = manifest['metrics']
+        self.assertEqual(metrics['iso']['bytes'], len(b'fake-iso-bytes'))
+        self.assertEqual(metrics['initramfs']['bytes'], len(b'initramfs-bytes'))
+        self.assertEqual(metrics['embedded_apks']['bytes'],
+                         manifest['output_closure']['total_size'])
+        self.assertEqual(metrics['embedded_apks']['note'], '2 packages')
+        # No modloop in this fixture: reported as unavailable, never guessed.
+        self.assertEqual(metrics['modloop']['status'], 'unavailable')
+
+    def test_apkovl_size_is_measured_when_present(self):
+        apkovl = self.extracted / 'aios.apkovl.tar.gz'
+        apkovl.write_bytes(b'apkovl-bytes')
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        self.assertEqual(manifest['metrics']['apkovl']['bytes'], len(b'apkovl-bytes'))
+        self.assertEqual(manifest['metrics']['apkovl']['path'], 'aios.apkovl.tar.gz')
+
+    def test_runtime_metrics_are_not_measured_rather_than_invented(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        for key in ('live_root', 'boot_time', 'minimum_tested_ram'):
+            metric = manifest['metrics'][key]
+            self.assertEqual(metric['status'], 'not_measured', key)
+            self.assertTrue(metric['reason'])
+            self.assertNotIn('bytes', metric)
+
     # -- artifacts -------------------------------------------------------
 
     def test_records_iso_and_kernel_identity(self):
@@ -260,6 +369,13 @@ class MkimageWiringTests(unittest.TestCase):
     def test_effective_pins_are_passed(self):
         for key in ('ALPINE_BRANCH', 'IMAGE', 'APORTS_REF', 'LLAMA_REF', 'WHISPER_REF'):
             self.assertIn(f'--effective "{key}=${key}"', self.text)
+
+    def test_every_world_file_is_recorded_per_iso(self):
+        for role in ('base', 'x11', 'vm', 'devel', 'ai', 'hardware'):
+            self.assertIn(f'--world "{role}=$AIOS_WORLD_{role.upper()}"', self.text)
+        # The optional identity world is only recorded when it is built in.
+        self.assertIn('${AIOS_WORLD_IDENTITY:+--world "identity=$AIOS_WORLD_IDENTITY"}', self.text)
+        self.assertIn('--hardware-package-manifest', self.text)
 
     def test_build_inputs_env_records_effective_values(self):
         self.assertIn('ALPINE_BRANCH=$ALPINE_BRANCH', self.text)

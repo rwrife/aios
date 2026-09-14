@@ -44,7 +44,7 @@ jobs:
       - name: Install boot verification tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ovmf qemu-system-x86 xorriso
+          sudo apt-get install -y ovmf qemu-system-x86 squashfs-tools xorriso
 
       - name: Build ISO
         env:
