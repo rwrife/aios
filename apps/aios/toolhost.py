@@ -49,6 +49,7 @@ SAFE_MCP_BUDGET_WARNING = "MCP some tool definitions were ignored because the re
 _APPLICATION_ACTIONS = (
     "search",
     "create",
+    "build",
     "read",
     "write",
     "publish",
@@ -61,6 +62,18 @@ _MCP_WARNING_RESERVE = (
 )
 _RETRIABLE_CONNECT_ERRNOS = {errno.EAGAIN, errno.EWOULDBLOCK}
 _MISSING = object()
+_INTEGRATED_APPLICATIONS = {
+    "terminal-00000000": {
+        "name": "terminal",
+        "title": "Terminal",
+        "summary": "AIOS integrated terminal.",
+    },
+    "settings-00000000": {
+        "name": "settings",
+        "title": "Settings",
+        "summary": "AIOS integrated settings.",
+    },
+}
 
 
 class _ConnectionWriteFailed(Exception):
@@ -362,7 +375,10 @@ def _write_socket_line(connection: socket.socket, payload: dict[str, Any], deadl
 class ToolHost:
     def __init__(self, browser: Browser | None = None, applications: ApplicationStore | None = None, mcp: McpRegistry | None = None):
         self.browser = browser if browser is not None else Browser()
-        self.applications = applications if applications is not None else ApplicationStore()
+        self.applications = (
+            applications if applications is not None
+            else ApplicationStore(native_templates=())
+        )
         self.mcp = mcp if mcp is not None else McpRegistry()
         self._advertised_mcp = {}
         self._closed = False
@@ -439,10 +455,40 @@ class ToolHost:
         action = arguments.get("action")
         if action not in _APPLICATION_ACTIONS:
             raise ValueError(SAFE_APPLICATION_ACTION)
+        if action == "search":
+            query = arguments.get("query")
+            if not isinstance(query, str):
+                raise ValueError("Enter a search query.")
+            query_tokens = set(query.casefold().replace("&", " ").split())
+            integrated = [
+                {
+                    "id": app_id,
+                    "title": app["title"],
+                    "summary": app["summary"],
+                    "exact": query.strip().casefold() == app["title"].casefold(),
+                    "runtime": "integrated",
+                    "template": None,
+                }
+                for app_id, app in _INTEGRATED_APPLICATIONS.items()
+                if app["name"] in query_tokens
+            ]
+            return {"matches": [*integrated, *self.applications.search(arguments)][:5]}
+        if action == "launch" and arguments.get("id") in _INTEGRATED_APPLICATIONS:
+            app_id = arguments["id"]
+            app = _INTEGRATED_APPLICATIONS[app_id]
+            opened = os_settings.open_application(app["name"])
+            launched = (
+                isinstance(opened, dict)
+                and (opened.get("opened") is True or opened.get("requested") is True)
+            )
+            return {
+                "launched": launched,
+                "id": app_id,
+                "title": app["title"],
+                "runtime": "integrated",
+            }
         method = getattr(self.applications, action)
         result = method(arguments)
-        if action == "search":
-            return {"matches": result}
         if action == "read":
             return {"html": result}
         return result

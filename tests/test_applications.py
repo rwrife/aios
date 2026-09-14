@@ -89,6 +89,7 @@ class ApplicationStoreTests(unittest.TestCase):
         parameters = APPLICATION_TOOL["function"]["parameters"]
         self.assertFalse(parameters["additionalProperties"])
         self.assertIn("action", parameters["properties"])
+        self.assertIn("build", parameters["properties"]["action"]["enum"])
         self.assertIn("query", parameters["properties"])
         self.assertIn("id", parameters["properties"])
         self.assertIn("title", parameters["properties"])
@@ -132,10 +133,36 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertFalse(launched[0].exists())
         folder = self.root / app["id"]
         self.assertEqual({path.name for path in folder.iterdir()}, {".draft.json", "index.html"})
-        self.assertEqual(store.search({"query": "Create a draft app"}), [])
+        self.assertEqual(store.search({"query": "Create a draft app"})[0]["id"], app["id"])
+        self.assertEqual(self._store(launcher=launch).search({"query": "Create a draft app"}), [])
         store.write({"id": app["id"], "html": "<!doctype html><title>Edited</title>"})
         self.assertTrue(store.publish({"id": app["id"], "summary": "Edited app", "keywords": ["draft"]})["published"])
         self.assertEqual(store.search({"query": "Create a draft app"})[0]["id"], app["id"])
+
+    def test_build_atomically_creates_writes_and_launches_generic_web_app(self):
+        from aios.app_runner import load_document
+
+        launched = []
+        html = "<!doctype html><title>Text Editor</title><textarea></textarea>"
+
+        def launch(folder):
+            launched.append(Path(folder))
+            self.assertEqual(load_document(folder), html)
+            return True
+
+        store = self._store(launcher=launch)
+        result = store.build({
+            "action": "build",
+            "title": "Text Editor",
+            "request": "create a text editor app",
+            "runtime": "web",
+            "html": html,
+        })
+        self.assertTrue(result["written"])
+        self.assertTrue(result["launched"])
+        self.assertEqual(result["runtime"], "web")
+        self.assertEqual(store.search({"query": "create a text editor app"})[0]["id"], result["id"])
+        self.assertEqual(len(launched), 1)
 
     def test_draft_native_launch_remains_unpublished_until_explicit_publish(self):
         launched = []
@@ -155,7 +182,14 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(len(launched), 1)
         self.assertFalse(launched[0].exists())
         self.assertEqual({path.name for path in (self.root / app["id"]).iterdir()}, {".draft.json"})
-        self.assertEqual(store.search({"query": "calculator"}), [])
+        match = store.search({"query": "calculator"})[0]
+        self.assertEqual(match["id"], app["id"])
+        self.assertTrue(store.launch({"id": match["id"]})["launched"])
+        self.assertEqual(len(launched), 2)
+        self.assertEqual(
+            self._store(launcher=launch, native_host=self._native_host("")).search({"query": "calculator"}),
+            [],
+        )
         self.assertTrue(store.publish({"id": app["id"], "summary": "Calculator", "keywords": ["calculator"]})["published"])
 
     def test_draft_launch_rejects_missing_html_and_unexpected_files(self):

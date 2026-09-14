@@ -596,7 +596,7 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         count = 0
         content_bytes = 0
         buffered_content = ""
-        completion_retry = False
+        completion_retries = 0
         while True:
             event = server.next_event(min(
                 MAX_EVENT_WAIT, _chat_remaining(deadline, clock)))
@@ -664,7 +664,6 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     deadline=deadline,
                     clock=clock,
                 )
-                session.check_application_failure()
                 continue
 
             if not isinstance(method, str) or not isinstance(params, dict):
@@ -695,12 +694,12 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                         raise RuntimeError('ChatGPT could not finish the reply. Check your subscription limits or try again.')
                     if session is not None and session.verify_application_completion:
                         if session.application_completion_pending():
-                            if completion_retry:
+                            if completion_retries >= agent.MAX_APPLICATION_COMPLETION_RETRIES:
                                 raise RuntimeError(agent.APPLICATION_LAUNCH_PENDING)
-                            completion_retry = True
+                            completion_retries += 1
                             buffered_content = ""
                             resumed = server.request('turn/start', {'threadId': thread, 'input': [
-                                {'type': 'text', 'text': agent.APPLICATION_LAUNCH_CONTINUATION}]},
+                                {'type': 'text', 'text': session.application_completion_prompt()}]},
                                 timeout=min(30, _chat_remaining(deadline, clock)))
                             _chat_rpc_result(resumed, 'turn')
                             continue

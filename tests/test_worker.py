@@ -115,6 +115,9 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('env.insert("AIOS_BROWSER_THEME", m_config.value("theme_color", "blue").toString())', source)
         self.assertIn("tieToDesktop(tools)", source)
         self.assertIn("ToolHostGracefulWaitMs", source)
+        self.assertIn('action == "open_application"', source)
+        self.assertIn('name == "terminal"', source)
+        self.assertIn('name == "settings"', source)
         self.assertEqual(source.count("waitForFinished(ToolHostGracefulWaitMs)"), 2)
 
     def test_shell_never_caches_plaintext_keys_and_clears_pending_errors(self):
