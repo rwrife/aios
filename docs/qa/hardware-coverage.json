@@ -1,0 +1,2473 @@
+{
+  "schema_version": 2,
+  "alpine_branch": "v3.23",
+  "baseline_versions": {
+    "status": "resolved-from-pinned-aports",
+    "resolved_on": "2026-09-14",
+    "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225 (APORTS_REF in distro/alpine/build.env)",
+    "note": "Versions declared by the pinned aports tree for the v3.23 branch. Alpine's release repositories keep moving, so this is the version the pinned source tree declares, not proof of what a given build installed. The versions a build actually shipped are recorded per ISO in <iso>.build-manifest.json by distro/alpine/mkimage.sh. meets_baseline flags below are version comparisons against these values, not probes.",
+    "packages": {
+      "linux-lts": {
+        "status": "resolved",
+        "version": "6.18.49-r0",
+        "alpine_repository": "main",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-lts/APKBUILD"
+      },
+      "mesa": {
+        "status": "resolved",
+        "version": "25.2.7-r1",
+        "alpine_repository": "main",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD"
+      },
+      "linux-firmware": {
+        "status": "resolved",
+        "version": "20251125-r1",
+        "alpine_repository": "main",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD"
+      },
+      "sof-firmware": {
+        "status": "resolved",
+        "version": "2025.05-r0",
+        "alpine_repository": "community",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:community/sof-firmware/APKBUILD"
+      },
+      "wireless-regdb": {
+        "status": "resolved",
+        "version": "2025.07.10-r0",
+        "alpine_repository": "main",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/wireless-regdb/APKBUILD"
+      }
+    }
+  },
+  "entries": [
+    {
+      "id": "intel-wifi-ax200",
+      "family": "wifi",
+      "vendor": "Intel",
+      "device": "Wi-Fi 6 AX200 (Cyclone Peak, PCIe M.2)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:2723",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "iwlwifi",
+        "iwlmvm"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "iwlwifi-cc-a0-*.ucode",
+        "intel/iwlwifi/iwlwifi-cc-a0-*.ucode"
+      ],
+      "firmware_package": [
+        "linux-firmware-intel"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Aftermarket Intel AX200 M.2 2230 card fitted to a desktop or laptop with a free Key-E slot",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "alpine-release-notes",
+          "reference": "https://wiki.alpinelinux.org/wiki/Release_Notes_for_Alpine_3.23.0",
+          "retrieved": "2026-09-14",
+          "notes": "Alpine 3.23 ships Intel wireless firmware in linux-firmware-intel."
+        },
+        {
+          "kind": "upstream-driver-doc",
+          "reference": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/iwlwifi.html",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Discrete PCIe card, not a CNVi host-dependent part. linux-firmware-intel in v3.23 ships the cc-a0 ucode at both /lib/firmware and /lib/firmware/intel/iwlwifi; the API revision the driver actually requests depends on the shipped kernel and must be read from a real probe."
+    },
+    {
+      "id": "intel-wifi-ax210",
+      "family": "wifi",
+      "vendor": "Intel",
+      "device": "Wi-Fi 6E AX210 (Typhoon Peak, PCIe M.2)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:2725",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "iwlwifi",
+        "iwlmvm"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "iwlwifi-ty-a0-gf-a0-*.ucode",
+        "intel/iwlwifi/iwlwifi-ty-a0-gf-a0-*.ucode"
+      ],
+      "firmware_package": [
+        "linux-firmware-intel"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Aftermarket Intel AX210 M.2 2230 card fitted to a desktop or laptop with a free Key-E slot",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "alpine-release-notes",
+          "reference": "https://wiki.alpinelinux.org/wiki/Release_Notes_for_Alpine_3.23.0",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "upstream-driver-doc",
+          "reference": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/iwlwifi.html",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "6 GHz operation additionally needs a regulatory database/country match; test only where 6 GHz is legal and supported."
+    },
+    {
+      "id": "intel-wifi-ax201-cnvi",
+      "family": "wifi",
+      "vendor": "Intel",
+      "device": "Wi-Fi 6 AX201 (Harrison Peak, integrated CNVi)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:a0f0",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "iwlwifi",
+        "iwlmvm"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "iwlwifi-QuZ-a0-hr-b0-*.ucode",
+        "intel/iwlwifi/iwlwifi-QuZ-a0-hr-b0-*.ucode"
+      ],
+      "firmware_package": [
+        "linux-firmware-intel"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "OEM laptop with an integrated AX201 CNVi adapter (10th/11th-generation Intel mobile platform, e.g. a ThinkPad T14 Gen 1 class machine)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "CNVi parts require a compatible host platform/RF companion; the exact device ID varies by host chipset generation and must be reconfirmed against the actual test board, not assumed from this entry alone."
+    },
+    {
+      "id": "intel-wifi-legacy-iwldvm",
+      "family": "wifi",
+      "vendor": "Intel",
+      "device": "Centrino Advanced-N 6205 (legacy, iwldvm)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:0085",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "iwlwifi",
+        "iwldvm"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "iwlwifi-6000g2a-*.ucode",
+        "intel/iwlwifi/iwlwifi-6000g2a-*.ucode"
+      ],
+      "firmware_package": [
+        "linux-firmware-intel"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Legacy Intel mobile laptop with a Centrino Advanced-N 6205 mini-PCIe card",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Retained only if a v3.23 kernel/linux-firmware-intel pairing still ships iwldvm and this generation's ucode; confirm both are still packaged before treating this family as in scope."
+    },
+    {
+      "id": "qualcomm-atheros-qca6174",
+      "family": "wifi",
+      "vendor": "Qualcomm Atheros",
+      "device": "QCA6174 (ath10k_pci)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "168c:003e",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "ath10k_pci",
+        "ath10k_core"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "ath10k/QCA6174/hw3.0/firmware-*.bin",
+        "ath10k/QCA6174/hw3.0/board-*.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-ath10k"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "OEM laptop with a QCA6174 M.2/mini-PCIe card (common in 2016-2019 business laptops)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "upstream-driver-doc",
+          "reference": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath10k.html",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Board data (board-2.bin) selection depends on the OEM board id; resolve the exact board file the target machine needs before certifying."
+    },
+    {
+      "id": "qualcomm-atheros-wcn6855",
+      "family": "wifi",
+      "vendor": "Qualcomm Atheros",
+      "device": "WCN6855 (ath11k_pci)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "17cb:1103",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "ath11k_pci",
+        "ath11k"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "ath11k/WCN6855/hw2.0/amss.bin",
+        "ath11k/WCN6855/hw2.0/board-2.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-ath11k"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Laptop with an integrated QCA6390/WCN6855 adapter (AMD Ryzen 5000-series OEM laptop class)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "upstream-driver-doc",
+          "reference": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath11k.html",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Confirm the exact hw revision (hw2.0/hw2.1) reported by the target card; ath11k firmware paths are hw-revision specific."
+    },
+    {
+      "id": "atheros-ath9k-legacy",
+      "family": "wifi",
+      "vendor": "Atheros",
+      "device": "AR9285 802.11n (ath9k)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "168c:002b",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "ath9k"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211",
+        "ath9k_common",
+        "ath9k_hw"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Legacy netbook/laptop with an AR9285 mini-PCIe card",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "ath9k is largely firmware-free (EEPROM-calibrated); still confirm no board-specific firmware blob is required for the exact card revision."
+    },
+    {
+      "id": "qualcomm-ath12k-conditional",
+      "family": "wifi",
+      "vendor": "Qualcomm",
+      "device": "Wi-Fi 7 (QCN92xx family, ath12k)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "ath12k"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [],
+      "firmware_package": [
+        "linux-firmware-ath12k"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "unresolved",
+        "version": null,
+        "reason": "No specific Wi-Fi 7 card has been selected, so no kernel floor can be stated without inventing a device.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Wi-Fi 7 ath12k M.2 card; linux-firmware-ath12k in v3.23 carries WCN7850 firmware, so a WCN7850-based card is the nearest candidate class",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Conditional and out of the initial target list: no exact PCI ID is recorded because no card has been selected. linux-firmware-ath12k in v3.23 ships ath12k/WCN7850/hw2.0 firmware; do not add a device ID until it is confirmed against a chosen card and the shipped modules.alias."
+    },
+    {
+      "id": "mediatek-mt7921e",
+      "family": "wifi",
+      "vendor": "MediaTek",
+      "device": "MT7921 (PCIe, mt76/mt7921e)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "14c3:7961",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "mt7921e",
+        "mt7921_common",
+        "mt76_connac_lib",
+        "mt76_core"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "mediatek/WIFI_RAM_CODE_MT7961_1.bin",
+        "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-mediatek"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Laptop or desktop with an MT7921/MT7922 M.2 card (AMD Ryzen 6000-series OEM laptop class)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "upstream-driver-doc",
+          "reference": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/mediatek.html",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "MT7921 covers several near-identical PCI IDs (7961/7922); confirm the exact ID on the chosen test board. In v3.23 the MT7961 blobs sit directly under mediatek/, not mediatek/mt7921/."
+    },
+    {
+      "id": "mediatek-mt7921u",
+      "family": "wifi",
+      "vendor": "MediaTek",
+      "device": "MT7921 (USB adapter, mt76/mt7921u)",
+      "bus": "usb",
+      "ids": {
+        "pci_id": null,
+        "usb_id": "0e8d:7961",
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "mt7921u",
+        "mt7921_common",
+        "mt76_connac_lib",
+        "mt76_core"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-mediatek"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "USB Wi-Fi 6 adapter built on MT7921AU",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "USB vendor/product IDs vary widely by OEM adapter rebrand; confirm against the exact purchased adapter before certifying."
+    },
+    {
+      "id": "mediatek-mt7925e",
+      "family": "wifi",
+      "vendor": "MediaTek",
+      "device": "MT7925 Wi-Fi 7 (PCIe, mt76/mt7925e)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "14c3:7925",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "mt7925e",
+        "mt7925_common",
+        "mt76_connac_lib",
+        "mt76_core"
+      ],
+      "module_dependencies": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "firmware_files": [
+        "mediatek/mt7925/WIFI_RAM_CODE_MT7925_1_1.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-mediatek"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "required",
+        "version": "6.7",
+        "reason": "mt7925 support entered the upstream mt76 driver in the Linux 6.7 cycle.",
+        "evidence_source": "https://wireless.docs.kernel.org/en/latest/en/users/drivers/mediatek.html; confirm by matching 14c3:7925 against the shipped modules.alias with scripts/inspect-image.py",
+        "meets_baseline": true
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Laptop with an MT7925 Wi-Fi 7 M.2 card",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Newer Wi-Fi 7 device; explicitly gated pending kernel/firmware version confirmation against the release LTS kernel actually shipped."
+    },
+    {
+      "id": "intel-gpu-i915-uhd630",
+      "family": "gpu",
+      "vendor": "Intel",
+      "device": "UHD Graphics 630 (Coffee Lake, i915)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:3e92",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "i915"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [
+        "i915/kbl_dmc_ver1_04.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-i915"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Coffee Lake desktop or laptop with UHD Graphics 630 (Core i5-8500/i7-8700 class)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Established i915 generation and the baseline Intel iGPU target. Display microcode for this generation ships as i915/kbl_dmc_ver1_04.bin in linux-firmware-i915, not in linux-firmware-intel."
+    },
+    {
+      "id": "intel-gpu-xe-meteorlake",
+      "family": "gpu",
+      "vendor": "Intel",
+      "device": "Arc integrated GPU (Meteor Lake, xe driver)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:7d55",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "xe"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [
+        "i915/mtl_guc_*.bin",
+        "i915/mtl_huc_*.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-i915"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "required",
+        "version": "6.8",
+        "reason": "The xe DRM driver was merged upstream in Linux 6.8.",
+        "evidence_source": "https://www.kernel.org/doc/html/latest/gpu/xe/index.html; confirm the shipped kernel's CONFIG_DRM_XE and 8086:7d55 alias with scripts/inspect-image.py",
+        "meets_baseline": true
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Meteor Lake laptop (Core Ultra 7 155H class)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Do not force xe globally; the profile keeps i915 as the default for older hardware per docs/plans/physical-hardware-enablement.md. Meteor Lake GuC/HuC blobs ship under i915/ in linux-firmware-i915 even when the xe driver binds."
+    },
+    {
+      "id": "amd-gpu-amdgpu-renoir",
+      "family": "gpu",
+      "vendor": "AMD",
+      "device": "Ryzen Renoir integrated GPU (Vega, amdgpu)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "1002:1636",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "amdgpu"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [
+        "amdgpu/renoir_*.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-amdgpu"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Ryzen 4000/5000-series APU laptop (Renoir/Lucienne)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Represents the AMD APU tier; discrete RDNA generations are tracked separately below."
+    },
+    {
+      "id": "amd-gpu-amdgpu-navi22",
+      "family": "gpu",
+      "vendor": "AMD",
+      "device": "Radeon RX 6700 XT (Navi 22, RDNA2, amdgpu)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "1002:73df",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "amdgpu"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [
+        "amdgpu/navy_flounder_*.bin"
+      ],
+      "firmware_package": [
+        "linux-firmware-amdgpu"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Radeon RX 6700 XT discrete card in an x86_64 desktop",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Discrete RDNA2 tier; legacy radeon-driver-only cards are explicitly out of the initial target list. Navi 22 firmware is named navy_flounder_* in linux-firmware-amdgpu; there is no amdgpu/navi22_* file."
+    },
+    {
+      "id": "nvidia-nouveau-turing-tu117",
+      "family": "gpu",
+      "vendor": "NVIDIA",
+      "device": "GeForce GTX 1650 (TU117, Turing, nouveau)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "10de:1f82",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "nouveau"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [],
+      "firmware_package": [
+        "linux-firmware-nvidia"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "unresolved",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware-nvidia in v3.23 has no nvidia/tu117/ directory; its GSP directories are tu102, tu116, ga100, ga102, ad102, gb100, gb202 and gh100. The exact firmware this card requests must be captured from a real probe rather than assumed."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "GeForce GTX 1650 (TU117) discrete card in an x86_64 desktop",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "See docs/architecture/nvidia-decision.md: only tested Nouveau generations may be claimed as supported. No nvidia/tu117/gsp/* path exists in the v3.23 linux-firmware-nvidia package, so this entry records no firmware file list until a probe shows what the driver requests."
+    },
+    {
+      "id": "nvidia-nouveau-pascal-gp107",
+      "family": "gpu",
+      "vendor": "NVIDIA",
+      "device": "GeForce GTX 1050 (GP107, Pascal, nouveau)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "10de:1c81",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "nouveau"
+      ],
+      "module_dependencies": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "GeForce GTX 1050/1050 Ti discrete card in an x86_64 desktop",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Pascal predates NVIDIA's GSP firmware requirement, which simplifies the Nouveau path; still requires real desktop/GLX/suspend evidence before any status change. See docs/architecture/nvidia-decision.md."
+    },
+    {
+      "id": "storage-nvme",
+      "family": "storage",
+      "vendor": "generic",
+      "device": "NVMe storage controllers (class driver)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "nvme",
+        "nvme_core"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any x86_64 machine with an NVMe boot device (class-bound driver, no single representative board)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Binds by PCI class (0x0108xx), not a single device ID; already requested in the initramfs cmdline (see distro/alpine/profiles/mkimg.aios.sh). Untested does not mean absent from initramfs, only that no physical NVMe device has been booted."
+    },
+    {
+      "id": "storage-ahci",
+      "family": "storage",
+      "vendor": "generic",
+      "device": "AHCI SATA controllers (class driver)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "ahci",
+        "libahci"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any x86_64 machine with a SATA controller in AHCI mode (class-bound driver)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Binds by PCI class (0x0106xx); already requested in the initramfs cmdline."
+    },
+    {
+      "id": "usb-xhci",
+      "family": "usb",
+      "vendor": "generic",
+      "device": "USB 3.x xHCI host controllers (class driver)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "xhci_hcd",
+        "xhci_pci"
+      ],
+      "module_dependencies": [
+        "usbcore"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any x86_64 machine with a USB 3.x host controller (class-bound driver)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Binds by PCI class (0x0c0330); already requested for usb-storage in the initramfs cmdline, but general USB HID/input enumeration on real hardware is untested."
+    },
+    {
+      "id": "hid-i2c-touchpad",
+      "family": "hid-input",
+      "vendor": "generic",
+      "device": "I2C-HID touchpads/touchscreens",
+      "bus": "i2c",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "i2c_hid",
+        "i2c_hid_acpi",
+        "hid_multitouch"
+      ],
+      "module_dependencies": [
+        "hid"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any modern laptop with an I2C-HID touchpad; the ACPI _HID string is board-specific and must be recorded per machine",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Device-specific ACPI HID identifiers (e.g. an ELAN/Synaptics _HID string) must be recorded per laptop once a representative machine is selected; a generic i2c_hid match is not itself evidence."
+    },
+    {
+      "id": "hid-usb-generic",
+      "family": "hid-input",
+      "vendor": "generic",
+      "device": "USB HID keyboards/mice",
+      "bus": "usb",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "usbhid",
+        "hid_generic"
+      ],
+      "module_dependencies": [
+        "hid"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any USB keyboard/mouse (class-bound driver)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Broad USB HID class support; xf86-input-libinput is already in apks/world.x11."
+    },
+    {
+      "id": "ethernet-realtek-r8168",
+      "family": "ethernet",
+      "vendor": "Realtek",
+      "device": "RTL8111/8168 Gigabit Ethernet (r8169)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "10ec:8168",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "r8169"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [
+        "rtl_nic/rtl8168h-2.fw"
+      ],
+      "firmware_package": [
+        "linux-firmware-rtl_nic"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": null,
+        "name": "custom (per-file terms, see linux-firmware WHENCE)",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/linux-firmware/APKBUILD (license=\"custom\")",
+        "source": "https://gitlab.com/kernel-firmware/linux-firmware/-/blob/main/WHENCE"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "main",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "linux-firmware subpackages live in the v3.23 main repository."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "OEM desktop or laptop with an onboard RTL8111/8168 NIC",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Extremely common OEM wired NIC. The rtl_nic blobs are their own subpackage (linux-firmware-rtl_nic), not linux-firmware-other, and the exact file name varies by chip revision."
+    },
+    {
+      "id": "ethernet-intel-e1000e",
+      "family": "ethernet",
+      "vendor": "Intel",
+      "device": "I219-V Gigabit Ethernet (e1000e)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:15b7",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "e1000e"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "OEM desktop or laptop with an onboard Intel I219-V NIC",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Common OEM laptop/desktop wired NIC; e1000e is firmware-free on the host OS side."
+    },
+    {
+      "id": "ethernet-virtio-net",
+      "family": "ethernet",
+      "vendor": "virtio",
+      "device": "virtio-net (QEMU paravirtualized NIC)",
+      "bus": "virtual",
+      "ids": {
+        "pci_id": "1af4:1041",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "virtio_net"
+      ],
+      "module_dependencies": [
+        "virtio",
+        "virtio_pci"
+      ],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "QEMU/KVM x86_64 guest (already exercised indirectly by scripts/test-boot.py)",
+        "availability": "available",
+        "selection_status": "candidate",
+        "notes": "Virtual device exercised by the repository's QEMU boot tooling; no dedicated hardware-focused run has been recorded."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Boot/QEMU smoke checks exercise networking indirectly, but this manifest only records dedicated hardware-focused evidence per docs/plans/physical-hardware-enablement.md; no such run has been recorded here yet."
+    },
+    {
+      "id": "acpi-core",
+      "family": "acpi",
+      "vendor": "generic",
+      "device": "ACPI core (battery, thermal, lid, power button)",
+      "bus": "platform",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "battery",
+        "thermal",
+        "button",
+        "ac"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Any x86_64 laptop with OEM ACPI tables (lid, battery, thermal)",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Needed for lid close, suspend/resume, and battery status on real laptops; QEMU firmware tables do not exercise real OEM ACPI quirks. The in-tree module names are battery/thermal/button/ac, not acpi_battery/acpi_thermal."
+    },
+    {
+      "id": "audio-sof-intel",
+      "family": "audio",
+      "vendor": "Intel",
+      "device": "Intel HD Audio + SOF (Cannon Lake PCH HDA)",
+      "bus": "pci",
+      "ids": {
+        "pci_id": "8086:9dc8",
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "pending_inventory"
+      },
+      "kernel_module": [
+        "snd_hda_intel",
+        "snd_sof",
+        "snd_sof_pci"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [
+        "intel/sof-cnl.ri",
+        "intel/sof-tplg/sof-cnl-nocodec.tplg"
+      ],
+      "firmware_package": [
+        "sof-firmware"
+      ],
+      "firmware_license": {
+        "status": "declared",
+        "spdx": "BSD-3-Clause AND MIT AND ISC",
+        "name": "Sound Open Firmware binary release",
+        "declared_by": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:community/sof-firmware/APKBUILD",
+        "source": "https://github.com/thesofproject/sof-bin"
+      },
+      "firmware_provenance": {
+        "status": "packaged",
+        "alpine_repository": "community",
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "sof-firmware is a community-repository package in v3.23."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": "Cannon Lake-era Intel laptop with HDA + SOF audio",
+        "availability": "unconfirmed",
+        "selection_status": "candidate",
+        "notes": "Candidate class only: no physical unit has been sourced or inventoried."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "alpine-package-index",
+          "reference": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+          "retrieved": "2026-09-14",
+          "notes": "File-to-package mapping for the v3.23 x86_64 repositories."
+        },
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [],
+      "notes": "Newer Intel platforms require a matching SOF topology file per codec/board; confirm the exact topology once a representative machine is chosen."
+    },
+    {
+      "id": "network-stack-cfg80211-mac80211",
+      "family": "network-stack",
+      "vendor": "generic",
+      "device": "cfg80211/mac80211 wireless core stack",
+      "bus": "virtual",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "not_applicable",
+        "version": null,
+        "reason": "Mesa is not part of this device's driver path.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": null,
+        "availability": "not_applicable",
+        "selection_status": "not_applicable",
+        "notes": "Core stack entry; no representative machine applies."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "cfg80211",
+        "mac80211"
+      ],
+      "notes": "Required dependency for every wifi-family entry above; recorded separately so its own kernel config/module presence is checked once rather than duplicated per device."
+    },
+    {
+      "id": "display-stack-drm-kms",
+      "family": "display-stack",
+      "vendor": "generic",
+      "device": "DRM/KMS core display stack",
+      "bus": "virtual",
+      "ids": {
+        "pci_id": null,
+        "usb_id": null,
+        "subsystem_id": null,
+        "subsystem_id_status": "not_applicable"
+      },
+      "kernel_module": [
+        "drm",
+        "drm_kms_helper"
+      ],
+      "module_dependencies": [],
+      "firmware_files": [],
+      "firmware_package": [],
+      "firmware_license": {
+        "status": "not_applicable",
+        "spdx": null,
+        "name": null,
+        "declared_by": null,
+        "source": null
+      },
+      "firmware_provenance": {
+        "status": "not_applicable",
+        "alpine_repository": null,
+        "package_index_checked_on": "2026-09-14",
+        "package_index_source": "https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64",
+        "notes": "This driver path requests no firmware blob from the host OS."
+      },
+      "minimum_kernel": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No version floor recorded: this driver has been in-tree far longer than the baseline linux-lts line. Re-check if the branch pin moves backwards.",
+        "evidence_source": null,
+        "meets_baseline": null
+      },
+      "minimum_mesa": {
+        "status": "none_recorded",
+        "version": null,
+        "reason": "No Mesa floor recorded. The pinned aports tree declares mesa 25.2.7-r1; the version a build actually installs is recorded per ISO in <iso>.build-manifest.json, not asserted here.",
+        "evidence_source": "alpinelinux/aports@3c64183be42fb5e8cafc53695e7e102806d38225:main/mesa/APKBUILD",
+        "meets_baseline": null
+      },
+      "representative_machine": {
+        "candidate": null,
+        "availability": "not_applicable",
+        "selection_status": "not_applicable",
+        "notes": "Core stack entry; no representative machine applies."
+      },
+      "status": "untested",
+      "evidence_date": null,
+      "evidence_sources": [
+        {
+          "kind": "repo-plan",
+          "reference": "docs/plans/physical-hardware-enablement.md",
+          "retrieved": "2026-09-14",
+          "notes": null
+        },
+        {
+          "kind": "image-inspection",
+          "reference": "scripts/inspect-image.py --coverage-manifest docs/qa/hardware-coverage.json",
+          "retrieved": "2026-09-14",
+          "notes": "Mechanism for checking module/alias/firmware presence in a built image; presence is not a support claim."
+        }
+      ],
+      "supporting_subsystems": [
+        "DRM",
+        "KMS"
+      ],
+      "notes": "Required dependency for every gpu-family entry above. The userspace side (mesa-dri-gallium, xf86-video-modesetting, with xf86-video-fbdev/vesa as the documented fallback) lives in apks/world.x11 and is reported by scripts/inspect-image.py's mesa_userspace section; it is not firmware."
+    }
+  ]
+}

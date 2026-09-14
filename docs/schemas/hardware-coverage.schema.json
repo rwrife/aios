@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aios.local/schemas/hardware-coverage-v2",
+  "title": "AIOS x86_64 hardware coverage manifest v2",
+  "description": "Structured device/driver/firmware coverage matrix. Status reflects tested evidence only; package, module, or firmware presence alone never justifies 'verified'. Version facts are resolved from the pinned aports tree; what a build actually shipped is recorded per ISO in <iso>.build-manifest.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "alpine_branch", "baseline_versions", "entries"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "alpine_branch": {
+      "type": "string",
+      "description": "Must match ALPINE_BRANCH in distro/alpine/build.env. A branch bump invalidates every entry's version and firmware-package evidence until re-reviewed."
+    },
+    "baseline_versions": {"$ref": "#/$defs/baselineVersions"},
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "pciId": {"type": "string", "pattern": "^[0-9a-f]{4}:[0-9a-f]{4}$"},
+    "usbId": {"type": "string", "pattern": "^[0-9a-f]{4}:[0-9a-f]{4}$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "nullableString": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "baselineVersions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "resolved_on", "evidence_source", "note", "packages"],
+      "description": "Package versions declared by the aports tree pinned in distro/alpine/build.env. This is a source fact, not proof of what any build installed.",
+      "properties": {
+        "status": {"enum": ["resolved-from-pinned-aports", "unresolved"]},
+        "resolved_on": {"$ref": "#/$defs/date"},
+        "evidence_source": {"type": "string", "minLength": 1},
+        "note": {"type": "string", "minLength": 1},
+        "packages": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "version", "alpine_repository", "evidence_source"],
+            "properties": {
+              "status": {"enum": ["resolved", "unresolved"]},
+              "version": {"$ref": "#/$defs/nullableString"},
+              "alpine_repository": {"anyOf": [{"enum": ["main", "community"]}, {"type": "null"}]},
+              "evidence_source": {"$ref": "#/$defs/nullableString"}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"const": "resolved"}}, "required": ["status"]},
+                "then": {
+                  "required": ["version", "evidence_source"],
+                  "properties": {
+                    "version": {"type": "string", "minLength": 1},
+                    "evidence_source": {"type": "string", "minLength": 1}
+                  }
+                }
+              },
+              {
+                "if": {"properties": {"status": {"const": "unresolved"}}, "required": ["status"]},
+                "then": {"properties": {"version": {"type": "null"}}}
+              }
+            ]
+          }
+        }
+      }
+    },
+    "versionRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "version", "reason", "evidence_source", "meets_baseline"],
+      "description": "Structured version floor. 'none_recorded' means no floor was recorded, 'unresolved' means a floor exists in principle but no device/version has been resolved, 'not_applicable' means the component is not on this device's path.",
+      "properties": {
+        "status": {"enum": ["required", "none_recorded", "unresolved", "not_applicable"]},
+        "version": {"$ref": "#/$defs/nullableString"},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence_source": {"$ref": "#/$defs/nullableString"},
+        "meets_baseline": {"anyOf": [{"type": "boolean"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "required"}}, "required": ["status"]},
+          "then": {
+            "required": ["version", "evidence_source"],
+            "properties": {
+              "version": {"type": "string", "minLength": 1},
+              "evidence_source": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"enum": ["none_recorded", "unresolved", "not_applicable"]}},
+            "required": ["status"]
+          },
+          "then": {"properties": {"version": {"type": "null"}, "meets_baseline": {"type": "null"}}}
+        }
+      ]
+    },
+    "firmwareLicense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "spdx", "name", "declared_by", "source"],
+      "properties": {
+        "status": {"enum": ["declared", "unresolved", "not_applicable"]},
+        "spdx": {"$ref": "#/$defs/nullableString"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "declared_by": {"$ref": "#/$defs/nullableString"},
+        "source": {"$ref": "#/$defs/nullableString"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "declared"}}, "required": ["status"]},
+          "then": {
+            "required": ["declared_by", "source"],
+            "properties": {
+              "declared_by": {"type": "string", "minLength": 1},
+              "source": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "not_applicable"}}, "required": ["status"]},
+          "then": {"properties": {"spdx": {"type": "null"}, "name": {"type": "null"}}}
+        }
+      ]
+    },
+    "firmwareProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "alpine_repository", "package_index_checked_on",
+        "package_index_source", "notes"
+      ],
+      "properties": {
+        "status": {"enum": ["packaged", "unresolved", "not_applicable"]},
+        "alpine_repository": {"anyOf": [{"enum": ["main", "community"]}, {"type": "null"}]},
+        "package_index_checked_on": {"$ref": "#/$defs/date"},
+        "package_index_source": {"type": "string", "minLength": 1},
+        "notes": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "packaged"}}, "required": ["status"]},
+          "then": {
+            "required": ["alpine_repository"],
+            "properties": {"alpine_repository": {"enum": ["main", "community"]}}
+          }
+        }
+      ]
+    },
+    "evidenceSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reference", "retrieved", "notes"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "alpine-package-index", "aports-apkbuild", "alpine-release-notes",
+            "upstream-driver-doc", "repo-plan", "image-inspection", "physical-test"
+          ]
+        },
+        "reference": {"type": "string", "minLength": 1},
+        "retrieved": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+        "notes": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "representativeMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "availability", "selection_status", "notes"],
+      "description": "A named candidate is a shopping/test target, never a claim that the hardware is owned or was tested.",
+      "properties": {
+        "candidate": {"$ref": "#/$defs/nullableString"},
+        "availability": {"enum": ["unconfirmed", "available", "not_applicable"]},
+        "selection_status": {"enum": ["candidate", "selected", "not_applicable"]},
+        "notes": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"selection_status": {"const": "not_applicable"}},
+            "required": ["selection_status"]
+          },
+          "then": {"properties": {"candidate": {"type": "null"}}}
+        },
+        {
+          "if": {
+            "properties": {"selection_status": {"enum": ["candidate", "selected"]}},
+            "required": ["selection_status"]
+          },
+          "then": {"properties": {"candidate": {"type": "string", "minLength": 1}}}
+        }
+      ]
+    },
+    "ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pci_id", "usb_id", "subsystem_id", "subsystem_id_status"],
+      "properties": {
+        "pci_id": {"anyOf": [{"$ref": "#/$defs/pciId"}, {"type": "null"}]},
+        "usb_id": {"anyOf": [{"$ref": "#/$defs/usbId"}, {"type": "null"}]},
+        "subsystem_id": {"anyOf": [{"$ref": "#/$defs/pciId"}, {"type": "null"}]},
+        "subsystem_id_status": {
+          "enum": ["recorded", "pending_inventory", "not_applicable"],
+          "description": "'not_applicable' for class-bound or core-stack entries that have no single subsystem ID; 'pending_inventory' when a concrete device is targeted but no physical unit has been inventoried yet."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"subsystem_id_status": {"const": "recorded"}},
+            "required": ["subsystem_id_status"]
+          },
+          "then": {"properties": {"subsystem_id": {"$ref": "#/$defs/pciId"}}}
+        },
+        {
+          "if": {
+            "properties": {"subsystem_id_status": {"enum": ["pending_inventory", "not_applicable"]}},
+            "required": ["subsystem_id_status"]
+          },
+          "then": {"properties": {"subsystem_id": {"type": "null"}}}
+        }
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "family", "vendor", "device", "bus", "ids",
+        "kernel_module", "module_dependencies", "firmware_files",
+        "firmware_package", "firmware_license", "firmware_provenance",
+        "minimum_kernel", "minimum_mesa", "representative_machine",
+        "status", "evidence_date", "evidence_sources",
+        "supporting_subsystems", "notes"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "family": {
+          "enum": [
+            "wifi", "gpu", "storage", "usb", "hid-input", "ethernet",
+            "acpi", "audio", "network-stack", "display-stack"
+          ]
+        },
+        "vendor": {"type": "string", "minLength": 1},
+        "device": {"type": "string", "minLength": 1},
+        "bus": {"enum": ["pci", "usb", "sdio", "platform", "virtual", "i2c"]},
+        "ids": {"$ref": "#/$defs/ids"},
+        "kernel_module": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "module_dependencies": {"type": "array", "items": {"type": "string"}},
+        "firmware_files": {"type": "array", "items": {"type": "string"}},
+        "firmware_package": {"type": "array", "items": {"type": "string"}},
+        "firmware_license": {"$ref": "#/$defs/firmwareLicense"},
+        "firmware_provenance": {"$ref": "#/$defs/firmwareProvenance"},
+        "minimum_kernel": {"$ref": "#/$defs/versionRequirement"},
+        "minimum_mesa": {"$ref": "#/$defs/versionRequirement"},
+        "representative_machine": {"$ref": "#/$defs/representativeMachine"},
+        "status": {"enum": ["untested", "verified", "degraded", "unsupported"]},
+        "evidence_date": {
+          "anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}],
+          "description": "Null exactly when status is 'untested'; a real date otherwise."
+        },
+        "evidence_sources": {"type": "array", "items": {"$ref": "#/$defs/evidenceSource"}},
+        "supporting_subsystems": {"type": "array", "items": {"type": "string"}},
+        "notes": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "untested"}}, "required": ["status"]},
+          "then": {"properties": {"evidence_date": {"type": "null"}}}
+        },
+        {
+          "if": {
+            "properties": {"status": {"enum": ["verified", "degraded", "unsupported"]}},
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["evidence_date", "evidence_sources"],
+            "properties": {
+              "evidence_date": {"$ref": "#/$defs/date"},
+              "evidence_sources": {"minItems": 1}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"firmware_files": {"minItems": 1}},
+            "required": ["firmware_files"]
+          },
+          "then": {
+            "properties": {
+              "firmware_license": {"properties": {"status": {"enum": ["declared", "unresolved"]}}},
+              "firmware_provenance": {"properties": {"status": {"enum": ["packaged", "unresolved"]}}}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

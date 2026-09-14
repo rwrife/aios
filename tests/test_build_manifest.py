@@ -1,0 +1,271 @@
+"""Tests for distro/alpine/record-build-manifest.py.
+
+The recorder is the build-side half of the recorded-evidence strategy: it makes
+a moving Alpine repository's resolution auditable after the fact (repository
+URLs + APKINDEX digests + the exact embedded APK closure). These tests drive it
+with `--extracted-root`, so no xorriso/ISO tooling is required.
+"""
+import hashlib
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / 'distro' / 'alpine' / 'record-build-manifest.py'
+INSPECT = ROOT / 'scripts' / 'inspect-image.py'
+
+_spec = importlib.util.spec_from_file_location('aios_record_build_manifest', SCRIPT)
+recorder = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(recorder)
+
+CANONICAL_MAIN = 'https://dl-cdn.alpinelinux.org/alpine/v3.23/main'
+CANONICAL_COMMUNITY = 'https://dl-cdn.alpinelinux.org/alpine/v3.23/community'
+
+
+class ManifestRecorderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+
+        self.iso = self.base / 'aios-20260101-x86_64.iso'
+        self.iso.write_bytes(b'fake-iso-bytes')
+
+        self.extracted = self.base / 'extracted'
+        self.apks = self.extracted / 'apks' / 'x86_64'
+        self.apks.mkdir(parents=True)
+        (self.apks / 'busybox-1.36.1-r15.apk').write_bytes(b'busybox-bytes')
+        (self.apks / 'linux-firmware-intel-20251125-r1.apk').write_bytes(b'firmware-bytes')
+        boot = self.extracted / 'boot'
+        boot.mkdir()
+        (boot / 'vmlinuz-lts').write_bytes(b'kernel-bytes')
+        (boot / 'initramfs-lts').write_bytes(b'initramfs-bytes')
+
+        self.build_env = self.base / 'build.env'
+        self.build_env.write_text(
+            '# pins\n'
+            'ALPINE_BRANCH=v3.23\n'
+            'IMAGE=alpine:3.23@sha256:abc\n'
+            'APORTS_REF=aaaa\n'
+            'LLAMA_REF=bbbb\n'
+            'WHISPER_REF=cccc\n',
+            encoding='utf-8',
+        )
+
+        # A local "repository" whose APKINDEX can actually be hashed offline.
+        self.local_repo = self.base / 'mirror' / 'v3.23' / 'main'
+        (self.local_repo / 'x86_64').mkdir(parents=True)
+        self.index_bytes = b'fake-apkindex-bytes'
+        (self.local_repo / 'x86_64' / 'APKINDEX.tar.gz').write_bytes(self.index_bytes)
+
+        self.output = self.base / 'manifest.json'
+
+    def run_recorder(self, extra_args=(), repositories=None):
+        repositories = repositories or [f'main={CANONICAL_MAIN}',
+                                        f'community={CANONICAL_COMMUNITY}']
+        args = [
+            sys.executable, str(SCRIPT),
+            '--iso', str(self.iso),
+            '--arch', 'x86_64',
+            '--release-tag', '20260101',
+            '--build-env', str(self.build_env),
+            '--effective', 'ALPINE_BRANCH=v3.23',
+            '--effective', 'IMAGE=alpine:3.23@sha256:abc',
+            '--effective', 'APORTS_REF=aaaa',
+            '--effective', 'LLAMA_REF=bbbb',
+            '--effective', 'WHISPER_REF=cccc',
+            '--build-setting', 'AIOS_IDENTITY_BUILD=0',
+            '--extracted-root', str(self.extracted),
+            '--generated-utc', '2026-01-01T00:00:00Z',
+            '--output', str(self.output),
+        ]
+        for repo in repositories:
+            args.extend(['--repository', repo])
+        args.extend(extra_args)
+        result = subprocess.run(args, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        return json.loads(self.output.read_text(encoding='utf-8'))
+
+    # -- output closure --------------------------------------------------
+
+    def test_records_the_exact_apk_closure(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        closure = manifest['output_closure']
+        self.assertEqual(closure['status'], 'recorded')
+        self.assertEqual(closure['apk_count'], 2)
+        by_name = {entry['filename']: entry for entry in closure['packages']}
+        self.assertEqual(
+            set(by_name), {'busybox-1.36.1-r15.apk', 'linux-firmware-intel-20251125-r1.apk'})
+        expected = hashlib.sha256(b'busybox-bytes').hexdigest()
+        self.assertEqual(by_name['busybox-1.36.1-r15.apk']['sha256'], expected)
+        self.assertEqual(by_name['busybox-1.36.1-r15.apk']['size'], len(b'busybox-bytes'))
+        self.assertEqual(by_name['busybox-1.36.1-r15.apk']['path'],
+                         'apks/x86_64/busybox-1.36.1-r15.apk')
+
+    def test_writes_a_sorted_packages_list(self):
+        packages_txt = self.base / 'packages.txt'
+        self.run_recorder(['--skip-index-fetch', '--packages-txt', str(packages_txt)])
+        lines = packages_txt.read_text(encoding='utf-8').splitlines()
+        self.assertEqual(lines, sorted(lines))
+        self.assertIn('busybox-1.36.1-r15.apk', lines)
+
+    def test_missing_apks_directory_is_reported_not_faked(self):
+        empty = self.base / 'empty-root'
+        empty.mkdir()
+        manifest = self.run_recorder(['--skip-index-fetch', '--extracted-root', str(empty)])
+        self.assertEqual(manifest['output_closure']['status'], 'unavailable')
+        self.assertEqual(manifest['output_closure']['packages'], [])
+
+    # -- artifacts -------------------------------------------------------
+
+    def test_records_iso_and_kernel_identity(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        artifacts = manifest['artifacts']
+        self.assertEqual(artifacts['iso']['sha256'], hashlib.sha256(b'fake-iso-bytes').hexdigest())
+        self.assertEqual(artifacts['kernel']['sha256'],
+                         hashlib.sha256(b'kernel-bytes').hexdigest())
+        self.assertEqual(artifacts['initramfs']['status'], 'recorded')
+        # No modloop file in this fixture: reported as unavailable, never guessed.
+        self.assertEqual(artifacts['modloop']['status'], 'unavailable')
+        self.assertEqual(manifest['kernel_identity']['status'], 'unavailable')
+
+    # -- repositories ----------------------------------------------------
+
+    def test_default_repositories_are_recorded_as_default(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        repos = {repo['role']: repo for repo in manifest['repository_indexes']['repositories']}
+        self.assertEqual(repos['main']['source'], 'default')
+        self.assertEqual(repos['community']['source'], 'default')
+        self.assertEqual(repos['main']['apkindex_url'],
+                         f'{CANONICAL_MAIN}/x86_64/APKINDEX.tar.gz')
+
+    def test_repository_override_is_captured(self):
+        override = 'https://mirror.example.invalid/alpine/v3.23/main'
+        manifest = self.run_recorder(
+            ['--skip-index-fetch'],
+            repositories=[f'main={override}', f'community={CANONICAL_COMMUNITY}'],
+        )
+        repos = {repo['role']: repo for repo in manifest['repository_indexes']['repositories']}
+        self.assertEqual(repos['main']['source'], 'override')
+        self.assertEqual(repos['main']['url'], override)
+        self.assertEqual(repos['main']['canonical_url'], CANONICAL_MAIN)
+        self.assertEqual(repos['community']['source'], 'default')
+
+    def test_apkindex_digest_is_recorded_for_a_reachable_repository(self):
+        manifest = self.run_recorder(
+            repositories=[f'main={self.local_repo.as_posix()}'])
+        repo = manifest['repository_indexes']['repositories'][0]
+        self.assertEqual(repo['apkindex']['status'], 'recorded')
+        self.assertEqual(repo['apkindex']['sha256'],
+                         hashlib.sha256(self.index_bytes).hexdigest())
+        self.assertEqual(repo['apkindex']['size'], len(self.index_bytes))
+
+    def test_index_drift_is_visible_between_two_recordings(self):
+        first = self.run_recorder(repositories=[f'main={self.local_repo.as_posix()}'])
+        (self.local_repo / 'x86_64' / 'APKINDEX.tar.gz').write_bytes(b'moved-repository-bytes')
+        second = self.run_recorder(repositories=[f'main={self.local_repo.as_posix()}'])
+        self.assertNotEqual(
+            first['repository_indexes']['repositories'][0]['apkindex']['sha256'],
+            second['repository_indexes']['repositories'][0]['apkindex']['sha256'],
+        )
+
+    def test_unreachable_index_is_reported_with_a_reason(self):
+        missing = self.base / 'no-such-repo'
+        manifest = self.run_recorder(repositories=[f'main={missing.as_posix()}'])
+        index = manifest['repository_indexes']['repositories'][0]['apkindex']
+        self.assertEqual(index['status'], 'unavailable')
+        self.assertTrue(index['reason'])
+        self.assertNotIn('sha256', index)
+
+    # -- pins and claims -------------------------------------------------
+
+    def test_source_pins_are_recorded_and_overrides_flagged(self):
+        manifest = self.run_recorder(['--skip-index-fetch', '--effective', 'APORTS_REF=dddd'])
+        pins = manifest['source_pins']
+        self.assertEqual(pins['values']['APORTS_REF'], 'dddd')
+        self.assertIn('APORTS_REF', pins['immutable_keys'])
+        self.assertNotIn('ALPINE_BRANCH', pins['immutable_keys'])
+        self.assertEqual(pins['moving_selection_keys'], ['ALPINE_BRANCH'])
+        self.assertIn('APORTS_REF', pins['overrides'])
+        self.assertEqual(pins['overrides']['APORTS_REF']['build_env_file'], 'aaaa')
+        self.assertEqual(pins['overrides']['APORTS_REF']['effective'], 'dddd')
+
+    def test_unoverridden_pins_have_no_override_record(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        self.assertEqual(manifest['source_pins']['overrides'], {})
+        self.assertEqual(manifest['source_pins']['values']['ALPINE_BRANCH'], 'v3.23')
+
+    def test_does_not_claim_byte_reproducibility(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        reproducibility = manifest['reproducibility']
+        self.assertFalse(reproducibility['byte_reproducible'])
+        self.assertEqual(
+            reproducibility['package_resolution'],
+            'output-closure-recorded-repository-index-sampled',
+        )
+        self.assertTrue(reproducibility['notes'])
+        joined = ' '.join(reproducibility['notes']).lower()
+        self.assertIn('post-build samples', joined)
+
+    def test_repository_index_is_labeled_as_post_build_sample(self):
+        manifest = self.run_recorder(['--skip-index-fetch'])
+        indexes = manifest['repository_indexes']
+        self.assertEqual(
+            indexes['kind'],
+            'post-build-moving-repository-index-sample',
+        )
+        self.assertEqual(indexes['sampling'], 'post-build')
+
+    def test_output_is_deterministic_for_the_same_inputs(self):
+        self.run_recorder(['--skip-index-fetch'])
+        first = self.output.read_text(encoding='utf-8')
+        self.run_recorder(['--skip-index-fetch'])
+        self.assertEqual(first, self.output.read_text(encoding='utf-8'))
+
+    # -- integration with the inspector ----------------------------------
+
+    def test_inspector_verifies_a_freshly_recorded_manifest(self):
+        self.run_recorder(['--skip-index-fetch'])
+        args = [
+            sys.executable, str(INSPECT),
+            '--root', str(self.extracted),
+            '--build-manifest', str(self.output),
+            '--repo-build-env', str(self.build_env),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        recorded = json.loads(result.stdout)['sections']['recorded_inputs']
+        self.assertTrue(recorded['output_closure']['closure_matches_image'])
+        self.assertTrue(recorded['source_pins']['matches_current_repo_pins'])
+
+
+class MkimageWiringTests(unittest.TestCase):
+    """mkimage.sh must actually invoke the recorder with the effective values."""
+
+    def setUp(self):
+        self.text = (ROOT / 'distro' / 'alpine' / 'mkimage.sh').read_text(encoding='utf-8')
+
+    def test_recorder_is_invoked_per_iso(self):
+        self.assertIn('record-build-manifest.py', self.text)
+        self.assertIn('--output "$iso.build-manifest.json"', self.text)
+
+    def test_effective_repositories_are_passed(self):
+        self.assertIn('--repository "main=$REPO_MAIN"', self.text)
+        self.assertIn('--repository "community=$REPO_COMMUNITY"', self.text)
+
+    def test_effective_pins_are_passed(self):
+        for key in ('ALPINE_BRANCH', 'IMAGE', 'APORTS_REF', 'LLAMA_REF', 'WHISPER_REF'):
+            self.assertIn(f'--effective "{key}=${key}"', self.text)
+
+    def test_build_inputs_env_records_effective_values(self):
+        self.assertIn('ALPINE_BRANCH=$ALPINE_BRANCH', self.text)
+        self.assertIn('> "$OUT_DIR/build-inputs.env"', self.text)
+        self.assertNotIn('cp "$ROOT_DIR/build.env" "$OUT_DIR/build-inputs.env"', self.text)
+
+
+if __name__ == '__main__':
+    unittest.main()

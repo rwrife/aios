@@ -26,7 +26,10 @@ signed boot chain has been implemented and tested.
 
 - `distro/alpine/build.env` selects Alpine v3.23 and pins the build container and
   aports commit. APK repositories remain moving release repositories: these
-  pins alone do not freeze every kernel, Mesa, or firmware package.
+  pins alone do not freeze every kernel, Mesa, or firmware package. Each build
+  therefore records its effective repository URLs, post-build
+  `APKINDEX.tar.gz` digest samples, and exact APK closure in
+  `<iso>.build-manifest.json`.
 - `distro/alpine/profiles/mkimg.aios.sh` inherits `profile_standard`, boots
   `vmlinuz-lts`, enables virtio, and requests USB storage, AHCI, and NVMe modules.
   Inherited kernel and modloop contents need inspection before declaring any
@@ -115,6 +118,41 @@ Owner role: image/kernel maintainer. Depends on no implementation changes.
 
 Exit: reviewed device/driver/firmware matrix, baseline package closure, and NVIDIA
 path decision. Record gaps rather than treating package presence as support.
+
+Implementation status (stage 1, issue #98): this stage delivers the
+inventory/matrix **mechanics**, not hardware evidence.
+`scripts/inspect-image.py` performs the read-only artifact inspection
+described above (APK closure/checksums, kernel module versions and relevant
+`.config` flags, initramfs contents, modloop modules and the complete
+firmware inventory from `modules/firmware`, module aliases matched against
+the coverage manifest's concrete PCI/USB IDs, requested Mesa/Xorg packages,
+bootloader entries, service enablement) and reports each section as
+explicitly available or unavailable. `docs/qa/hardware-coverage.json` (schema
+in `docs/schemas/hardware-coverage.schema.json`) holds the structured matrix,
+with every entry `untested` and every representative machine recorded as an
+unconfirmed candidate rather than owned hardware.
+`docs/architecture/nvidia-decision.md` records the NVIDIA path decision:
+Nouveau-only for this baseline, NVK tracked separately, no vendor
+installer/shim, broader vendor-stack coverage gated on a separately approved
+glibc/platform migration.
+
+For the "controlled repository snapshot" requirement above: Alpine publishes
+no immutable snapshot URL for a release branch, so this stage records rather
+than freezes. `distro/alpine/mkimage.sh` calls
+`distro/alpine/record-build-manifest.py` to write, next to every ISO, the
+effective source selections (including overrides), the effective repository
+URLs with a post-build architecture-specific `APKINDEX.tar.gz` SHA-256 sample,
+the exact embedded APK closure (filename, size, SHA-256), the ISO hash, and the
+kernel/initramfs/modloop identity. That makes moving-repository resolution
+visible and diffable after the fact through the authoritative output closure.
+The index sample is diagnostic and does not prove the repository stayed
+unchanged during the build. This is not byte reproducibility, and the manifest
+says so explicitly. Rebuilding an identical closure would still need a local
+mirror of the recorded APKs.
+
+No physical machine has been tested and no candidate device has been sourced
+or inventoried; the exit criterion above is not yet met and phase 1 continues
+with actual hardware evidence.
 
 ### 2. Bundle hardware support offline
 

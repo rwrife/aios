@@ -14,6 +14,7 @@ sums="$out_dir/SHA256SUMS"
 [ -s "$iso" ] || { echo "ISO not found or empty: $iso" >&2; exit 1; }
 [ -s "$sums" ] || { echo "Checksum manifest not found: $sums" >&2; exit 1; }
 [ -s "$iso.packages.txt" ] || { echo "Package manifest not found: $iso.packages.txt" >&2; exit 1; }
+[ -s "$iso.build-manifest.json" ] || { echo "Build/package-closure manifest not found: $iso.build-manifest.json" >&2; exit 1; }
 [ -s "$out_dir/build-inputs.env" ] || { echo "Build input manifest not found: $out_dir/build-inputs.env" >&2; exit 1; }
 
 expected=$(awk -v file="$iso_name" '{

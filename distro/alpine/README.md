@@ -8,6 +8,23 @@ This directory contains the AIOS live and installable image:
 Host prerequisites for native `scripts/build-iso.sh`:
 - Alpine-compatible mkimage toolchain (`abuild`, `apk-tools`, `alpine-conf`, `fakeroot`, `xorriso`, `squashfs-tools`, `mtools`, `syslinux`, `grub`)
 - `git`
+- `python3` (used for the staged apps and for `record-build-manifest.py`)
+
+Every build writes recorded evidence next to each ISO:
+- `build-inputs.env` -- the effective source selections for that build,
+  including the moving Alpine branch selector, immutable source pins, and any
+  environment override
+- `<iso>.build-manifest.json` -- effective repository URLs, a post-build
+  SHA-256 sample of each architecture-specific `APKINDEX.tar.gz`, the exact
+  embedded APK closure (filename, size, SHA-256), the ISO hash, and
+  kernel/initramfs/modloop identity, written by `record-build-manifest.py`
+- `<iso>.packages.txt` and `SHA256SUMS`
+
+Alpine's release repositories keep moving. The APK closure is the authoritative
+record of what shipped; the index samples are diagnostic and do not prove the
+indexes stayed unchanged throughout the build. This is not a pin or a
+byte-reproducibility claim. See
+`docs/qa/hardware-coverage.md` for how `scripts/inspect-image.py` consumes it.
 
 Portable build option (recommended for non-Alpine hosts):
 - `scripts/build-iso-container.sh`
