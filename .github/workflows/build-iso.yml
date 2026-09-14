@@ -89,6 +89,7 @@ jobs:
           path: |
             ${{ steps.image.outputs.iso }}
             ${{ steps.image.outputs.iso }}.packages.txt
+            ${{ steps.image.outputs.iso }}.build-manifest.json
             distro/alpine/out/SHA256SUMS
             distro/alpine/out/build-inputs.env
             distro/alpine/out/boot-bios.log
@@ -110,5 +111,6 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" --clobber \
             "$ISO" \
             "$ISO.packages.txt" \
+            "$ISO.build-manifest.json" \
             distro/alpine/out/SHA256SUMS \
             distro/alpine/out/build-inputs.env

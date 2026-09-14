@@ -36,8 +36,9 @@ The [Build bootable ISO workflow](https://github.com/rwrife/aios/actions/workflo
 builds the pinned Alpine image, verifies its checksum and hybrid USB metadata,
 then boots it offline with both BIOS and UEFI firmware before publishing it.
 Manual workflow runs provide a 30-day Actions artifact. Pushing a `v*` tag also
-creates or updates a GitHub Release with the ISO, `SHA256SUMS`, package manifest
-and pinned build inputs.
+creates or updates a GitHub Release with the ISO, `SHA256SUMS`, package manifest,
+the recorded build/package-closure manifest (`<iso>.build-manifest.json`) and the
+effective build inputs.
 
 The x86_64 ISO is a hybrid image that can be written directly to a thumb drive.
 Verify its checksum first, then use a raw-image writer such as Rufus or

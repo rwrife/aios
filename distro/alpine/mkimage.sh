@@ -22,6 +22,8 @@ need_cmd() {
 }
 
 need_cmd git
+need_cmd python3
+need_cmd xorriso
 git config --global --add safe.directory "$APORTS_DIR"
 
 if [ ! -f /usr/share/abuild/functions.sh ]; then
@@ -77,9 +79,46 @@ cd "$APORTS_DIR/scripts"
   "$@"
 
 echo "[aios] build finished. artifacts in: $OUT_DIR"
-cp "$ROOT_DIR/build.env" "$OUT_DIR/build-inputs.env"
+
+# Recorded-evidence strategy (see docs/qa/hardware-coverage.md): Alpine's
+# release repositories keep moving, so instead of claiming a pin that does not
+# exist, record what this build actually resolved. build-inputs.env holds the
+# *effective* pin values (env overrides included), and the per-ISO
+# build-manifest.json additionally records the effective repository URLs, the
+# post-build SHA-256 sample of each architecture-specific APKINDEX.tar.gz, the
+# exact embedded APK closure, the ISO/kernel/initramfs/modloop hashes, and
+# whatever modloop kernel identity the artifacts expose. The APK closure is
+# authoritative for what shipped; the index sample is diagnostic because a
+# moving repository could change while mkimage is running.
+{
+  echo "# Effective build inputs recorded by distro/alpine/mkimage.sh."
+  echo "# Values reflect this build, including environment overrides."
+  echo "ALPINE_BRANCH=$ALPINE_BRANCH"
+  echo "IMAGE=$IMAGE"
+  echo "APORTS_REF=$APORTS_REF"
+  echo "LLAMA_REF=$LLAMA_REF"
+  echo "WHISPER_REF=$WHISPER_REF"
+} > "$OUT_DIR/build-inputs.env"
+
 for iso in "$OUT_DIR"/*-"$RELEASE_TAG"-"$ARCH".iso; do
-  xorriso -indev "$iso" -find /apks -type f -name '*.apk' -exec echo -- 2>/dev/null |
-    sed "s|.*/||;s/'//g" | sort > "$iso.packages.txt"
+  [ -f "$iso" ] || continue
+  python3 "$ROOT_DIR/record-build-manifest.py" \
+    --iso "$iso" \
+    --arch "$ARCH" \
+    --release-tag "$RELEASE_TAG" \
+    --build-env "$ROOT_DIR/build.env" \
+    --effective "ALPINE_BRANCH=$ALPINE_BRANCH" \
+    --effective "IMAGE=$IMAGE" \
+    --effective "APORTS_REF=$APORTS_REF" \
+    --effective "LLAMA_REF=$LLAMA_REF" \
+    --effective "WHISPER_REF=$WHISPER_REF" \
+    --repository "main=$REPO_MAIN" \
+    --repository "community=$REPO_COMMUNITY" \
+    --build-setting "REPO_BASE=$REPO_BASE" \
+    --build-setting "ARCH=$ARCH" \
+    --build-setting "AIOS_IDENTITY_BUILD=$AIOS_IDENTITY_BUILD" \
+    --work-dir "$WORK_DIR/build-manifest" \
+    --packages-txt "$iso.packages.txt" \
+    --output "$iso.build-manifest.json"
 done
 (cd "$OUT_DIR" && sha256sum ./*.iso > SHA256SUMS)
