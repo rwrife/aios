@@ -3,6 +3,7 @@ import json
 import signal
 import sys
 from pathlib import Path
+from . import core
 from .core import chat, load_config, load_history, save_config, save_history
 
 
@@ -54,13 +55,16 @@ def handle(request):
         account_action(request['operation'], emit, request.get('device', False))
     elif action == "chat":
         tool_socket = request.get("tool_socket")
-        if isinstance(tool_socket, str) and tool_socket:
-            from .agent import chat as agent_chat
-            for event in agent_chat(request["messages"], tool_socket):
-                print(json.dumps(event), flush=True)
-        else:
-            for text in chat(request["messages"]):
-                emit("token", text=text)
+        with core.capture_debug(
+            lambda kind, data: emit("debug", debug_kind=kind, data=data)
+        ):
+            if isinstance(tool_socket, str) and tool_socket:
+                from .agent import chat as agent_chat
+                for event in agent_chat(request["messages"], tool_socket):
+                    print(json.dumps(event), flush=True)
+            else:
+                for text in chat(request["messages"]):
+                    emit("token", text=text)
         emit("done")
     else:
         raise ValueError("Unknown action")

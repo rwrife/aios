@@ -1,4 +1,5 @@
 """Configuration, history and an OpenAI-compatible streaming transport."""
+import contextvars
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from .principals import current as current_principal
 
 BUNDLED_MODEL = Path("/usr/local/share/aios/models/qwen3-0.6b.gguf")
@@ -21,6 +23,22 @@ MOTION_MIN_CPU_CORES = 2
 MOTION_MIN_MEMORY_BYTES = 4 * 1024 ** 3
 LOCAL_CONNECT_RETRY_SECONDS = 30
 LOCAL_CONNECT_RETRY_DELAY = 0.25
+_DEBUG_SINK = contextvars.ContextVar("aios_debug_sink", default=None)
+
+
+@contextmanager
+def capture_debug(sink):
+    token = _DEBUG_SINK.set(sink)
+    try:
+        yield
+    finally:
+        _DEBUG_SINK.reset(token)
+
+
+def debug_event(kind, data):
+    sink = _DEBUG_SINK.get()
+    if sink is not None:
+        sink(kind, data)
 
 
 def config_dir():
@@ -279,8 +297,11 @@ def chat(messages, profile="current"):
     model = model_name(profile)
     messages = [{"role": m["role"], "content": m["content"]} for m in messages]
     finished = False
-    with request("/chat/completions", {"model": model, "messages": messages, "stream": True}, profile=profile) as response:
+    body = {"model": model, "messages": messages, "stream": True}
+    debug_event("llm.request", body)
+    with request("/chat/completions", body, profile=profile) as response:
         for event in sse_events(response):
+            debug_event("llm.response", event)
             if event == "[DONE]":
                 return
             value = json.loads(event)
