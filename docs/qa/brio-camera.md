@@ -67,7 +67,9 @@ Use the single-window OS launcher, not a container chat preview. Close WSL
 capture consumers and pass the camera's current Windows USB/IP bus ID. The
 launcher attaches that exact device when needed, resolves its current Linux
 bus/device address, and grants the WSL user a temporary ACL on only that USB
-node:
+node. It restores the previous ACL when QEMU exits (including failed launch),
+provided the node identity has not changed during unplug/replug. Dry-run modes
+never attach a device or change its ACL:
 
 ```powershell
 .\scripts\run.ps1 -CameraBusId 2-2
