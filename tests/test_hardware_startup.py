@@ -21,6 +21,7 @@ PROFILE = ALPINE / 'profiles' / 'mkimg.aios.sh'
 OVERLAY = ALPINE / 'overlay'
 SESSION = OVERLAY / 'usr' / 'local' / 'bin' / 'aios-session'
 PROFILE_D = OVERLAY / 'etc' / 'profile.d' / 'aios.sh'
+BOOT_TEST = ROOT / 'scripts' / 'test-boot.py'
 
 STUBS = ('xsetroot', 'openbox', 'picom', 'pulseaudio', 'aios-terminal')
 
@@ -187,6 +188,16 @@ class BootEntryTests(unittest.TestCase):
     def test_install_entry_is_unchanged(self):
         self.assertIn('aios.install', self.syslinux_entries()['install'].split())
         self.assertIn('aios.install', self.grub_entries()['AIOS install'].split())
+
+    def test_vm_harness_can_boot_and_verify_the_generated_recovery_entry(self):
+        text = BOOT_TEST.read_text(encoding='utf-8')
+        self.assertIn('--boot-entry', text)
+        self.assertIn('extract_recovery_entry', text)
+        self.assertIn('"aios.recovery"', text)
+        self.assertIn('"nomodeset"', text)
+        self.assertIn('\\"backend\\":\\"xrender\\"', text)
+        self.assertIn('\\"renderer\\":\\"software\\"', text)
+        self.assertIn('\\"recovery\\":true', text)
 
 
 @unittest.skipUnless(os.name == 'posix', 'the session script needs a POSIX shell')
