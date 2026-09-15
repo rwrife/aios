@@ -37,6 +37,12 @@ def _desktop(action, **values):
     return reply["result"]
 
 
+def open_application(name):
+    if name not in ("terminal", "settings"):
+        raise ValueError("Unknown integrated application.")
+    return _desktop("open_application", name=name)
+
+
 def _audio(*args):
     try:
         result = subprocess.run(["pactl", *args], capture_output=True, text=True, timeout=5, check=True,

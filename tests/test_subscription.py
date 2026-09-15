@@ -290,7 +290,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(turns[-1]['params']['input'][0]['text'], 'Second window')
 
     @patch('aios.agent.toolhost.list_tools', return_value={'tools': [clone(APPLICATION_TOOL)], 'warnings': []})
-    def test_application_completion_buffers_unverified_text_and_recovers_once(self, _tools):
+    def test_application_completion_buffers_unverified_text_with_bounded_retries(self, _tools):
         skill = Skill(name='application-builder', description='Build apps.', instructions='Create then launch.',
                       allowed_tools=('application',), triggers=('create a calculator',))
         for scenario in ('application-no-tools', 'application-recovery'):
@@ -311,26 +311,59 @@ class SubscriptionTests(unittest.TestCase):
                         self.assertEqual([e['text'] for e in emitted if e['type'] == 'token'], ['Calculator is open.'])
                         call.assert_called_once()
                 turns = [r for r in self.requests()[before:] if r.get('method') == 'turn/start']
-                self.assertEqual(len(turns), 2)
-                self.assertEqual(turns[1]['params']['input'][0]['text'], agent.APPLICATION_LAUNCH_CONTINUATION)
+                self.assertEqual(
+                    len(turns),
+                    1 + (agent.MAX_APPLICATION_COMPLETION_RETRIES
+                         if scenario == 'application-no-tools' else 1),
+                )
+                self.assertIn('action "search"', turns[1]['params']['input'][0]['text'])
 
     @patch('aios.agent.toolhost.list_tools', return_value={'tools': [clone(APPLICATION_TOOL)], 'warnings': []})
-    def test_application_completion_rejects_failed_launch_and_honors_draft_only(self, _tools):
+    def test_application_completion_returns_failed_launch_to_model_and_honors_draft_only(self, _tools):
         skill = Skill(name='application-builder', description='Build apps.', instructions='Create then launch.',
                       allowed_tools=('application',), triggers=('create a calculator',))
-        os.environ['AIOS_FAKE_SCENARIO'] = 'application-recovery'
+        os.environ['AIOS_FAKE_SCENARIO'] = 'application-failure'
         session = agent.AgentSession(
             [{'role': 'user', 'content': 'create a calculator application'}], 'tools.sock', catalog=[skill])
-        emitted = []
         with patch('aios.agent.toolhost.call', return_value={
-                'id': 'calculator-12345678', 'launched': False, 'reason': 'Application window could not open.'}), \
-                self.assertRaisesRegex(RuntimeError, 'could not open'):
-            emitted.extend(subscription.chat(session.messages, session=session))
-        self.assertFalse(any(e['type'] == 'token' for e in emitted))
+                'id': 'calculator-12345678', 'launched': False,
+                'reason': 'Application window could not open.'}):
+            emitted = list(subscription.chat(session.messages, session=session))
+        self.assertEqual(
+            [event['text'] for event in emitted if event['type'] == 'token'],
+            ['I could not open the calculator because the application tool failed.'],
+        )
+        response = next(r for r in self.requests() if r.get('id') == 'tool-request')
+        self.assertFalse(response['result']['success'])
+        result = json.loads(response['result']['contentItems'][0]['text'])
+        self.assertEqual(result['error'], 'Application window could not open.')
         os.environ['AIOS_FAKE_SCENARIO'] = ''
         draft = agent.AgentSession(
             [{'role': 'user', 'content': 'create a calculator application, draft only'}], 'tools.sock', catalog=[skill])
         self.assertEqual(list(subscription.chat(draft.messages, session=draft)), [{'type': 'token', 'text': 'Hello 世界'}])
+
+    @patch('aios.agent.toolhost.list_tools', return_value={
+        'tools': [clone(APPLICATION_TOOL)], 'warnings': []})
+    def test_application_tool_exception_is_returned_to_model(self, _tools):
+        skill = Skill(name='application-builder', description='Build apps.', instructions='Create then launch.',
+                      allowed_tools=('application',), triggers=('create a calculator',))
+        os.environ['AIOS_FAKE_SCENARIO'] = 'application-failure'
+        session = agent.AgentSession(
+            [{'role': 'user', 'content': 'create a calculator application'}], 'tools.sock', catalog=[skill])
+        with patch('aios.agent.toolhost.call', side_effect=RuntimeError('private application failure')):
+            emitted = list(subscription.chat(session.messages, session=session))
+        self.assertEqual(
+            [event['text'] for event in emitted if event['type'] == 'token'],
+            ['I could not open the calculator because the application tool failed.'],
+        )
+        response = next(r for r in self.requests() if r.get('id') == 'tool-request')
+        self.assertFalse(response['result']['success'])
+        result = json.loads(response['result']['contentItems'][0]['text'])
+        self.assertEqual(
+            result['error'],
+            'Tool action failed. Review the request and try again.',
+        )
+        self.assertNotIn('private application failure', json.dumps(response))
 
     @patch('aios.agent.toolhost.list_tools')
     def test_shared_agent_session_tools_prompt_and_application_dispatch(self, list_tools):

@@ -67,6 +67,10 @@ class FakeApplications:
         self.calls.append(("create", payload))
         return {"id": "draft-1"}
 
+    def build(self, payload):
+        self.calls.append(("build", payload))
+        return {"id": "draft-1", "written": True, "launched": True, "runtime": "web"}
+
     def read(self, payload):
         self.calls.append(("read", payload))
         return "<!doctype html><title>Example</title>"
@@ -236,7 +240,17 @@ class ToolHostTests(unittest.TestCase):
         definitions = host.definitions()
 
         names = [item["function"]["name"] for item in definitions["tools"]]
-        self.assertEqual(names, ["browser", "application", "os_settings", "mcp_alpha_tool"])
+        self.assertEqual(
+            names,
+            [
+                "browser",
+                "application",
+                "build_application",
+                "os_settings",
+                "os_command",
+                "mcp_alpha_tool",
+            ],
+        )
         self.assertEqual(definitions["warnings"], ["MCP retained warning."])
 
         parameters = BROWSER_TOOL["function"]["parameters"]
@@ -250,6 +264,12 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(parameters["properties"]["element"]["description"], "Element ID from the most recent snapshot")
         self.assertEqual(parameters["properties"]["text"]["description"], "Text to type, or Enter/Tab/Escape for press")
         self.assertEqual(parameters["properties"]["tab"]["description"], "Handle returned by tabs")
+
+    def test_os_command_dispatch(self):
+        host = ToolHost(browser=FakeBrowser(), applications=FakeApplications(), mcp=FakeMcp())
+        with mock.patch.object(toolhost.os_command, "act", return_value={"exit_code": 0, "stdout": "hi\n"}) as act:
+            self.assertEqual(host.call("os_command", {"command": "echo", "args": ["hi"]}), {"exit_code": 0, "stdout": "hi\n"})
+            act.assert_called_once_with({"command": "echo", "args": ["hi"]})
 
     def test_application_definition_reflects_native_capability_and_dispatches(self):
         class NativeApplications(FakeApplications):
@@ -274,6 +294,41 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(applications.calls[-1][0], "create")
         self.assertEqual(applications.calls[-1][1]["template"], "calculator")
 
+    def test_default_toolhost_disables_baked_application_templates(self):
+        applications = FakeApplications()
+        with mock.patch.object(toolhost, "ApplicationStore", return_value=applications) as factory:
+            host = ToolHost(browser=FakeBrowser(), mcp=FakeMcp())
+        self.addCleanup(host.close)
+        factory.assert_called_once_with(native_templates=())
+
+    def test_integrated_terminal_and_settings_are_searchable_and_launchable(self):
+        applications = FakeApplications()
+        host = ToolHost(browser=FakeBrowser(), applications=applications, mcp=FakeMcp())
+        for query, app_id, name, title in (
+            ("open terminal", "terminal-00000000", "terminal", "Terminal"),
+            ("open settings", "settings-00000000", "settings", "Settings"),
+        ):
+            with self.subTest(query=query), mock.patch.object(
+                toolhost.os_settings,
+                "open_application",
+                return_value={"opened": True},
+            ) as open_application:
+                match = host.call("application", {"action": "search", "query": query})["matches"][0]
+                self.assertEqual(match["id"], app_id)
+                self.assertEqual(match["runtime"], "integrated")
+                launched = host.call("application", {"action": "launch", "id": app_id})
+                self.assertEqual(launched["title"], title)
+                self.assertTrue(launched["launched"])
+                open_application.assert_called_once_with(name)
+        with mock.patch.object(
+            toolhost.os_settings,
+            "open_application",
+            return_value={"opened": True},
+        ) as open_application:
+            launched = host.call("application", {"action": "launch", "id": "terminal"})
+        self.assertEqual(launched["id"], "terminal-00000000")
+        open_application.assert_called_once_with("terminal")
+
     def test_browser_application_and_mcp_dispatch_requires_advertisement(self):
         browser = FakeBrowser(result={"snapshot": True})
         applications = FakeApplications()
@@ -285,6 +340,12 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(host.call("application", {"action": "search", "query": "hello"}), {"matches": [{"id": "match-1"}]})
         self.assertEqual(host.call("application", {"action": "read", "id": "draft-1"}), {"html": "<!doctype html><title>Example</title>"})
         self.assertEqual(host.call("application", {"action": "create", "title": "App", "request": "Build app"}), {"id": "draft-1"})
+        self.assertTrue(host.call("application", {
+            "action": "build",
+            "title": "App",
+            "request": "Build app",
+            "html": "<!doctype html>",
+        })["launched"])
         with self.assertRaises(ValueError):
             host.call("mcp_fixture_echo", {"value": 1})
 
@@ -296,6 +357,7 @@ class ToolHostTests(unittest.TestCase):
         self.assertEqual(applications.calls[0], ("search", {"action": "search", "query": "hello"}))
         self.assertEqual(applications.calls[1], ("read", {"action": "read", "id": "draft-1"}))
         self.assertEqual(applications.calls[2], ("create", {"action": "create", "title": "App", "request": "Build app"}))
+        self.assertEqual(applications.calls[3][0], "build")
         self.assertEqual(mcp.calls, [("mcp_fixture_echo", {"value": 1})])
 
     def test_unadvertised_prefixed_names_and_definition_changes_are_rejected(self):
@@ -337,7 +399,17 @@ class ToolHostTests(unittest.TestCase):
         result = host.definitions()
         names = [item["function"]["name"] for item in result["tools"]]
 
-        self.assertEqual(names[:4], ["browser", "application", "os_settings", "mcp_first"])
+        self.assertEqual(
+            names[:6],
+            [
+                "browser",
+                "application",
+                "build_application",
+                "os_settings",
+                "os_command",
+                "mcp_first",
+            ],
+        )
         self.assertEqual(len(names), MAX_TOOLS)
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(result["warnings"][0], "MCP original warning.")
@@ -354,9 +426,9 @@ class ToolHostTests(unittest.TestCase):
         encoded = json.dumps({"result": result}, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
 
         self.assertLessEqual(len(encoded), RESPONSE_LIMIT)
-        self.assertEqual(names[:2], ["browser", "application"])
+        self.assertEqual(names[:3], ["browser", "application", "build_application"])
         self.assertIn(SAFE_MCP_BUDGET_WARNING, result["warnings"])
-        self.assertLess(len(names), len(large_definitions) + 3)
+        self.assertLess(len(names), len(large_definitions) + 4)
 
         omitted = next(name for name in [item["function"]["name"] for item in large_definitions] if name not in names)
         kept = next(name for name in names if name.startswith("mcp_big_"))

@@ -372,13 +372,18 @@ class Server:
         self.sequence += 1
         request_id = self.sequence
         deadline = time.monotonic() + timeout
+        outbound = {'id': request_id, 'method': method, 'params': params or {}}
+        if method in ('thread/start', 'thread/inject_items', 'turn/start'):
+            core.debug_event('llm.request', outbound)
         self.send(
-            {'id': request_id, 'method': method, 'params': params or {}},
+            outbound,
             deadline=deadline,
         )
         while True:
             value = self.receive(deadline - time.monotonic())
             if value.get('id') == request_id and 'method' not in value:
+                if method in ('thread/start', 'thread/inject_items', 'turn/start'):
+                    core.debug_event('llm.response', value)
                 if 'error' in value:
                     # Provider diagnostics can contain request data or credentials.
                     raise RuntimeError('ChatGPT could not complete this operation. Check your connection, account, and selected model.')
@@ -596,10 +601,11 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         count = 0
         content_bytes = 0
         buffered_content = ""
-        completion_retry = False
+        completion_retries = 0
         while True:
             event = server.next_event(min(
                 MAX_EVENT_WAIT, _chat_remaining(deadline, clock)))
+            core.debug_event('llm.response', event)
             if not isinstance(event, dict):
                 raise RuntimeError('ChatGPT returned an invalid event. Try again.')
             method = event.get('method')
@@ -664,7 +670,10 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     deadline=deadline,
                     clock=clock,
                 )
-                session.check_application_failure()
+                core.debug_event('tool.result', {
+                    'name': tool,
+                    'result': response,
+                })
                 continue
 
             if not isinstance(method, str) or not isinstance(params, dict):
@@ -695,12 +704,12 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                         raise RuntimeError('ChatGPT could not finish the reply. Check your subscription limits or try again.')
                     if session is not None and session.verify_application_completion:
                         if session.application_completion_pending():
-                            if completion_retry:
+                            if completion_retries >= agent.MAX_APPLICATION_COMPLETION_RETRIES:
                                 raise RuntimeError(agent.APPLICATION_LAUNCH_PENDING)
-                            completion_retry = True
+                            completion_retries += 1
                             buffered_content = ""
                             resumed = server.request('turn/start', {'threadId': thread, 'input': [
-                                {'type': 'text', 'text': agent.APPLICATION_LAUNCH_CONTINUATION}]},
+                                {'type': 'text', 'text': session.application_completion_prompt()}]},
                                 timeout=min(30, _chat_remaining(deadline, clock)))
                             _chat_rpc_result(resumed, 'turn')
                             continue

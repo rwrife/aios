@@ -19,7 +19,13 @@ from unittest import mock
 from urllib import error, request
 
 import aios.applications as applications
-from aios.applications import APPLICATION_TOOL, NATIVE_TEMPLATES, ApplicationStore, application_tool
+from aios.applications import (
+    APPLICATION_TOOL,
+    BUILD_APPLICATION_TOOL,
+    NATIVE_TEMPLATES,
+    ApplicationStore,
+    application_tool,
+)
 
 
 def _read_json(path: Path):
@@ -89,6 +95,11 @@ class ApplicationStoreTests(unittest.TestCase):
         parameters = APPLICATION_TOOL["function"]["parameters"]
         self.assertFalse(parameters["additionalProperties"])
         self.assertIn("action", parameters["properties"])
+        self.assertIn("build", parameters["properties"]["action"]["enum"])
+        self.assertEqual(
+            BUILD_APPLICATION_TOOL["function"]["parameters"]["required"],
+            ["html"],
+        )
         self.assertIn("query", parameters["properties"])
         self.assertIn("id", parameters["properties"])
         self.assertIn("title", parameters["properties"])
@@ -132,10 +143,36 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertFalse(launched[0].exists())
         folder = self.root / app["id"]
         self.assertEqual({path.name for path in folder.iterdir()}, {".draft.json", "index.html"})
-        self.assertEqual(store.search({"query": "Create a draft app"}), [])
+        self.assertEqual(store.search({"query": "Create a draft app"})[0]["id"], app["id"])
+        self.assertEqual(self._store(launcher=launch).search({"query": "Create a draft app"}), [])
         store.write({"id": app["id"], "html": "<!doctype html><title>Edited</title>"})
         self.assertTrue(store.publish({"id": app["id"], "summary": "Edited app", "keywords": ["draft"]})["published"])
         self.assertEqual(store.search({"query": "Create a draft app"})[0]["id"], app["id"])
+
+    def test_build_atomically_creates_writes_and_launches_generic_web_app(self):
+        from aios.app_runner import load_document
+
+        launched = []
+        html = "<!doctype html><title>Text Editor</title><textarea></textarea>"
+
+        def launch(folder):
+            launched.append(Path(folder))
+            self.assertEqual(load_document(folder), html)
+            return True
+
+        store = self._store(launcher=launch)
+        result = store.build({
+            "action": "build",
+            "title": "Text Editor",
+            "request": "create a text editor app",
+            "runtime": "web",
+            "html": html,
+        })
+        self.assertTrue(result["written"])
+        self.assertTrue(result["launched"])
+        self.assertEqual(result["runtime"], "web")
+        self.assertEqual(store.search({"query": "create a text editor app"})[0]["id"], result["id"])
+        self.assertEqual(len(launched), 1)
 
     def test_draft_native_launch_remains_unpublished_until_explicit_publish(self):
         launched = []
@@ -155,7 +192,14 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(len(launched), 1)
         self.assertFalse(launched[0].exists())
         self.assertEqual({path.name for path in (self.root / app["id"]).iterdir()}, {".draft.json"})
-        self.assertEqual(store.search({"query": "calculator"}), [])
+        match = store.search({"query": "calculator"})[0]
+        self.assertEqual(match["id"], app["id"])
+        self.assertTrue(store.launch({"id": match["id"]})["launched"])
+        self.assertEqual(len(launched), 2)
+        self.assertEqual(
+            self._store(launcher=launch, native_host=self._native_host("")).search({"query": "calculator"}),
+            [],
+        )
         self.assertTrue(store.publish({"id": app["id"], "summary": "Calculator", "keywords": ["calculator"]})["published"])
 
     def test_draft_launch_rejects_missing_html_and_unexpected_files(self):
@@ -191,11 +235,11 @@ class ApplicationStoreTests(unittest.TestCase):
             os.close(int(os.environ["AIOS_APP_READY_FD"]))
             time.sleep(30)
         """)
-        chromium = self._write_executable("chromium", """
+        chromium = self._write_executable("aios-browser", """
             import os, sys, time
             from urllib.request import urlopen
-            url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app="))
-            urlopen(url + "app", timeout=5).read()
+            url = sys.argv[sys.argv.index("--url") + 1]
+            urlopen(url, timeout=5).read()
             time.sleep(30)
         """)
         env = {
@@ -928,15 +972,16 @@ class ApplicationStoreTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "verified web default launcher requires POSIX")
     def test_real_web_default_launcher_signals_ready_and_uses_fixed_command(self):
         capture = Path(self.tmp.name) / "chromium-ready.json"
-        chromium = self._write_executable("chromium", """
+        chromium = self._write_executable("aios-browser", """
             import json
             import os
             import sys
             from urllib.request import urlopen
 
-            app_url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app=")).rstrip("/")
-            wrapper = urlopen(app_url + "/", timeout=5).read().decode("utf-8")
-            app = urlopen(app_url + "/app", timeout=5).read().decode("utf-8")
+            app_url = sys.argv[sys.argv.index("--url") + 1]
+            base_url = app_url.rsplit("/app", 1)[0]
+            wrapper = urlopen(base_url + "/", timeout=5).read().decode("utf-8")
+            app = urlopen(app_url, timeout=5).read().decode("utf-8")
             with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
                 json.dump({"argv": sys.argv[1:], "wrapper": wrapper, "app": app, "pid": os.getpid()}, stream)
         """)
@@ -975,7 +1020,7 @@ class ApplicationStoreTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "verified web default launcher requires POSIX")
     def test_real_web_default_launcher_times_out_and_reaps_runner_tree(self):
         capture = Path(self.tmp.name) / "chromium-timeout.json"
-        chromium = self._write_executable("chromium", """
+        chromium = self._write_executable("aios-browser", """
             import json
             import os
             import signal
@@ -984,10 +1029,11 @@ class ApplicationStoreTests(unittest.TestCase):
             from urllib.request import urlopen
 
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            app_url = next(arg.split("=", 1)[1] for arg in sys.argv[1:] if arg.startswith("--app=")).rstrip("/")
+            app_url = sys.argv[sys.argv.index("--url") + 1]
+            base_url = app_url.rsplit("/app", 1)[0]
             with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
                 json.dump({"argv": sys.argv[1:], "pid": os.getpid()}, stream)
-            urlopen(app_url + "/", timeout=5).read()
+            urlopen(base_url + "/", timeout=5).read()
             time.sleep(30)
         """)
         popen_calls = []
@@ -1466,7 +1512,7 @@ class ApplicationStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     app_runner.load_document(folder)
 
-    def test_run_builds_restricted_chromium_command_and_cleans_up_on_launcher_failure(self):
+    def test_run_uses_themed_browser_webview(self):
         from aios import app_runner
 
         store = self._store()
@@ -1485,14 +1531,12 @@ class ApplicationStoreTests(unittest.TestCase):
 
         args = popen.call_args.args[0]
         self.assertIsNotNone(state["server"])
-        self.assertIn(f"--app=http://127.0.0.1:{state['server'].server_address[1]}/", args)
-        self.assertTrue(any(arg.startswith("--user-data-dir=") for arg in args))
-        self.assertTrue(any(arg.startswith("--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1") for arg in args))
-        self.assertTrue(any(arg.startswith("--host-resolver-rules=") and "::1" in arg for arg in args))
-        self.assertIn("--disable-dev-shm-usage", args)
-        self.assertIn("--no-first-run", args)
-        self.assertIn("--no-default-browser-check", args)
-        self.assertNotIn("--no-sandbox", args)
+        self.assertEqual(args[0], "aios-browser")
+        self.assertEqual(
+            args[args.index("--url") + 1],
+            f"http://127.0.0.1:{state['server'].server_address[1]}/app",
+        )
+        self.assertEqual(args[args.index("--theme") + 1], "blue")
         self.assertFalse(popen.call_args.kwargs["start_new_session"])
 
     def test_run_shuts_down_server_when_chromium_launch_raises(self):
@@ -1548,14 +1592,8 @@ class ApplicationStoreTests(unittest.TestCase):
         folder = self.root / created["id"]
 
         state, server_class = self._fake_server_class()
-        cleanup = {"profile": False, "pids": []}
+        cleanup = {"pids": []}
         installed = {}
-
-        class FakeProfile:
-            name = str(Path(self.tmp.name) / "profile")
-
-            def cleanup(self_nonlocal):
-                cleanup["profile"] = True
 
         previous_sigterm = signal.getsignal(signal.SIGTERM)
         previous_sighup = signal.getsignal(signal.SIGHUP) if hasattr(signal, "SIGHUP") else None
@@ -1575,7 +1613,6 @@ class ApplicationStoreTests(unittest.TestCase):
 
         stderr = io.StringIO()
         with mock.patch.object(app_runner, "ThreadingHTTPServer", server_class), \
-            mock.patch.object(app_runner.tempfile, "TemporaryDirectory", return_value=FakeProfile()), \
             mock.patch.object(app_runner.subprocess, "Popen", return_value=proc), \
             mock.patch.object(app_runner, "_terminate_process", side_effect=lambda process: cleanup["pids"].append(process.pid), create=True), \
             contextlib.redirect_stderr(stderr):
@@ -1592,7 +1629,6 @@ class ApplicationStoreTests(unittest.TestCase):
             self.assertIs(signal.getsignal(signal.SIGHUP), previous_sighup)
         self.assertIs(signal.getsignal(signal.SIGTERM), previous_sigterm)
         self.assertEqual(cleanup["pids"], [8765])
-        self.assertTrue(cleanup["profile"])
         self.assertIsNotNone(state["server"])
         self.assertTrue(state["server"].shutdown_called)
         self.assertTrue(state["server"].server_close_called)

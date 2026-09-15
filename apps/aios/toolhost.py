@@ -14,10 +14,10 @@ import threading
 import time
 from typing import Any
 
-from .applications import APPLICATION_TOOL, ApplicationStore
+from .applications import APPLICATION_TOOL, BUILD_APPLICATION_TOOL, ApplicationStore
 from .browser import TOOL as BROWSER_TOOL, Browser
 from .mcp import McpRegistry
-from . import os_settings
+from . import os_command, os_settings
 
 REQUEST_LIMIT = 128 * 1024
 RESPONSE_LIMIT = 2 * 1024 * 1024
@@ -49,6 +49,7 @@ SAFE_MCP_BUDGET_WARNING = "MCP some tool definitions were ignored because the re
 _APPLICATION_ACTIONS = (
     "search",
     "create",
+    "build",
     "read",
     "write",
     "publish",
@@ -61,6 +62,28 @@ _MCP_WARNING_RESERVE = (
 )
 _RETRIABLE_CONNECT_ERRNOS = {errno.EAGAIN, errno.EWOULDBLOCK}
 _MISSING = object()
+_INTEGRATED_APPLICATIONS = {
+    "terminal-00000000": {
+        "name": "terminal",
+        "title": "Terminal",
+        "summary": "AIOS integrated terminal.",
+    },
+    "settings-00000000": {
+        "name": "settings",
+        "title": "Settings",
+        "summary": "AIOS integrated settings.",
+    },
+}
+
+
+def integrated_application_id(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    for app_id, app in _INTEGRATED_APPLICATIONS.items():
+        if normalized in (app_id, app["name"], app["title"].casefold()):
+            return app_id
+    return None
 
 
 class _ConnectionWriteFailed(Exception):
@@ -114,7 +137,13 @@ def _definition_name(definition: Any) -> str | None:
 def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> list[dict[str, Any]]:
     tools = []
     names = set()
-    for definition in (BROWSER_TOOL, application_definition, os_settings.TOOL):
+    for definition in (
+        BROWSER_TOOL,
+        application_definition,
+        BUILD_APPLICATION_TOOL,
+        os_settings.TOOL,
+        os_command.TOOL,
+    ):
         name = _definition_name(definition)
         if name is None or name in names:
             raise RuntimeError("Built-in tool definitions are invalid.")
@@ -362,7 +391,10 @@ def _write_socket_line(connection: socket.socket, payload: dict[str, Any], deadl
 class ToolHost:
     def __init__(self, browser: Browser | None = None, applications: ApplicationStore | None = None, mcp: McpRegistry | None = None):
         self.browser = browser if browser is not None else Browser()
-        self.applications = applications if applications is not None else ApplicationStore()
+        self.applications = (
+            applications if applications is not None
+            else ApplicationStore(native_templates=())
+        )
         self.mcp = mcp if mcp is not None else McpRegistry()
         self._advertised_mcp = {}
         self._closed = False
@@ -426,8 +458,16 @@ class ToolHost:
             result = self.browser.act(arguments)
         elif name == "application":
             result = self._call_application(arguments)
+        elif name == "build_application":
+            result = self._call_application({
+                "action": "build",
+                "runtime": "web",
+                **arguments,
+            })
         elif name == "os_settings":
             result = os_settings.act(arguments)
+        elif name == "os_command":
+            result = os_command.act(arguments)
         elif name in self._advertised_mcp:
             result = self.mcp.call(name, arguments)
         else:
@@ -439,10 +479,40 @@ class ToolHost:
         action = arguments.get("action")
         if action not in _APPLICATION_ACTIONS:
             raise ValueError(SAFE_APPLICATION_ACTION)
+        if action == "search":
+            query = arguments.get("query")
+            if not isinstance(query, str):
+                raise ValueError("Enter a search query.")
+            query_tokens = set(query.casefold().replace("&", " ").split())
+            integrated = [
+                {
+                    "id": app_id,
+                    "title": app["title"],
+                    "summary": app["summary"],
+                    "exact": query.strip().casefold() == app["title"].casefold(),
+                    "runtime": "integrated",
+                    "template": None,
+                }
+                for app_id, app in _INTEGRATED_APPLICATIONS.items()
+                if app["name"] in query_tokens
+            ]
+            return {"matches": [*integrated, *self.applications.search(arguments)][:5]}
+        app_id = integrated_application_id(arguments.get("id")) if action == "launch" else None
+        if app_id is not None:
+            app = _INTEGRATED_APPLICATIONS[app_id]
+            opened = os_settings.open_application(app["name"])
+            launched = (
+                isinstance(opened, dict)
+                and (opened.get("opened") is True or opened.get("requested") is True)
+            )
+            return {
+                "launched": launched,
+                "id": app_id,
+                "title": app["title"],
+                "runtime": "integrated",
+            }
         method = getattr(self.applications, action)
         result = method(arguments)
-        if action == "search":
-            return {"matches": result}
         if action == "read":
             return {"html": result}
         return result

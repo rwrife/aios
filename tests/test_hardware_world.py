@@ -52,6 +52,9 @@ def parse_env(path):
 def world_env(directory, hardware=WORLD_HARDWARE, identity=None):
     env = dict(
         os.environ,
+        # Match the Alpine build's bytewise package ordering, not the host's
+        # language-specific collation (e.g. openbox vs open-vm-tools).
+        LC_ALL='C',
         AIOS_STAGE_DIR=str(directory),
         AIOS_OVERLAY_DIR=str(ROOT / 'distro/alpine/overlay'),
         AIOS_REPOSITORIES='https://example.invalid/main',

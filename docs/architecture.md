@@ -8,9 +8,9 @@ GPU-only shader effects. The wave animation pauses while chat is open.
 The C++ shell launches a Python worker for each operation. Worker requests and
 responses are JSON, never shell commands. Each chat also owns a generic Python
 tool host on a private AF_UNIX socket. The host registers AIOS built-ins
-(`browser` and `application`) and approved stdio MCP tools, returns validated
-function schemas, and accepts structured calls only. Model prose and
-JSON-looking text are never executed.
+(`browser`, `application`, `os_settings`, and `os_command`) and approved
+stdio MCP tools, returns validated function schemas, and accepts structured
+calls only. Model prose and JSON-looking text are never executed.
 
 `agent.py` owns provider-neutral skill activation, tool filtering, progress,
 bounded call parsing, and dispatch. Ordinary chat uses the primary provider.

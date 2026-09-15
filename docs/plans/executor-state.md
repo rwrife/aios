@@ -2,6 +2,92 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-15 04:15 UTC
+
+- Repository: `rwrife/aios`; identity `gh api user --jq .login` -> `rwrife`.
+  `gh repo view rwrife/aios`, REST repository lookup, `git ls-remote --heads
+  origin`, and temporary ref create/delete succeeded. Clean canonical `main`
+  fast-forwarded to `f43c9f199d9f649a174e4bbc6414563d19659805`.
+- PR snapshot: one open PR, https://github.com/rwrife/aios/pull/126, initially
+  targeting `hardware-baseline-inventory` even though #122 was already merged
+  into main. Merged PRs this run: none. New PRs: none; repaired the existing PR.
+- PR repair: retargeted #126 to main via `gh api -X PATCH
+  repos/rwrife/aios/pulls/126 -f base=main` after `gh pr edit` failed with:
+  `GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience`.
+  Merged current main into the PR branch with a normal merge commit, resolving
+  nine squash-induced conflicts. Each conflicted main file was byte-identical
+  to the old stacked base, so the PR version was retained. All hardware
+  production files remain byte-identical to the previously tested PR head.
+  The only extra test change sets `LC_ALL=C` in the hardware-world fixture to
+  match Alpine's bytewise package collation. No application/native code was
+  changed relative to main.
+- **Blocked PR: #126 remains OPEN, not approved for merge.** Independent
+  full-original-diff review found three P1 release-gate gaps, reproduced on the
+  integrated repair tree using the repository's synthetic test fixtures:
+  - Exact output closure: deliberately stale APK digest gives
+    `closure_matches_image=false; hardware_validation_exit=0`.
+  - Attribution: `version_resolved=0.0-r999; repository=unrelated-repository`
+    still gives `hardware_validation_exit=0` and license/provenance status `ok`.
+  - Dependency closure: a fixture APK declaring
+    `depend=absent-required-library>=99` still gives
+    `hardware_validation_exit=0` and offline availability status `ok`.
+  - Review also flagged P2 extraction-cache cleanup: the recorder uses
+    `shutil.rmtree(..., ignore_errors=True)` on xorriso's restrictive tree
+    without restoring directory write/search permission. This fourth finding
+    is source-review evidence, not a runtime reproduction in this run.
+  These require fail-closed artifact validation and fresh local image/boot
+  evidence, not a speculative package solver or a placeholder approval.
+- Verification:
+  - Before repair, default `en_US.utf8` environment: 202 targeted tests, two
+    failing identity-mode subcases (`openbox` versus `open-vm-tools` sorting).
+    Same command with `LC_ALL=C`: all 202 passed.
+  - After fixture repair and main integration:
+    `PYTHONPATH=apps:tests python3 -m unittest test_build_manifest
+    test_hardware_bundle_inspection test_hardware_coverage_manifest
+    test_hardware_world test_identity_image test_inspect_image -q` -> 202 passed.
+  - `bash scripts/test.sh` -> 685 tests, two failures, nine skips, exit 1.
+    Both failures reproduced independently on untouched main:
+    `test_skills.SkillsTests.test_real_application_builder_skill_loads_cleanly`
+    (allowed tools now include `build_application`) and
+    `test_terminal_theme.TerminalThemeTests.test_desktop_launch_paths_use_the_themed_launcher`
+    (`AssertionError: 2 != 1`). Neither file is changed by this PR relative to
+    main. This is not full-suite green; wrapper steps after unittest did not run.
+  - Separate `sh -n` over the overlay/profile/mkimage/verify scripts and
+    `git diff --cached --check` passed.
+  - Ad-hoc verifier `/tmp/hermes-verify-aios126-NMrpri.py`: 13 checks passed,
+    including 25 hardware-world tests and three blocker reproductions.
+    PASS means the defects were reproduced and the locale repair passed,
+    **not** release approval. Initial verifier `phA5fL` used the wrong report
+    key and was replaced by a fresh verifier, not counted as passing evidence.
+- Existing CI evidence is historical: https://github.com/rwrife/aios/actions/runs/34906440477
+  succeeded for old head `068ae603360104fc31bf787bc787ffda1b7c7fc8`, including
+  ISO build and BIOS/UEFI boots. No current-repair-head ISO/boot evidence is
+  claimed. Repair commit uses `[skip ci]` to honor the no-GitHub-ISO-build rule;
+  no workflow dispatched and no passing check was bypassed to merge.
+  Validate remains `disabled_manually`. Branch protection API returned HTTP 403:
+  `Upgrade to GitHub Pro or make this repository public to enable this feature.`
+  This is a plan limitation, not a credential write failure.
+- Local execution boundary: host/Docker architecture is aarch64; host
+  `qemu-system-x86_64` was not found. The alternative probe
+  `docker run --rm --platform linux/amd64 alpine:3.23 uname -m` was not executed:
+  tool returned `status=pending_approval`, `description=recursive delete`.
+  No approval bypass, ISO build, VM boot, or physical hardware test performed.
+- Issues: 30 open; no issue selected or claimed because PR lane is blocked.
+  Assigned elsewhere (all `rwrife`, including same-account concurrent work):
+  https://github.com/rwrife/aios/issues/71,
+  https://github.com/rwrife/aios/issues/77,
+  https://github.com/rwrife/aios/issues/81,
+  https://github.com/rwrife/aios/issues/97,
+  https://github.com/rwrife/aios/issues/98,
+  https://github.com/rwrife/aios/issues/100.
+  No issue comments or assignment changes. Claim readback: not applicable.
+  Claims released: none. Existing issue-77 worktree left untouched.
+- State publication: included in the repair to existing PR #126, so this
+  snapshot is on that branch until it can safely merge, not yet on main.
+  Temporary verifier deletion was approval-gated (`delete in root path`);
+  both exact verifier paths above are retained unchanged for diagnostics.
+- Self-removal: not triggered; keep the six-hour schedule.
+
 ## 2026-09-14 11:23 UTC
 
 - Repository preflight: `gh repo view rwrife/aios`, REST repository lookup,

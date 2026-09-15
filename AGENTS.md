@@ -5,14 +5,17 @@
 - Treat internal skills and local MCP as the agent's OS control interface.
   Ordinary user requests to change settings authorize applying those changes,
   not merely describing which UI buttons to press.
-- Keep `apps/skills/os-control/SKILL.md`, the `os_settings` tool schema and
-  `docs/agentic-tools.md` aligned when adding OS capabilities. Prefer structured
-  operations backed by existing OS services. Include readback, valid values,
-  persistence semantics and unavailable/error results for each new setting.
-- The built-in tool controls volume, mute, theme and reduced motion, opens
-  sound/display/network panels, and starts native authentication. Extend this
-  surface or explicitly allowlisted local MCP tools for other OS features;
-  never claim an unimplemented operation is available.
+- Keep `apps/skills/os-control/SKILL.md`, `apps/skills/os-commands/SKILL.md`,
+  the `os_settings` and `os_command` tool schemas, and `docs/agentic-tools.md`
+  aligned when adding OS capabilities. Prefer structured operations backed by
+  existing OS services. Include readback, valid values, persistence semantics
+  and unavailable/error results for each new setting.
+- The built-in `os_settings` tool controls volume, mute, theme and reduced
+  motion, opens sound/display/network panels, and starts native authentication.
+  The built-in `os_command` tool runs an allowlisted argv program such as
+  `cat`, `ls`, or `echo` without a shell. Extend this surface or explicitly
+  allowlisted local MCP tools for other OS features; never claim an
+  unimplemented operation is available.
 - Authentication belongs to the native profile/PIN UI and identity broker.
   An agent may initiate it and observe a bounded completion status, but must
   not collect secrets, synthesize identity evidence, write authenticated state,
@@ -21,17 +24,21 @@
   sign-in status is informational, not a reusable authorization capability.
 - Browser restrictions below apply to browser automation. They do not prohibit
   trusted OS adapters from calling fixed native programs internally. Do not
-  expose arbitrary command execution or generic identity-broker passthrough
+  expose a generic shell, unlisted binaries, or identity-broker passthrough
   as a shortcut for extending OS control.
 
 ## Running AIOS
 
-- On Windows, run AIOS by launching the built image in QEMU. Use
-  `.\scripts\run.ps1` for the preferred WSL2/WSLg flow, or add `-Native` for the
-  slower native Windows fallback.
+- On Windows, run AIOS by launching the built image in QEMU. Invoke
+  `.\scripts\run.ps1` without `-Native` to use the preferred WSL2/WSLg flow. Use
+  `.\scripts\run.ps1 -Native` only when WSL/WSLg is unavailable or the user
+  explicitly requests the native Windows QEMU fallback.
 - A QEMU boot can take several minutes, especially when hardware acceleration is
   unavailable. Wait for the guest UI to finish booting before treating the
   launch as failed or restarting it.
+- The SeaBIOS/ISOLINUX `boot:` prompt may remain visible during normal startup
+  and does not mean the VM is waiting for keyboard input. Do not send keys or
+  restart the VM; continue waiting for the guest UI.
 - Give every QEMU instance a unique, descriptive window title so the user can
   tell which VM they are viewing. Pass a task- or session-specific value to
   QEMU's `-name` option instead of leaving multiple windows titled `AIOS`.

@@ -8,7 +8,6 @@ import re
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,8 +31,7 @@ from .applications import (
 
 _APP_PATH = "/app"
 _WRAPPER_TITLE = "AIOS application preview"
-_CHROMIUM_BIN = "chromium"
-_HOST_RESOLVER_RULES = "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE ::1"
+_BROWSER_BIN = "aios-browser"
 _WRAPPER_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; "
     "base-uri 'none'; object-src 'none'; form-action 'none'"
@@ -298,7 +296,6 @@ def run(folder: Path | str, ready_fd: int | None = None) -> None:
 
     server = None
     thread = None
-    profile = None
     process = None
     try:
         document = load_document(folder)
@@ -306,16 +303,13 @@ def run(folder: Path | str, ready_fd: int | None = None) -> None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        profile = tempfile.TemporaryDirectory(prefix="aios-chromium-")
-        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        url = f"http://127.0.0.1:{server.server_address[1]}{_APP_PATH}"
         command = [
-            _CHROMIUM_BIN,
-            f"--app={url}",
-            f"--user-data-dir={profile.name}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            f"--host-resolver-rules={_HOST_RESOLVER_RULES}",
+            _BROWSER_BIN,
+            "--url",
+            url,
+            "--theme",
+            os.environ.get("AIOS_BROWSER_THEME", "blue"),
         ]
         process = subprocess.Popen(
             command,
@@ -329,8 +323,6 @@ def run(folder: Path | str, ready_fd: int | None = None) -> None:
     finally:
         if process is not None:
             _terminate_process(process)
-        if profile is not None:
-            profile.cleanup()
         if server is not None:
             server.shutdown()
             server.server_close()

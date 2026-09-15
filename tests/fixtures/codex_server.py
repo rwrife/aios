@@ -15,6 +15,7 @@ TOOL_SEQUENCES = {
     'browser': [('browser', {'action': 'snapshot'})],
     'application': [('application', {'action': 'search', 'query': 'calculator'})],
     'application-recovery': [('application', {'action': 'launch', 'id': 'calculator-12345678'})],
+    'application-failure': [('application', {'action': 'launch', 'id': 'calculator-12345678'})],
     'mcp-error': [('mcp_fixture_echo', {'value': 'fail'})],
     'unknown-generic': [('shell', {'command': 'whoami'})],
     'generic-error': [('application', {'action': 'search', 'query': 'secret'})],
@@ -47,6 +48,7 @@ def finish_tool_scenario():
         'browser': 'Browser done',
         'application': 'Application done',
         'application-recovery': 'Calculator is open.',
+        'application-failure': 'I could not open the calculator because the application tool failed.',
         'mcp-error': 'MCP recovered',
         'unknown-generic': 'Unknown tool recovered',
         'generic-error': 'Generic error recovered',
@@ -69,6 +71,10 @@ for line in sys.stdin:
             result = value.get('result', {})
             if scenario == 'mcp-error':
                 assert result.get('success') is False
+            if scenario == 'application-failure':
+                assert result.get('success') is False
+                payload = json.loads(result['contentItems'][0]['text'])
+                assert payload.get('error')
             if scenario == 'unknown-generic':
                 assert result.get('success') is False
             if scenario == 'activate-narrow' and tool_index == 0:

@@ -42,7 +42,8 @@ APPLICATION_TOOL = {
         "name": "application",
         "description": (
             "Create and launch desktop applications for this chat, with sandboxed single-file HTML fallback. "
-            "For an app creation request, create then launch (write HTML first for web apps) in the same turn. "
+            "For web apps, prefer build: the model supplies complete HTML and the tool creates, writes, and launches it atomically; "
+            "never ask the user to provide HTML or internal application metadata. "
             "Drafts can launch without publishing. Publish only when the user explicitly requests publication "
             "to the reusable cache. Launched apps close when this chat stops or closes."
         ),
@@ -51,7 +52,8 @@ APPLICATION_TOOL = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["search", "create", "read", "write", "publish", "launch"],
+                    "enum": ["search", "create", "build", "read", "write", "publish", "launch"],
+                    "description": "Search first. Use build for a new web app; it atomically creates, writes, and launches model-authored HTML.",
                 },
                 "query": {
                     "type": "string",
@@ -71,7 +73,7 @@ APPLICATION_TOOL = {
                 },
                 "html": {
                     "type": "string",
-                    "description": "Complete HTML document for the cached application.",
+                    "description": "Complete self-contained HTML document authored by the model from the user's request; never request this from the user.",
                 },
                 "summary": {
                     "type": "string",
@@ -85,6 +87,37 @@ APPLICATION_TOOL = {
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+BUILD_APPLICATION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "build_application",
+        "description": (
+            "Build and launch a new sandboxed web application from one complete self-contained HTML document "
+            "authored by the model. Use this when no existing integrated or cached application satisfies the "
+            "user. Never ask the user to provide HTML, source code, a title, or a request description."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Required complete offline HTML document authored by the model.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Optional short title; inferred from the user's request when omitted.",
+                },
+                "request": {
+                    "type": "string",
+                    "description": "Optional source request; inferred from the user's message when omitted.",
+                },
+            },
+            "required": ["html"],
             "additionalProperties": False,
         },
     },
@@ -408,6 +441,7 @@ class ApplicationStore:
         self._lifecycle_lock = threading.RLock()
         self._closed = threading.Event()
         self._processes: dict[subprocess.Popen[Any], tempfile.TemporaryDirectory | None] = {}
+        self._owned_drafts: set[str] = set()
 
     def definition(self) -> dict[str, Any]:
         return application_tool(self.native_templates)
@@ -461,6 +495,7 @@ class ApplicationStore:
             result = {"id": app_id, "title": title, "runtime": runtime}
             if template is not None:
                 result["template"] = template
+            self._owned_drafts.add(app_id)
             return result
         raise RuntimeError("Could not allocate a new application identifier.")
 
@@ -476,6 +511,18 @@ class ApplicationStore:
             raise ValueError("HTML must start with <!doctype html>.")
         written = _atomic_write_text(folder / "index.html", html)
         return {"written": True, "bytes": written}
+
+    def build(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("runtime", "web") != "web":
+            raise ValueError("Build supports sandboxed web applications.")
+        html = payload.get("html")
+        if not isinstance(html, str):
+            raise ValueError("Provide the complete HTML document.")
+        created = self.create(payload)
+        app_id = created["id"]
+        self.write({"id": app_id, "html": html})
+        launched = self.launch({"id": app_id})
+        return {**created, **launched, "written": True}
 
     def read(self, payload: dict[str, Any]) -> str:
         folder = self._existing_folder(payload)
@@ -516,6 +563,7 @@ class ApplicationStore:
         manifest, _ = self._build_manifest(folder, draft, summary, keywords)
         _atomic_write_json(folder / "manifest.json", manifest)
         (folder / ".draft.json").unlink(missing_ok=True)
+        self._owned_drafts.discard(draft["id"])
         result: dict[str, Any] = {"published": True, "id": draft["id"], "runtime": draft["runtime"]}
         if draft["runtime"] == "native":
             result["template"] = manifest["template"]
@@ -575,7 +623,16 @@ class ApplicationStore:
             try:
                 entry = self._load_manifest(folder)
                 if entry is None:
-                    continue
+                    if folder.name not in self._owned_drafts:
+                        continue
+                    draft_folder = self._draft_folder({"id": folder.name})
+                    draft = self._load_draft(draft_folder)
+                    entry = {
+                        **draft,
+                        "summary": "Unpublished draft for this chat.",
+                        "keywords": [],
+                        "updated_at": draft["created_at"],
+                    }
                 exact = normalized.casefold() == entry["request"].casefold()
                 overlap = len(query_tokens & _tokenize(entry["title"])) * 2
                 overlap += len(query_tokens & set(entry["keywords"]))

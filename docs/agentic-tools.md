@@ -6,7 +6,7 @@ There are three related pieces:
 - **Agent Skills** are installed instructions and metadata that describe how to
   handle a class of requests. A skill can narrow which tools are available.
 - **Built-in tools** are AIOS-owned functions. The current registry includes
-  `browser`, `application`, and `os_settings`.
+  `browser`, `application`, `os_settings`, and `os_command`.
 - **MCP tools** come from explicitly configured local Model Context Protocol
   servers. AIOS validates and renames them before advertising them to a model.
 
@@ -107,7 +107,50 @@ operations. Each extension should advertise exact inputs, return bounded
 non-secret results and actual completion state, and reuse existing service
 authorization. Opening a panel alone is not automation of every control inside
 it. Unsupported settings must be reported rather than emulated through model
-prose or arbitrary command execution.
+prose or a generic shell.
+
+### OS commands
+
+The image ships `os-commands` for file and allowlisted-program requests. It
+does not narrow `allowed-tools`. The built-in `os_command` tool works without
+MCP configuration.
+
+| Request | Structured call | Result |
+| --- | --- | --- |
+| List a directory | `{"command":"ls","args":["-la","/home/aios"]}` | Directory listing on stdout, `exit_code` 0 |
+| Read a file | `{"command":"cat","args":["notes.txt"],"cwd":"/home/aios"}` | File bytes as text, truncated at 32KiB per stream |
+| Print text | `{"command":"echo","args":["hello"]}` | `hello` on stdout; this does not write a file |
+| Write a file | `{"command":"tee","args":["notes.txt"],"stdin":"hello\n","cwd":"/home/aios"}` | Writes stdin to the path and echoes it |
+| Working directory | `{"command":"pwd"}` | Default cwd is `HOME` |
+
+The tool host executes the resolved `/bin` or `/usr/bin` program with an argv
+array. It never uses a shell, so pipes, redirects, globs, and `~` are ordinary
+argument strings. Unlisted binaries, including `sh`, `bash`, `busybox`, `find`, `sudo`,
+and interpreters, are rejected before launch. `stdin` is `/dev/null` unless the
+call supplies a bounded string. Each stream is truncated at 32KiB; a 10-second
+timeout kills the process. The result includes `command`, `path`, `argv`,
+`cwd`, `exit_code`, `stdout`, `stderr`, and `truncated`.
+
+For a separate local MCP client, the same implementation is available as
+`python3 -m aios.os_command`. Configure it with an explicit tool allowlist:
+
+```json
+{
+  "servers": {
+    "os-command": {
+      "command": "python3",
+      "args": ["-m", "aios.os_command"],
+      "tools": ["os_command"]
+    }
+  }
+}
+```
+
+AIOS advertises this optional tool as `mcp_os-command_os_command`. Prefer the
+built-in tool inside AIOS. Destructive programs (`rm`, `rmdir`, overwriting
+`mv`) still run as the desktop user when requested; the skill forbids using
+them without an explicit path from the user. This is not a generic shell and
+must not be extended into one.
 
 ### Discovery
 
@@ -180,9 +223,11 @@ still take precedence. It asks only about material ambiguities, and reports
 unsupported requirements rather than silently changing them.
 
 Runtime defaults follow the advertised templates, not an assumed ability to
-compile arbitrary native apps. Calculator prefers native when available. Notes
-and Analog Clock currently use the web fallback, and Solitaire defaults to a
-small offline Klondike game with in-memory state and DOM/CSS or canvas graphics.
+compile arbitrary native apps. The default chat tool host advertises no baked-in
+application templates, so Calculator, Notes, Analog Clock, Todo List, Text Editor,
+and Solitaire are authored on the fly as sandboxed web applications. Solitaire
+defaults to a small offline Klondike game with in-memory state and DOM/CSS or
+canvas graphics.
 Notes is explicitly a session-only scratchpad, not durable storage. The builder
 must disclose that contents disappear when closed; publishing an app does not
 save its user data.
@@ -203,18 +248,14 @@ The skill permits only the `application` tool and requires this workflow:
 2. Inspect the advertised application schema. `runtime` and `template` appear
    only when an executable `aios-app-host` is available. The advertised native
    templates are the complete native capability set for that turn.
-3. For a supported request, prefer an exact or strong cached native match.
-   Calculator is currently the only native template. If search finds only a
-   legacy web calculator while the native calculator template is advertised,
-   create the native calculator rather than treating the web result as a
-   permanent preference.
-4. Create a native calculator with `runtime: "native"` and
-   `template: "calculator"`, then launch it in the same turn.
-   Native creation never uses `read`, `write`, generated HTML, or model-supplied
-   native source.
-5. When native support is absent or the requested app type has no advertised
-   template, use the web fallback: create a draft, write one self-contained
-   offline `index.html`, and launch it in the same turn.
+3. Reuse an exact or strong cached match unless the user explicitly asks to
+   recreate or replace it.
+4. For ordinary requests, call the dedicated `build_application` tool with one
+   model-authored, self-contained offline `index.html`. The application service
+   creates, validates, writes, and launches it atomically. Calculator, Todo List,
+   and Text Editor all use this on-the-fly workflow.
+5. Use native only when the user explicitly requests it and the tool advertises
+   a matching capability. Never substitute an unrelated baked-in template.
 6. Report success only after launch returns `launched: true`. A
    `launched: false` result is terminal for that attempt: report its safe reason
    without rebuilding, re-publishing, or retrying in a loop.
@@ -222,6 +263,15 @@ The skill permits only the `application` tool and requires this workflow:
    publication to the reusable cache. Neither native nor web launch requires
    publication or a follow-up user request. Honor explicit draft-only requests
    by leaving the app unopened.
+
+Unpublished drafts remain private to the chat that created them, but that chat's
+later turns can find them through application search. This lets the agent
+relaunch a manually closed app without publishing it or asking the user for an
+opaque application ID.
+
+Application search also includes the integrated Terminal and Settings surfaces.
+Their reserved results launch the existing AIOS applications through the desktop
+control socket rather than generating replacements.
 
 Draft and published applications are stored under:
 
@@ -419,6 +469,7 @@ ordinary chat content when selected.
   the implementation evidence.
 
 The repository integration test uses a real worker, agent, Unix-socket tool
-host, application store, and loopback OpenAI-compatible server. It verifies a
-native calculator build over an existing legacy web match, followed by exact
-native cache reuse, without Chromium, the real Qt host, or a paid model.
+host, application store, and loopback OpenAI-compatible server. It verifies the
+explicitly advertised native compatibility path and cache reuse without
+Chromium, the real Qt host, or a paid model; the default chat tool host does not
+advertise that baked-in path.
