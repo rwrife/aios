@@ -29,9 +29,11 @@ TOOL = {
             "mkdir, rmdir, rm, cp, mv, ln, touch, head, tail, tee, printf, wc, "
             "stat, realpath, readlink, dirname, basename, grep, date, "
             "whoami, id, uname, hostname, df, du. No shell, pipes, redirects, or "
-            "unlisted binaries. Optional cwd and stdin; default cwd is HOME. "
-            "Returns exit_code, stdout, stderr; output truncates at 32KiB per "
-            "stream. Times out after 10s."
+            "unlisted binaries. Read a file with cat and the path in args. Write "
+            "a file with tee, the path in args, and the contents in stdin; echo "
+            "and printf print to stdout only. Optional cwd and stdin; default cwd "
+            "is HOME. Returns exit_code, stdout, stderr; output truncates at "
+            "32KiB per stream. Times out after 10s."
         ),
         "parameters": {
             "type": "object",

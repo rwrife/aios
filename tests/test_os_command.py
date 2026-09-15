@@ -26,6 +26,10 @@ class OsCommandTests(unittest.TestCase):
         self.assertIn("ls", os_command.COMMANDS)
         self.assertIn("cat", os_command.COMMANDS)
         self.assertIn("echo", os_command.COMMANDS)
+        description = function["description"].lower()
+        self.assertIn("read a file with cat", description)
+        self.assertIn("write a file with tee", description)
+        self.assertIn("echo and printf print to stdout only", description)
         for blocked in ("sh", "bash", "busybox", "find", "sudo", "doas", "python", "python3"):
             self.assertNotIn(blocked, os_command.COMMANDS)
 
