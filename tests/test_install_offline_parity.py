@@ -161,11 +161,14 @@ def apkindex(path, versions):
         archive.addfile(info, io.BytesIO(data))
 
 
-def installed_database(versions, owned):
+def installed_database(versions, owned, provides=None):
     """An apk installed database with file ownership for selected packages."""
+    provides = provides or {}
     entries = []
     for name, version in sorted(versions.items()):
         lines = [f"P:{name}", f"V:{version}"]
+        if provides.get(name):
+            lines.append("p:" + " ".join(provides[name]))
         if name in owned:
             lines += ["F:usr/bin", f"R:{name}"]
         entries.append("\n".join(lines))
@@ -1028,7 +1031,33 @@ class TargetVerificationTests(unittest.TestCase):
         database.write_text(database.read_text().replace("P:wireless-regdb", "P:something-else"))
         report = self.verify()
         self.assertCheckFails("apk_world_installed", report)
-        self.assertIn("wireless-regdb", report["checks"]["apk_world_installed"]["missing"]["sample"])
+        self.assertIn(
+            "wireless-regdb",
+            report["checks"]["apk_world_installed"]["missing"]["sample"],
+        )
+
+    def test_virtual_world_atoms_are_satisfied_by_apk_provides(self):
+        world = self.target / "etc/apk/world"
+        world.write_text(world.read_text() + "virtual-tool\n")
+        database = self.target / "lib/apk/db/installed"
+        database.write_text(
+            database.read_text().replace(
+                "P:alpine-base\n",
+                "P:alpine-base\np:virtual-tool=1.0\n",
+            )
+        )
+        report = self.verify()
+        self.assertEqual(report["checks"]["apk_world_installed"]["status"], "pass")
+
+    def test_an_unsatisfied_virtual_world_atom_fails(self):
+        world = self.target / "etc/apk/world"
+        world.write_text(world.read_text() + "missing-virtual\n")
+        report = self.verify()
+        self.assertCheckFails("apk_world_installed", report)
+        self.assertIn(
+            "missing-virtual",
+            report["checks"]["apk_world_installed"]["missing"]["sample"],
+        )
 
     def test_world_atoms_are_parsed_the_way_apk_writes_them(self):
         # Version constraints, repository tags, negations and apk's own virtual

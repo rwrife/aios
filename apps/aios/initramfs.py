@@ -38,6 +38,9 @@ COMPRESSION_NAMES = {b"\x28\xb5\x2f\xfd": "zstd", b"\xfd7zXZ": "xz",
                      b"BZh": "bzip2", b"\x04\x22\x4d\x18": "lz4",
                      b"\x02!L\x18": "lz4-legacy"}
 MAX_ENTRIES = 200000
+# setup-disk still emits the historical `ide` feature on x86 even though
+# current mkinitfs has no ide.files/ide.modules; ATA modules come from `ata`.
+KNOWN_EMPTY_FEATURES = {"ide"}
 
 
 class InitramfsError(RuntimeError):
@@ -112,7 +115,8 @@ def expected_modules(root, release, features):
         if not definition.is_file():
             # A feature with no module list is legitimate when the feature only
             # contributes files; one with neither definition is not.
-            if not (root / FEATURES_DIRECTORY / f"{feature}.files").is_file():
+            if (feature not in KNOWN_EMPTY_FEATURES
+                    and not (root / FEATURES_DIRECTORY / f"{feature}.files").is_file()):
                 undefined.append(feature)
             continue
         for line in definition.read_text(encoding="utf-8", errors="replace").splitlines():

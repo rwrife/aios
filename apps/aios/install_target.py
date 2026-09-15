@@ -195,6 +195,27 @@ def read_package_versions(root):
     return versions
 
 
+def read_installed_capabilities(root):
+    """Package names and virtual capabilities recorded by apk.
+
+    Alpine worlds may contain virtual atoms such as `ninja` and
+    `xf86-video-modesetting`; apk satisfies them through a package's lowercase
+    `p:` provides field rather than a same-named installed package.
+    """
+    capabilities = set()
+    with open(Path(root) / APK_INSTALLED_DB, "r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            key, separator, value = line.rstrip("\n").partition(":")
+            if not separator:
+                continue
+            if key == "P":
+                capabilities.add(value)
+            elif key == "p":
+                for provided in value.split():
+                    capabilities.add(provided.split("=", 1)[0])
+    return capabilities
+
+
 def module_releases(root):
     """Kernel module release directories present under a root."""
     modules = Path(root) / MODULES_ROOT
@@ -427,15 +448,17 @@ def _check_world_installed(target, world, results):
                                           "reason": "target_package_database_missing"}
         return {}
     versions = read_package_versions(target)
+    capabilities = read_installed_capabilities(target)
     if not world:
         results["apk_world_installed"] = {"status": INCOMPLETE, "reason": "target_world_missing"}
         return versions
     required = {atom_name(atom) for atom in world if not atom.startswith("!")}
-    absent = sorted(name for name in required if name not in versions)
+    absent = sorted(name for name in required if name not in capabilities)
     results["apk_world_installed"] = {
         "status": PASS if not absent else FAIL,
         "required": len(required),
         "installed": len(versions),
+        "provided_capabilities": len(capabilities - set(versions)),
         "missing": _bounded(absent),
     }
     return versions
@@ -620,10 +643,11 @@ def _check_boot_entries(target, results):
         return
     generated = configuration.read_text(encoding="utf-8", errors="replace")
     normal = first_menuentry_body(generated) or []
-    kernel_words = next((line.split() for line in (entry.strip() for entry in normal)
-                         if line.startswith(("linux ", "linux16 "))), [])
-    initrd_words = next((line.split() for line in (entry.strip() for entry in normal)
-                         if line.startswith(("initrd ", "initrd16 "))), [])
+    tokenized = [line.split() for line in (entry.strip() for entry in normal)]
+    kernel_words = next((words for words in tokenized
+                         if words and words[0] in ("linux", "linux16")), [])
+    initrd_words = next((words for words in tokenized
+                         if words and words[0] in ("initrd", "initrd16")), [])
     # What Alpine's own grub-mkconfig writes for a sys install: the kernel
     # image under /boot, a root= identification, and the initramfs beside it.
     has_normal = (len(kernel_words) > 1 and kernel_words[1].endswith("/vmlinuz-lts")
