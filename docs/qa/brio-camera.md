@@ -130,13 +130,41 @@ retain only aggregate format/capability findings.
 | Unplug/replug | Operator disconnect, bounded failure, newly resolved device succeeds | Not tested |
 | Explicit / automatic handoff | Same selected device, no WSL capture holder | Not tested |
 | Scoped USB ACL | Only selected node changes; restore prior ACL after run | Not tested |
-| Optional identity image | OpenCV/crypto imports, Qt shell startup, keyboard/PIN fallback | Not tested |
+| Optional identity image | OpenCV/crypto imports, Qt shell startup, keyboard/PIN fallback | Headless imports/Qt/desktop passed; PIN interaction not tested |
 
 2026-09-15 inventory: the Brio is disconnected (persisted USB/IP binding only).
 No new physical capture evidence is claimed. Reconnect it before executing the
 matrix. The connected Dell camera is not a substitute. Keep serials, raw driver
 logs and frames out of committed results. Record aggregate JSON, image hash,
 runtime versions and reason counts only.
+
+### 2026-09-15 optional-image evidence
+
+- Local WSL/container build succeeded with `AIOS_IDENTITY_BUILD=1`, recorded
+  in the ISO build manifest; 786 packages. The unavailable FeatherPad dependency
+  was replaced with Alpine v3.23 Mousepad. Its fixed sandbox command disables
+  D-Bus instance forwarding; namespace and Wayland restrictions remain in force.
+- Artifact: `alpine-aios-recognition-stage1-x86_64.iso`, SHA-256
+  `649c73a3537fb0cd52d80a1ff2961f5589eba463d9384755e6a4b0048e16359d`.
+  Diagnostic source is commit `0050c28`; packaging and launcher fixes are in
+  `22b1f81` (the packaging changes were present during this development build).
+- Launched through `scripts/run.ps1` with WSL QEMU/KVM, 16 GiB RAM, four vCPUs,
+  a disposable disk, audio disabled, and unique name
+  `AIOS-recognition-stage1-dependency-check`.
+- WSLg reported COPY MODE, so this run used the supported headless path. It
+  **does not establish windowed WSLg or physical camera success**.
+- Guest checks passed: imports of `cv2`, `cryptography`, and `aios.camera` as
+  `aios`; Mousepad executable present; no missing `aios-shell` dynamic libraries;
+  ordinary-user shell process running. QEMU framebuffer inspection showed the
+  Ocean desktop and Welcome wizard, not a black/blank surface. VM powered off.
+- Focused tests: camera 12 passed; identity sessions 32 passed; Windows launcher
+  11 passed/3 platform skips; Linux launcher 3 passed/11 platform skips.
+  Broad Python run: 615 tests, two pre-existing failures and nine skips. Both
+  failures (`test_skills` builder tools and `test_terminal_theme` launcher-count
+  expectations) reproduce in a clean worktree of `main` at `f43c9f1`.
+- No camera frames were captured or retained. Physical Brio, permission/busy/
+  wrong-node/reconnect matrix, interactive PIN fallback, and protected-session
+  compositor behavior remain unverified. Recognition stays disabled.
 
 To deliberately return the dedicated camera to Windows later, detach and unbind
 using the current bus ID; unbind requires Administrator. This is not the normal

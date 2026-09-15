@@ -25,6 +25,14 @@ the named Brio gate. Diagnostic implementation can proceed; stage 1 cannot be
 closed until the Brio is connected and the real guest measurements succeed.
 Physical unplug/replug and consented cohort evaluation require operator input.
 
+Stage 1 implementation is in draft PR #133: bounded guest diagnostics, metadata
+validation, temporary USB ACL restoration, side-effect-free dry runs, and the
+optional-image editor dependency repair. The identity image builds locally and
+passes camera-free headless runtime/desktop checks. See `docs/qa/brio-camera.md`
+for the artifact hash and test results. Windowed WSLg is currently unavailable
+(COPY MODE). Stage 1 remains open; stages 2–5 have not started because the named
+physical capture gate is still unmet.
+
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
 remain unverified. Retain only aggregate camera evidence, never media or serials.
