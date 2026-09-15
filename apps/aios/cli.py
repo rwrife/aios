@@ -83,9 +83,13 @@ def main():
             from .local_models import list_models
             print(json.dumps(list_models(), indent=2))
         elif args.command == "serve":
+            from .cpu_features import ensure_supported
             config = load_config()
             if not config["model_path"]:
                 raise ValueError("Import a GGUF model with aios-llm configure --mode local --model-path PATH first.")
+            # The bundled llama-server would die with SIGILL below the build's
+            # instruction-set floor; refuse with an explanation instead.
+            ensure_supported()
             os.execvp("llama-server", ["llama-server", "--model", config["model_path"], "--alias", "local", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja", "--chat-template-kwargs", '{"enable_thinking":false}'])
         elif args.command in ("status", "models"):
             if load_config()['mode'] == 'chatgpt':

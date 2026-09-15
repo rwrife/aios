@@ -4,20 +4,20 @@ import os
 import re
 import subprocess
 
-from . import core, machine_clock, session_client
+from . import core, machine_clock, regulatory, session_client
 
 
 TOOL = {
     "type": "function",
     "function": {
         "name": "os_settings",
-        "description": "Read/change OS volume, mute, theme, reduced motion and guest machine date_time; open settings or request native sign-in. Read date_time with action read and setting date_time; set requires an ISO date-time with explicit offset (2000-2099). Manual clock changes require stopped time-sync daemons; results report hardware-clock persistence. Read first; authenticate opens trusted UI, never accepts credentials. Check authentication_status afterwards.",
+        "description": "Read/change OS volume, mute, theme, reduced motion, guest machine date_time and Wi-Fi regulatory country; open settings or request native sign-in. Read date_time with action read and setting date_time; set requires an ISO date-time with explicit offset (2000-2099). Manual clock changes require stopped time-sync daemons; results report hardware-clock persistence. Read wifi_country with action read and setting wifi_country; set takes a two-letter ISO 3166-1 alpha-2 code (or 00 for the world domain) and reports readback plus whether it was saved for the next boot. Read first; authenticate opens trusted UI, never accepts credentials. Check authentication_status afterwards.",
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["read", "set", "open", "authenticate", "authentication_status"]},
-                "setting": {"type": "string", "enum": ["volume", "muted", "theme_color", "reduced_motion", "date_time"]},
-                "value": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 100}, {"type": "boolean"}, {"type": "string", "enum": list(core.THEME_COLORS)}, {"type": "string", "maxLength": 25, "pattern": "^" + machine_clock.DATETIME_PATTERN + "$"}]},
+                "setting": {"type": "string", "enum": ["volume", "muted", "theme_color", "reduced_motion", "date_time", "wifi_country"]},
+                "value": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 100}, {"type": "boolean"}, {"type": "string", "enum": list(core.THEME_COLORS)}, {"type": "string", "maxLength": 25, "pattern": "^" + machine_clock.DATETIME_PATTERN + "$"}, {"type": "string", "maxLength": 2, "pattern": "^(" + regulatory.COUNTRY_PATTERN + "|00)$"}]},
                 "section": {"type": "string", "enum": ["sound", "display", "network", "date_time"]},
             },
             "required": ["action"],
@@ -63,6 +63,8 @@ def _read():
 def act(arguments):
     if arguments == {"action": "read", "setting": "date_time"}:
         return machine_clock.request_clock({"action": "read"})
+    if arguments == {"action": "read", "setting": "wifi_country"}:
+        return regulatory.request_domain({"action": "read"})
     action = arguments.get("action")
     fields = {"read": {"action"}, "set": {"action", "setting", "value"}, "open": {"action", "section"}, "authenticate": {"action"}, "authentication_status": {"action"}}
     if action not in fields or set(arguments) != fields[action]:
@@ -79,6 +81,8 @@ def act(arguments):
     setting, value = arguments["setting"], arguments["value"]
     if setting == "date_time":
         return machine_clock.request_clock({"action": "set", "value": value})
+    elif setting == "wifi_country":
+        return regulatory.request_domain({"action": "set", "value": value})
     elif setting == "volume" and type(value) is int and 0 <= value <= 100:
         _audio("set-sink-volume", "@DEFAULT_SINK@", str(value) + "%")
     elif setting == "muted" and type(value) is bool:

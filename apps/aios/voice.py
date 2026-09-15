@@ -10,6 +10,7 @@ import urllib.request
 import uuid
 from functools import partial
 from .core import load_config, validate_url, NoRedirect, data_dir, download_model, save_config
+from .cpu_features import ensure_supported
 
 SPEECH_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin"
 SPEECH_SHA256 = "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f"
@@ -53,6 +54,8 @@ def voice_request(route, data, content_type):
 
 
 def setup_local_voice(progress=lambda n: None):
+    # Do not download a speech model the bundled whisper-cli cannot execute.
+    ensure_supported()
     path = data_dir() / "models" / "whisper-tiny.en.bin"
     if not path.exists():
         download_model(SPEECH_URL, SPEECH_SHA256, path, progress, suffix=".bin")
@@ -69,6 +72,8 @@ def transcribe(path):
         model = Path(config["speech_model_path"])
         if not config["speech_model_path"] or not model.is_file():
             raise ValueError("Download or select a local speech model in Voice settings.")
+        # whisper-cli shares the bundled build's instruction-set floor.
+        ensure_supported()
         with tempfile.TemporaryDirectory(prefix="aios-stt-") as directory:
             output = str(Path(directory) / "transcript")
             local_command(["whisper-cli", "-m", str(model), "-f", str(path), "-l", "en", "-otxt", "-of", output])

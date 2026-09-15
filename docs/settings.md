@@ -68,10 +68,21 @@ individual applications.
   attachments remain future work.
 - **Network & Wi-Fi:** opens NetworkManager's nmtui. Activate a connection joins
   Wi-Fi or selects Ethernet; Edit a connection configures addresses and DNS.
-  NetworkManager replaces dhcpcd as the default interface manager. Its internal
-  DHCP client manages Ethernet, and wpa_supplicant provides Wi-Fi. The ordinary
+  NetworkManager replaces dhcpcd as the default interface manager and is the
+  only service that owns a Wi-Fi interface: its internal DHCP client manages
+  Ethernet, and it starts wpa_supplicant itself over the system bus for Wi-Fi.
+  Alpine's standalone wpa_supplicant service is deliberately not enabled, so a
+  second owner cannot claim the same interface. The ordinary
   aios user belongs to plugdev; Alpine's active-session policy allows editing
-  connections without giving the desktop root privileges.
+  connections without giving the desktop root privileges. Saved connections and
+  passwords persist on an installed system; a live session keeps them on its
+  tmpfs root only, so Wi-Fi credentials must be re-entered after every live
+  boot. An agent can read and set the Wi-Fi regulatory country through the
+  `wifi_country` operation described in
+  [agentic tools](agentic-tools.md); it applies immediately and is stored for
+  the next boot only on an installed system. Use
+  `aios-hardware-report --human` for a sanitized explanation when Wi-Fi does
+  not connect; see [recovery and diagnostics](hardware-recovery.md).
 - **Display:** opens ARandR for resolution, orientation and monitor layout.
   Apply changes for this session. Save a desired layout as
   ~/.screenlayout/default.sh to restore it at login. An unsuccessful saved

@@ -253,6 +253,40 @@ Owner role: desktop/network maintainer. Depends on phase 2.
 Exit: live USB reaches a usable desktop and Wi-Fi setup on representative machines
 from all requested vendors, with useful recovery and diagnostic paths.
 
+Implementation status (stage 3, issue #100): the software-addressable part of
+this phase is implemented; the exit criterion is **not** met, because it
+requires physical machines. See
+[docs/qa/hardware-predictable-startup.md](../qa/hardware-predictable-startup.md)
+for the full record and
+[docs/hardware-recovery.md](../hardware-recovery.md) for the operator runbook.
+
+In short: NetworkManager is now the only service that owns a Wi-Fi interface --
+Alpine's standalone `wpa_supplicant` OpenRC service was removed from the
+default runlevel on artifact evidence (NetworkManager's configured
+`wifi.backend`, the supplicant package's D-Bus activation service, and the init
+script's independent `-i<interface>` claim plus its hard failure on radio-less
+machines), while both supplicant packages stay installed for the backend and
+for manual recovery. `distro/alpine/overlay/usr/local/bin/aios-hardware-report`
+(`apps/aios/hardware_diagnostics.py`) classifies no interface, missing module,
+missing firmware, rfkill hard/soft block, disconnected, authentication failure,
+DHCP failure, DNS failure and connected, plus accelerated/degraded-software/
+unavailable graphics with the compositor and recovery mode, from fixed reads
+and a three-program allowlist, emitting bounded enums and counts with no SSID,
+MAC, IP, hostname, serial, credential, raw log or device string. Both
+bootloader generators now emit explicit `live` (default), `install` and
+`recovery` entries; recovery adds `aios.recovery nomodeset`, keeps serial and
+VGA console arguments, and makes `aios-session` force a software/XRender
+desktop while recording its renderer selection for the report. A shared
+`apps/aios/cpu_features.py` preflight stops the bundled AVX2-era llama/whisper
+binaries from reaching SIGILL and returns a structured limitation instead,
+leaving the desktop and remote providers working; no baseline inference build
+is claimed. `os_settings` gained a fixed `wifi_country` read/set operation with
+kernel readback and explicit live-versus-installed persistence.
+
+No physical Wi-Fi, GPU, suspend/resume, recovery-boot or pre-AVX2 machine test
+has been performed, and no ISO was built for this change; the remaining gates
+are listed in the stage-3 QA record. Every coverage entry stays `untested`.
+
 ### 4. Make installation and updates preserve support
 
 Owner role: installer/release maintainer. Depends on phases 2 and 3.

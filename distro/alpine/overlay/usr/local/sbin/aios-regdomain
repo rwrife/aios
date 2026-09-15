@@ -1,0 +1,8 @@
+#!/usr/bin/python3 -I
+import sys
+
+# Never import privileged code from the caller's working directory or PYTHONPATH.
+sys.path.insert(0, "/usr/local/share/aios")
+from aios.regulatory_service import main
+
+sys.exit(main())

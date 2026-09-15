@@ -4,32 +4,100 @@ set -eu
 # Minimal visual baseline
 xsetroot -solid '#0d1117'
 
-mkdir -p "$HOME/.local/state/aios"
+state_dir="$HOME/.local/state/aios"
+mkdir -p "$state_dir"
+# The renderer record is persistent state written before the compositor and the
+# shell exist. Remove it at the start of every session attempt so a previous
+# boot's record, or a previous startx run's, can never be read as this
+# session's outcome. Diagnostics additionally reject a foreign boot id.
+renderer_state="$state_dir/renderer.json"
+rm -f "$renderer_state" "$renderer_state.tmp"
+boot_id_path="${AIOS_BOOT_ID_PATH:-/proc/sys/kernel/random/boot_id}"
+boot_id=""
+if [ -r "$boot_id_path" ]; then
+    boot_id="$(cut -c1-64 "$boot_id_path" | tr -cd 'a-f0-9-')"
+fi
 # ARandR saves a user-owned layout script here. A disconnected display must
 # not prevent the desktop from starting.
 if [ -f "$HOME/.screenlayout/default.sh" ]; then
-    sh "$HOME/.screenlayout/default.sh" >>"$HOME/.local/state/aios/display.log" 2>&1 || true
+    sh "$HOME/.screenlayout/default.sh" >>"$state_dir/display.log" 2>&1 || true
 fi
 openbox &
 wm=$!
 # Software GLX can cache a window's initial (black) pixmap indefinitely.
 # Probe the actual renderer rather than assuming that a virtual GPU is accelerated.
-graphics_log="$HOME/.local/state/aios/graphics.log"
+graphics_log="$state_dir/graphics.log"
+cmdline="${AIOS_CMDLINE_PATH:-/proc/cmdline}"
+recovery=no
+if [ -r "$cmdline" ] && grep -qw aios.recovery "$cmdline"; then
+    recovery=yes
+fi
 backend=xrender
-if LC_ALL=C timeout 5 glxinfo -B >"$graphics_log" 2>&1; then
-    if grep -q 'OpenGL renderer string:' "$graphics_log" &&
-       ! grep -Eiq 'Accelerated: no|OpenGL renderer string:.*(llvmpipe|softpipe|swrast|software rasterizer)' "$graphics_log"; then
-        backend=glx
+renderer=unavailable
+# Sanitized renderer/recovery selection and startup progress for
+# aios-hardware-report. Only fixed enums and this boot's identifier are
+# recorded; the raw probe output stays in graphics.log, which is never copied
+# into a diagnostics report. status is starting/ready/failed and phase is
+# selected/compositor_ready/shell_ready/compositor_failed/shell_failed, so a
+# renderer selection is never mistaken for a working desktop.
+record_state() {
+    printf '{"version":2,"boot_id":"%s","status":"%s","phase":"%s","backend":"%s","renderer":"%s","accelerated":%s,"recovery":%s}\n' \
+        "$boot_id" "$1" "$2" "$backend" "$renderer" \
+        "$(if [ "$renderer" = accelerated ]; then printf true; else printf false; fi)" \
+        "$(if [ "$recovery" = yes ]; then printf true; else printf false; fi)" \
+        >"$renderer_state.tmp"
+    mv "$renderer_state.tmp" "$renderer_state"
+}
+# Bounded startup check: a process still running a moment after it started did
+# not fail on startup. One short wait, no polling loop, no unbounded wait.
+started() {
+    sleep "${AIOS_STARTUP_CHECK_DELAY:-1}"
+    kill -0 "$1" 2>/dev/null || return 1
+    # An exited background child can remain as a zombie until `wait`; kill -0
+    # still succeeds for it. Treat that as a startup failure.
+    if [ -r "/proc/$1/stat" ]; then
+        case "$(cat "/proc/$1/stat" 2>/dev/null || true)" in
+            *") Z "*) return 1 ;;
+        esac
+    fi
+    return 0
+}
+if [ "$recovery" = yes ]; then
+    # Recovery boots with nomodeset, so a driver probe is exactly what must not
+    # be trusted here. Force Mesa's software rasterizer and the XRender
+    # compositor to reach a usable desktop instead of a black screen.
+    export LIBGL_ALWAYS_SOFTWARE=1
+    renderer=software
+    printf 'AIOS recovery mode: software rendering forced, renderer probe skipped\n' >"$graphics_log"
+elif LC_ALL=C timeout 5 glxinfo -B >"$graphics_log" 2>&1; then
+    if grep -q 'OpenGL renderer string:' "$graphics_log"; then
+        if grep -Eiq 'Accelerated: no|OpenGL renderer string:.*(llvmpipe|softpipe|swrast|software rasterizer)' "$graphics_log"; then
+            renderer=software
+        else
+            renderer=accelerated
+            backend=glx
+        fi
     fi
 fi
-printf 'AIOS compositor: %s (renderer diagnostics: %s)\n' "$backend" "$graphics_log" >>"$HOME/.local/state/aios/compositor.log"
+record_state starting selected
+printf 'AIOS compositor: %s (renderer: %s, recovery: %s, diagnostics: %s)\n' \
+    "$backend" "$renderer" "$recovery" "$graphics_log" >>"$state_dir/compositor.log"
 if [ "$backend" = xrender ]; then
-    picom --config /etc/xdg/picom.conf --backend xrender --no-vsync >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+    picom --config /etc/xdg/picom.conf --backend xrender --no-vsync >>"$state_dir/compositor.log" 2>&1 &
 else
-    picom --config /etc/xdg/picom.conf >>"$HOME/.local/state/aios/compositor.log" 2>&1 &
+    picom --config /etc/xdg/picom.conf >>"$state_dir/compositor.log" 2>&1 &
 fi
 compositor=$!
 trap 'kill "$compositor" "$wm" 2>/dev/null || true' EXIT INT TERM
+compositor_ready=no
+if started "$compositor"; then
+    compositor_ready=yes
+    record_state starting compositor_ready
+else
+    record_state failed compositor_failed
+    printf 'AIOS compositor did not stay running; the desktop continues without it\n' \
+        >>"$state_dir/compositor.log"
+fi
 # Mesa provides a software OpenGL fallback in virtual machines. Keep Qt Quick on
 # its RHI renderer because the software scenegraph cannot display video frames.
 # GStreamer avoids the Qt FFmpeg startup crash on the live desktop while
@@ -41,8 +109,18 @@ export QT_MEDIA_BACKEND="${QT_MEDIA_BACKEND:-gstreamer}"
 export QT_FFMPEG_DECODING_HW_DEVICE_TYPES="${QT_FFMPEG_DECODING_HW_DEVICE_TYPES:-,}"
 export QT_FFMPEG_ENCODING_HW_DEVICE_TYPES="${QT_FFMPEG_ENCODING_HW_DEVICE_TYPES:-,}"
 export QT_DISABLE_HW_TEXTURES_CONVERSION="${QT_DISABLE_HW_TEXTURES_CONVERSION:-1}"
-pulseaudio --start --exit-idle-time=-1 >>"$HOME/.local/state/aios/audio.log" 2>&1 || true
-aios-shell >>"$HOME/.local/state/aios/session.log" 2>&1 || {
-  aios-terminal -title "AIOS Recovery" -e sh -c 'printf "Desktop failed. Logs: ~/.local/state/aios/session.log\n"; exec bash'
-}
+pulseaudio --start --exit-idle-time=-1 >>"$state_dir/audio.log" 2>&1 || true
+# The shell runs in the background so that its survival can be observed before
+# the session records a working desktop, and its failure recorded afterwards.
+aios-shell >>"$state_dir/session.log" 2>&1 &
+shell_pid=$!
+if started "$shell_pid"; then
+    if [ "$compositor_ready" = yes ]; then
+        record_state ready shell_ready
+    fi
+fi
+if ! wait "$shell_pid"; then
+  record_state failed shell_failed
+  aios-terminal -title "AIOS Recovery" -e sh -c 'printf "The AIOS desktop failed to start.\n\nRun aios-hardware-report --human for a sanitized network/graphics report.\nSession log: ~/.local/state/aios/session.log\nRenderer selection: ~/.local/state/aios/renderer.json\nReboot and choose the recovery boot entry for a conservative graphics path.\n"; exec bash'
+fi
 wait "$wm"
