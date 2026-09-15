@@ -20,8 +20,10 @@ that embedded closure, which is what makes "this came from the ISO" an
 assertion rather than a claim.
 """
 import argparse
+import gzip
 import hashlib
 import json
+import lzma
 import os
 from pathlib import Path
 import sys
@@ -48,6 +50,16 @@ RUNLEVELS = "etc/runlevels"
 REPORT_PATH = "var/log/aios-install-verification.json"
 
 MODULE_SUFFIXES = (".ko", ".ko.gz", ".ko.xz", ".ko.zst")
+# The live modloop ships uncompressed modules while Alpine's linux-lts package
+# ships gzip-compressed ones, so the two sides are only comparable by their
+# decompressed payload. A container the standard library cannot open yields no
+# payload identity at all: hashing its compressed bytes would call an identical
+# payload different, and an altered payload equal, depending on which side was
+# compressed.
+MODULE_DECOMPRESSORS = {".gz": gzip.open, ".xz": lzma.open}
+COMPRESSION_SUFFIXES = (".gz", ".xz", ".zst")
+UNSUPPORTED_COMPRESSION = "compression_not_supported"
+UNREADABLE_MODULE = "unreadable"
 MODULE_INDEX_FILES = ("modules.dep", "modules.alias", "modules.builtin", "modules.symbols")
 DIGEST_CHUNK = 1 << 20
 # apk world atoms may carry a version constraint or a repository tag.
@@ -191,17 +203,55 @@ def module_releases(root):
     return sorted(entry.name for entry in modules.iterdir() if entry.is_dir())
 
 
+def _split_compression(relative):
+    """`(logical path, compression suffix)` for one module path."""
+    for suffix in COMPRESSION_SUFFIXES:
+        if relative.endswith(suffix):
+            return relative[:-len(suffix)], suffix
+    return relative, ""
+
+
+def _payload_digest(path, suffix):
+    """`(sha256 of the decompressed module, None)` or `(None, reason)`."""
+    if not suffix:
+        return _digest_file(path), None
+    opener = MODULE_DECOMPRESSORS.get(suffix)
+    if opener is None:
+        return None, UNSUPPORTED_COMPRESSION
+    digest = hashlib.sha256()
+    try:
+        with opener(str(path), "rb") as handle:
+            while True:
+                chunk = handle.read(DIGEST_CHUNK)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except (OSError, EOFError, lzma.LZMAError):
+        return None, UNREADABLE_MODULE
+    return digest.hexdigest(), None
+
+
 def module_inventory(directory):
-    """`{relative path: sha256}` for every kernel module under a release."""
+    """`({logical relative path: payload sha256}, {logical path: reason})`.
+
+    The second mapping names every module whose payload identity could not be
+    established. It is never silently folded into the first one: a module with
+    no identity is missing evidence, not a match.
+    """
     directory = Path(directory)
-    inventory = {}
+    inventory, unavailable = {}, {}
     for parent, _, filenames in os.walk(str(directory)):
         for name in sorted(filenames):
             if not name.endswith(MODULE_SUFFIXES):
                 continue
             path = Path(parent) / name
-            inventory[path.relative_to(directory).as_posix()] = _digest_file(path)
-    return inventory
+            relative, suffix = _split_compression(path.relative_to(directory).as_posix())
+            digest, reason = _payload_digest(path, suffix)
+            if reason is None:
+                inventory[relative] = digest
+            else:
+                unavailable[relative] = reason
+    return inventory, unavailable
 
 
 # --- recovery boot entry ---------------------------------------------------
@@ -469,22 +519,34 @@ def _check_kernel_and_modules(target, live, results):
             "release_matches_live": False,
         }
     else:
-        # Exact content comparison: same relative paths, same bytes. A count
-        # would accept a truncated or substituted module tree.
-        target_inventory = module_inventory(target / MODULES_ROOT / release)
-        live_inventory = module_inventory(live / MODULES_ROOT / release)
+        # Exact content comparison: same logical paths, same decompressed
+        # bytes. A count would accept a truncated or substituted module tree.
+        target_inventory, target_unavailable = module_inventory(target / MODULES_ROOT / release)
+        live_inventory, live_unavailable = module_inventory(live / MODULES_ROOT / release)
         missing = sorted(set(live_inventory) - set(target_inventory))
         unexpected = sorted(set(target_inventory) - set(live_inventory))
         altered = sorted(name for name in set(live_inventory) & set(target_inventory)
                          if live_inventory[name] != target_inventory[name])
+        unavailable = dict(live_unavailable)
+        unavailable.update(target_unavailable)
+        unreadable = sorted(name for name, reason in unavailable.items()
+                            if reason == UNREADABLE_MODULE)
+        unsupported = sorted(name for name, reason in unavailable.items()
+                             if reason == UNSUPPORTED_COMPRESSION)
+        if missing or unexpected or altered or unreadable or not target_inventory:
+            status = FAIL
+        else:
+            status = INCOMPLETE if unsupported else PASS
         results["kernel_modules"] = {
-            "status": PASS if target_inventory and not (missing or unexpected or altered) else FAIL,
+            "status": status,
             "release_matches_live": True,
             "target_modules": len(target_inventory),
             "live_modules": len(live_inventory),
             "missing": _bounded(missing),
             "unexpected": _bounded(unexpected),
             "altered": _bounded(altered),
+            "unreadable": _bounded(unreadable),
+            "compression_not_supported": _bounded(unsupported),
         }
     _check_module_dependency_data(target, release, results)
     return release
@@ -594,29 +656,52 @@ def _check_bootloader_artifacts(target, firmware, results):
     }
 
 
+def _service_reason(target, level, service):
+    """Why one runlevel entry cannot start, or `None` when it can.
+
+    Both symlink forms OpenRC and the apkovl produce are resolved: the
+    target-root absolute `/etc/init.d/<service>` and a relative
+    `../../init.d/<service>`.
+    """
+    entry = target / RUNLEVELS / level / service
+    if not entry.is_symlink():
+        return "not_a_symlink" if entry.exists() else "not_present"
+    script = target / INIT_SCRIPTS / service
+    link = os.readlink(str(entry))
+    if os.path.isabs(link):
+        resolved = target / link.lstrip("/")
+    else:
+        resolved = Path(os.path.normpath(str(entry.parent / link)))
+    if os.path.normpath(str(resolved)) != os.path.normpath(str(script)):
+        return "wrong_target"
+    if not script.is_file():
+        return "script_missing"
+    if not os.access(str(script), os.X_OK):
+        return "not_executable"
+    return None
+
+
 def _check_services(target, results):
     """Runlevel entries must be symlinks onto executable init scripts.
 
     A plain file in a runlevel directory, or a symlink whose init script the
     installation never copied, means the service will not start on the target.
-    `modloop` is the mirror image: it belongs to the live medium and must be
-    gone, which is what setup-disk's sys install does.
+    Each entry that cannot start is reported with the reason it cannot, so a
+    real installation says whether the script is absent, not executable or
+    pointed somewhere else. `modloop` is the mirror image: it belongs to the
+    live medium and must be gone, which is what setup-disk's sys install does.
     """
     broken, missing = [], []
     for level, services in sorted(REQUIRED_SERVICES.items()):
         for service in services:
-            entry = target / RUNLEVELS / level / service
-            if not entry.is_symlink():
-                missing.append(f"{level}/{service}")
+            reason = _service_reason(target, level, service)
+            if reason is None:
                 continue
-            script = target / INIT_SCRIPTS / service
-            link = os.readlink(str(entry))
-            if os.path.isabs(link):
-                resolved = target / link.lstrip("/")
+            detail = f"{level}/{service}:{reason}"
+            if reason in ("not_present", "not_a_symlink"):
+                missing.append(detail)
             else:
-                resolved = Path(os.path.normpath(str(entry.parent / link)))
-            if resolved != script or not script.is_file() or not os.access(str(script), os.X_OK):
-                broken.append(f"{level}/{service}")
+                broken.append(detail)
     live_only = []
     runlevels = target / RUNLEVELS
     if runlevels.is_dir():

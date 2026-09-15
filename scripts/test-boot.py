@@ -191,7 +191,9 @@ def installer_script(target):
             + " | /usr/local/sbin/aios-install; } > /tmp/install.log 2>&1; "
             + "tail -n 20 /tmp/install.log; "
             + "{ grep -q 'Installation complete' /tmp/install.log && "
-            + success_marker("INSTALLED") + "; } || printf '\\nAIOS_QA_FAILED\\n'\n")
+            + success_marker("INSTALLED") + "; } || "
+            + "{ printf '\\ninstall_log='; cat /tmp/install.log; "
+            + "printf '\\nAIOS_QA_FAILED\\n'; }\n")
 
 
 def run_guest(command, *, directory, timeout, steps, success, transcript,

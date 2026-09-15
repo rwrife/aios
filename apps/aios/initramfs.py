@@ -19,7 +19,15 @@ from pathlib import Path
 MKINITFS_CONFIG = "etc/mkinitfs/mkinitfs.conf"
 FEATURES_DIRECTORY = "etc/mkinitfs/features.d"
 MODULES_ROOT = "lib/modules"
+# Alpine's merged-/usr layout means the same module tree is reachable as
+# `lib/modules` and `usr/lib/modules`, and mkinitfs writes whichever one the
+# kernel package used. Both are the same module to this readback.
+MODULE_PREFIXES = (MODULES_ROOT, f"usr/{MODULES_ROOT}")
 MODULE_SUFFIX = ".ko"
+# A module is the same module whether or not the kernel package compressed it.
+# The suffix is stripped on both sides of the comparison so an installed
+# `ext4.ko.gz` satisfies a configuration that selected `ext4.ko`.
+COMPRESSION_SUFFIXES = (".gz", ".xz", ".zst")
 CPIO_MAGIC = (b"070701", b"070702")
 CPIO_HEADER = 110
 CPIO_TRAILER = "TRAILER!!!"
@@ -62,6 +70,14 @@ def read_features(config_path):
     return features
 
 
+def logical_module(relative):
+    """A module path without its outer compression suffix."""
+    for suffix in COMPRESSION_SUFFIXES:
+        if relative.endswith(suffix):
+            return relative[:-len(suffix)]
+    return relative
+
+
 def _expand(directory, pattern):
     """Files a mkinitfs module glob selects, relative to the module directory.
 
@@ -76,16 +92,17 @@ def _expand(directory, pattern):
                     selected.append(Path(parent) / name)
         elif match.exists():
             selected.append(match)
-    return [path.relative_to(directory).as_posix() for path in selected]
+    return [logical_module(path.relative_to(directory).as_posix()) for path in selected]
 
 
 def expected_modules(root, release, features):
     """`(modules, features_without_definition)` for one target root.
 
-    `modules` are paths relative to `lib/modules/<release>`: every module the
-    configured features select that really exists on the target. Their
-    dependencies are additionally pulled in by mkinitfs, so the image is a
-    superset of this set and never a subset of it.
+    `modules` are paths relative to `lib/modules/<release>`, with the
+    compression suffix stripped: every module the configured features select
+    that really exists on the target. Their dependencies are additionally
+    pulled in by mkinitfs, so the image is a superset of this set and never a
+    subset of it.
     """
     root = Path(root)
     directory = root / MODULES_ROOT / release
@@ -162,10 +179,19 @@ def entry_names(path):
 
 
 def module_names(entries, release):
-    """`{relative module path}` of the modules an initramfs carries."""
-    prefix = f"{MODULES_ROOT}/{release}/"
-    return {name[len(prefix):] for name in entries
-            if name.startswith(prefix) and MODULE_SUFFIX in name}
+    """`{relative module path}` of the modules an initramfs carries.
+
+    Names are reduced to the same logical form `expected_modules` produces:
+    either module root, without the compression suffix.
+    """
+    prefixes = tuple(f"{root}/{release}/" for root in MODULE_PREFIXES)
+    modules = set()
+    for name in entries:
+        prefix = next((item for item in prefixes if name.startswith(item)), None)
+        if prefix is None or MODULE_SUFFIX not in name:
+            continue
+        modules.add(logical_module(name[len(prefix):]))
+    return modules
 
 
 def inspect(root, release, initramfs_path):

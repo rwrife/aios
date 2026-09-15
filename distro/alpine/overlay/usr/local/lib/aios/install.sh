@@ -240,6 +240,84 @@ aios_prepare_boot_entries() {
         || { echo 'Could not add the recovery boot entry to the installed GRUB configuration.'; return 1; }
 }
 
+# grub-mkconfig runs grub-probe, which reads the running kernel's device and
+# mount tables. Without these three filesystems present inside the target it
+# probes the live tmpfs root instead of the installed one; that is exactly what
+# makes setup-disk's own grub APK trigger fail during the installation. The set
+# is fixed: /run is not needed because os-prober is not installed and nothing
+# in the generation path reads it.
+aios_mount_chroot_filesystems() {
+    mountdir=$1
+    mkdir -p "$mountdir/dev" "$mountdir/proc" "$mountdir/sys" || return 1
+    mount -o bind /dev "$mountdir/dev" || return 1
+    mount -t proc proc "$mountdir/proc" || return 1
+    mount -o bind /sys "$mountdir/sys" || return 1
+}
+
+# Unmounts whatever is mounted, in reverse order. Safe to call when nothing was
+# mounted and after a partial mount, which is why both the generation helper
+# and the installer's cleanup trap call it unconditionally. A bind mount left
+# behind would keep the target root busy and defeat the trap's own umount.
+aios_unmount_chroot_filesystems() {
+    mountdir=$1
+    for relative in sys proc dev; do
+        if mountpoint -q "$mountdir/$relative"; then
+            umount "$mountdir/$relative" || umount -l "$mountdir/$relative" || true
+        fi
+    done
+}
+
+# The authoritative GRUB configuration for the installed system. setup-disk
+# writes /etc/default/grub and leaves the configuration to the grub APK
+# trigger, which runs against the live root and fails there; setup-disk still
+# returns success, so this explicit generation is what produces a grub.cfg that
+# names the target's own root. It runs after grub-install and after the
+# initramfs is regenerated, and before the recovery entry is derived from it.
+aios_generate_grub_configuration() {
+    mountdir=$1
+    aios_mount_chroot_filesystems "$mountdir" || {
+        aios_unmount_chroot_filesystems "$mountdir"
+        echo 'Could not prepare the installed root for GRUB configuration.'
+        return 1
+    }
+    if chroot "$mountdir" grub-mkconfig -o /boot/grub/grub.cfg; then
+        generated=0
+    else
+        generated=1
+        echo 'Could not generate the installed GRUB configuration.'
+    fi
+    aios_unmount_chroot_filesystems "$mountdir"
+    return $generated
+}
+
+# Init scripts AIOS owns. They reach the live root from the apkovl rather than
+# from an apk package, so setup-disk's own copy of /etc is the only thing that
+# would carry them, and nothing verifies that it did. Copying them explicitly,
+# with their mode, and re-creating their runlevel symlinks, is what makes the
+# installed system's service set deterministic. Only these fixed names are
+# written: Alpine-owned init scripts are never touched.
+AIOS_OWNED_SERVICES='aios-init aios-sessiond'
+AIOS_OWNED_DEFAULT_SERVICES='aios-init'
+
+aios_copy_owned_services() {
+    mountdir=$1
+    live=${2:-}
+    mkdir -p "$mountdir/etc/init.d" || return 1
+    for service in $AIOS_OWNED_SERVICES; do
+        [ -f "$live/etc/init.d/$service" ] || continue
+        cp -a "$live/etc/init.d/$service" "$mountdir/etc/init.d/$service" || return 1
+        chmod 755 "$mountdir/etc/init.d/$service" || return 1
+    done
+    for service in $AIOS_OWNED_DEFAULT_SERVICES; do
+        [ -f "$mountdir/etc/init.d/$service" ] || {
+            echo "The installed root carries no /etc/init.d/$service."
+            return 1
+        }
+        mkdir -p "$mountdir/etc/runlevels/default" || return 1
+        ln -sfn "/etc/init.d/$service" "$mountdir/etc/runlevels/default/$service" || return 1
+    done
+}
+
 # Fail-closed readback of the mounted target. Its result is what decides
 # whether the installation is reported as successful. The verifier stores its
 # own JSON report inside the target; only a failure is echoed to the console.
@@ -255,7 +333,9 @@ aios_verify_target() {
         return 0
     fi
     echo "Verification report: /var/log/aios-install-verification.json on the target."
-    tail -n 40 "$log" 2>/dev/null || true
+    cat "$mountdir/var/log/aios-install-verification.json" 2>/dev/null \
+        || tail -n 80 "$log" 2>/dev/null \
+        || true
     return 1
 }
 
@@ -271,8 +351,11 @@ aios_finalize_target() {
     mkdir -p "$mountdir/usr/local" "$mountdir/home" "$mountdir/var/log" || return 1
     cp -a "$live/usr/local/." "$mountdir/usr/local/" || return 1
     cp -a "$live/home/aios" "$mountdir/home/" || return 1
+    aios_copy_owned_services "$mountdir" "$live" \
+        || { echo 'Could not install the AIOS-owned services on the target.'; return 1; }
     printf 'installed\n' > "$mountdir$AIOS_MODE_MARKER" || return 1
     aios_regenerate_boot_artifacts "$mountdir" || return 1
+    aios_generate_grub_configuration "$mountdir" || return 1
     aios_prepare_boot_entries "$mountdir" "$live" || return 1
     sync
     aios_verify_target "$mountdir" "$firmware" "$live" || {

@@ -119,10 +119,40 @@ mkinitfs -b <target> -c <target>/etc/mkinitfs/mkinitfs.conf \
 configured features with the same assignment rule the shell applies, expands
 each feature's `features.d/<feature>.modules` globs against the target's own
 module tree, opens the gzip newc cpio and requires every selected module and
-the `init` to really be inside it. A feature with no definition on the target,
-a missing boot module, an empty expectation or a container this readback cannot
-open all fail or report missing evidence. Timestamps and sizes are not accepted
-as evidence of anything.
+the `init` to really be inside it. Module names are compared in one logical
+form: either merged-`/usr` root (`lib/modules/<release>/…` and
+`usr/lib/modules/<release>/…`) and without the compression suffix, so an
+installed `ext4.ko.gz` satisfies a configuration that selected `ext4.ko`. A
+feature with no definition on the target, a missing boot module, an empty
+expectation or a container this readback cannot open all fail or report missing
+evidence. Timestamps and sizes are not accepted as evidence of anything.
+
+### The installed GRUB configuration
+
+`setup-disk` writes `/etc/default/grub` and leaves the configuration itself to
+the grub package's APK trigger. That trigger runs `grub-probe` against the
+*live* root, where it fails; apk reports the trigger error but still completes,
+and `setup-disk` returns success. The configuration the installed system boots
+from is therefore generated explicitly, by the installer, inside the target:
+
+```
+mount -o bind /dev <target>/dev
+mount -t proc proc <target>/proc
+mount -o bind /sys  <target>/sys
+chroot <target> grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+Those three filesystems are what `grub-probe` needs to resolve the target's own
+root device; `/run` is not mounted because nothing in this path reads it. The
+commands are fixed — no path, device or option comes from the operator. They
+are unmounted again on every path out of the generation step, including a
+partial mount and a failed `grub-mkconfig`, and the installer's cleanup trap
+repeats the unmount before it unmounts the target itself, so an interrupted
+installation cannot leave a bind mount holding the target root open.
+
+Generation runs after `grub-install` and after the initramfs is rebuilt, and
+before the recovery entry is derived from the result, so `boot_entries` reads a
+configuration that names this machine's root.
 
 ### Installed-target verifier
 
@@ -143,12 +173,12 @@ command.
 | `embedded_closure_parity` | an installed version is absent from the medium's embedded closure (incomplete when no boot repository is mounted) |
 | `hardware_files_present` | a file the target's own database says a `world.hardware` package installed is not on the target |
 | `kernel_image` | `/boot/vmlinuz-lts` is missing or empty |
-| `kernel_modules` | the release differs from the live one, or the module inventory differs from live by path or by SHA-256 content — additions, removals and same-size substitutions all fail |
+| `kernel_modules` | the release differs from the live one, or the module inventory differs from live by logical path or by the SHA-256 of the **decompressed** module — additions, removals and same-size substitutions all fail. The live modloop ships `.ko` and `linux-lts` ships `.ko.gz`, so only the payload is comparable; a module in a container the standard library cannot open (zstd) has no payload identity and is reported as missing evidence rather than matched on its compressed bytes |
 | `module_dependency_data` | `modules.dep`, `modules.alias`, `modules.builtin` or `modules.symbols` is missing, `modules.dep` is empty, or it names a module that is not on disk |
 | `initramfs` | missing, empty, without `init`, missing a module its configured features select, or configured with a feature the target cannot define |
 | `boot_entries` | the generated entry does not load `/boot/vmlinuz-lts` with a `root=` and `/boot/initramfs-lts`, the recovery entry is missing or lacks `aios.recovery nomodeset` and a `root=`, or the configuration never sources `custom.cfg` |
 | `bootloader_artifacts` | UEFI: `EFI/BOOT/BOOTX64.EFI` or the `x86_64-efi` platform modules (`normal`, `linux`, `ext2`, `part_gpt`) missing; BIOS: `i386-pc/core.img`, `boot.img` or the same platform modules missing |
-| `required_services` | a required runlevel entry is not a symlink, its init script is missing or not executable, or the live-only `modloop` service is still in a runlevel |
+| `required_services` | a required runlevel entry is not a symlink, its init script is missing or not executable, or the live-only `modloop` service is still in a runlevel. Each entry is reported with the reason it cannot start — `not_present`, `not_a_symlink`, `wrong_target`, `script_missing` or `not_executable` — and both symlink forms (target-root absolute and OpenRC-relative) resolve |
 | `aios_userspace` | `aios-install`, the installer library, the hardware world reference or `/home/aios` is missing |
 
 The result is one bounded JSON report, stored inside the target at the fixed
@@ -159,7 +189,17 @@ no disk path, device name, serial number or user data. Exit codes match
 `scripts/inspect-image.py`: `0` pass, `3` a check failed, `4` required evidence
 was missing. Both non-zero codes withhold installation success, and the
 installer says explicitly that the disk was written but is not confirmed
-bootable.
+bootable. On failure the installer prints the whole bounded report to the
+console, so a disposable-disk run says *which* check failed and with what
+sample rather than only that verification failed.
+
+AIOS's own OpenRC services — `/etc/init.d/aios-init` and
+`/etc/init.d/aios-sessiond` — reach the live root from the apkovl rather than
+from an apk package, so nothing but `setup-disk`'s own copy of `/etc` would
+carry them onto the target. The finalization step copies those two fixed names
+from the live root with their mode and re-creates `aios-init`'s `default`
+runlevel symlink. No other init script is written, so Alpine-owned services
+keep whatever `setup-disk` installed.
 
 ### BIOS and UEFI boot entries
 

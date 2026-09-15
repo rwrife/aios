@@ -40,6 +40,9 @@ cleanup() {
     # including a failed or interrupted setup-disk.
     aios_restore_repositories "$saved_repositories" || true
     rm -f "$saved_repositories"
+    # A bind mount left inside the target would keep its root busy and make the
+    # umount below fail, so the chroot filesystems come off first.
+    aios_unmount_chroot_filesystems "$mountdir" || true
     mountpoint -q "$mountdir/boot/efi" && umount "$mountdir/boot/efi" || true
     mountpoint -q "$mountdir" && umount "$mountdir" || true
     rmdir "$mountdir" 2>/dev/null || true
@@ -67,6 +70,12 @@ fi
 # version comes from Alpine. It resolves packages through the live
 # /etc/apk/repositories, which now names only the ISO's own repository, so the
 # installation is served entirely from the medium.
+#
+# setup-disk leaves the GRUB configuration to the grub package's APK trigger.
+# That trigger runs grub-probe against the *live* root and fails there; apk
+# reports the trigger error but still completes, and setup-disk returns
+# success. The configuration this system boots from is therefore generated
+# explicitly, inside the target, once the packages are in place.
 aios_use_local_repository "$repository" "$saved_repositories"
 BOOTLOADER=grub setup-disk -m sys "$mountdir"
 aios_restore_repositories "$saved_repositories"

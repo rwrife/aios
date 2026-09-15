@@ -11,6 +11,7 @@ import contextlib
 import gzip
 import io
 import json
+import lzma
 import os
 from pathlib import Path
 import subprocess
@@ -43,9 +44,14 @@ VERSIONS["linux-lts"] = "6.18.52-r0"
 REPOSITORIES = ("https://dl-cdn.alpinelinux.org/alpine/v3.23/main",
                 "https://dl-cdn.alpinelinux.org/alpine/v3.23/community")
 MEDIA_POINT = "/media/usb"
-MODULES = ("kernel/fs/ext4/ext4.ko.gz", "kernel/drivers/scsi/sd_mod.ko.gz",
-           "kernel/drivers/net/iwlwifi.ko.gz")
-BOOT_MODULES = ("kernel/fs/ext4/ext4.ko.gz", "kernel/drivers/scsi/sd_mod.ko.gz")
+# Logical module paths. The live modloop ships them uncompressed and Alpine's
+# linux-lts package ships them gzip-compressed, which is the real pairing the
+# verifier has to compare.
+MODULES = ("kernel/fs/ext4/ext4.ko", "kernel/drivers/scsi/sd_mod.ko",
+           "kernel/drivers/net/iwlwifi.ko")
+BOOT_MODULES = ("kernel/fs/ext4/ext4.ko", "kernel/drivers/scsi/sd_mod.ko")
+LIVE_COMPRESSION = ""
+TARGET_COMPRESSION = ".gz"
 FEATURES = "base ext4"
 
 GENERATED_GRUB = """\
@@ -193,17 +199,41 @@ def build_live(root, versions=None, repositories=REPOSITORIES, media=MEDIA_POINT
     return live
 
 
-def build_modules(base, release=RELEASE, modules=MODULES):
+def module_payload(relative):
+    """The payload both sides of a module comparison must carry."""
+    return f"module:{relative}".encode()
+
+
+def write_module(path, payload, compression=""):
+    """One kernel module on disk, in the container that side really uses."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if compression == ".gz":
+        buffer = io.BytesIO()
+        with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as handle:
+            handle.write(payload)
+        path.write_bytes(buffer.getvalue())
+    elif compression == ".xz":
+        path.write_bytes(lzma.compress(payload))
+    else:
+        path.write_bytes(payload)
+    return path
+
+
+def build_modules(base, release=RELEASE, modules=MODULES, compression=LIVE_COMPRESSION):
     directory = Path(base) / "lib" / "modules" / release
     for relative in modules:
-        path = directory / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(f"module:{relative}".encode())
+        write_module(directory / (relative + compression), module_payload(relative), compression)
+    # depmod records the names as they are on disk, compression suffix and all.
     (directory / "modules.dep").write_text(
-        "".join(f"{relative}:\n" for relative in modules))
+        "".join(f"{relative}{compression}:\n" for relative in modules))
     for index in ("modules.alias", "modules.builtin", "modules.symbols"):
         (directory / index).write_text("# generated\n")
     return directory
+
+
+def target_module(target, relative, release=RELEASE):
+    """The on-disk path of one logical module inside a fixture target."""
+    return Path(target) / "lib" / "modules" / release / (relative + TARGET_COMPRESSION)
 
 
 def build_target(root, firmware="bios", release=RELEASE):
@@ -225,7 +255,7 @@ def build_target(root, firmware="bios", release=RELEASE):
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
-    build_modules(target, release=release)
+    build_modules(target, release=release, compression=TARGET_COMPRESSION)
     for name in HARDWARE_ATOMS:
         path = target / "usr" / "bin" / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -257,8 +287,10 @@ def build_target(root, firmware="bios", release=RELEASE):
     return live, target
 
 
-def write_initramfs(target, release=RELEASE, modules=BOOT_MODULES, init=True):
-    entries = [(f"lib/modules/{release}/{relative}", b"module") for relative in modules]
+def write_initramfs(target, release=RELEASE, modules=BOOT_MODULES, init=True,
+                    modules_root="lib", compression=TARGET_COMPRESSION):
+    entries = [(f"{modules_root}/modules/{release}/{relative}{compression}", b"module")
+               for relative in modules]
     if init:
         entries.insert(0, ("init", b"#!/bin/sh\n"))
     path = Path(target) / "boot" / "initramfs-lts"
@@ -557,6 +589,10 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertIn('umount "$mountdir"', self.text)
         self.assertLess(self.index('aios_restore_repositories "$saved_repositories" || true'),
                         self.index('umount "$mountdir/boot/efi"'))
+        # A bind mount left inside the target would keep its root busy.
+        self.assertIn('aios_unmount_chroot_filesystems "$mountdir" || true', self.text)
+        self.assertLess(self.index('aios_unmount_chroot_filesystems "$mountdir" || true'),
+                        self.index('umount "$mountdir/boot/efi"'))
 
     def test_setup_disk_runs_against_the_local_repository_only(self):
         switch = self.index('aios_use_local_repository "$repository" "$saved_repositories"')
@@ -590,7 +626,7 @@ class InstallerScriptTests(unittest.TestCase):
 class FinalizeTargetTests(unittest.TestCase):
     """The post-setup-disk sequence: parity, regeneration and the gate."""
 
-    def finalize(self, failing=(), firmware="bios"):
+    def finalize(self, failing=(), firmware="bios", fail_mount_at="__none__"):
         """Run aios_finalize_target with every external program recorded."""
         workspace = tempfile.TemporaryDirectory(prefix="aios-finalize-")
         self.addCleanup(workspace.cleanup)
@@ -599,10 +635,14 @@ class FinalizeTargetTests(unittest.TestCase):
         for relative, text in (("etc/apk/world", "\n".join(WORLD) + "\n"),
                                ("etc/apk/repositories", "\n".join(REPOSITORIES) + "\n"),
                                ("usr/local/share/aios/world.hardware", "iw\n"),
-                               ("home/aios/.profile", "")):
+                               ("home/aios/.profile", ""),
+                               ("etc/init.d/aios-init", "#!/sbin/openrc-run\n"),
+                               ("etc/init.d/aios-sessiond", "#!/sbin/openrc-run\n")):
             path = live / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
+        for service in ("aios-init", "aios-sessiond"):
+            (live / "etc" / "init.d" / service).chmod(0o755)
         (target / "lib" / "modules" / RELEASE).mkdir(parents=True)
         (target / "boot").mkdir(parents=True)
         (target / "etc" / "apk").mkdir(parents=True)
@@ -612,20 +652,48 @@ class FinalizeTargetTests(unittest.TestCase):
         binaries = work / "bin"
         binaries.mkdir()
         recorder = work / "commands"
-        for name in ("depmod", "mkinitfs", "python3", "mountpoint", "sync", "tail"):
+        # The target root itself is mounted before this sequence runs.
+        mounts = work / "mounts"
+        mounts.write_text(str(target) + "\n")
+        for name in ("depmod", "mkinitfs", "python3", "sync", "tail", "chroot"):
             stub = binaries / name
             stub.write_text(
                 "#!/bin/sh\n"
                 f'printf "%s\\n" "{name} $*" >> "$AIOS_RECORD"\n'
                 f'case " $AIOS_FAILING " in *" {name} "*) exit 1;; esac\nexit 0\n')
             stub.chmod(0o755)
+        # mount/umount/mountpoint share one state file, so the tests can assert
+        # that nothing the sequence mounted is still mounted when it returns.
+        (binaries / "mount").write_text(
+            "#!/bin/sh\n"
+            'printf "%s\\n" "mount $*" >> "$AIOS_RECORD"\n'
+            'case " $AIOS_FAILING " in *" mount "*) exit 1;; esac\n'
+            'for target in "$@"; do :; done\n'
+            'case "$target" in *"$AIOS_FAIL_MOUNT") exit 1;; esac\n'
+            'printf "%s\\n" "$target" >> "$AIOS_MOUNTS"\nexit 0\n')
+        (binaries / "umount").write_text(
+            "#!/bin/sh\n"
+            'printf "%s\\n" "umount $*" >> "$AIOS_RECORD"\n'
+            'case " $AIOS_FAILING " in *" umount "*) exit 1;; esac\n'
+            'for target in "$@"; do :; done\n'
+            'grep -vxF "$target" "$AIOS_MOUNTS" > "$AIOS_MOUNTS.new" || true\n'
+            'mv "$AIOS_MOUNTS.new" "$AIOS_MOUNTS"\nexit 0\n')
+        (binaries / "mountpoint").write_text(
+            "#!/bin/sh\n"
+            'case " $AIOS_FAILING " in *" mountpoint "*) exit 1;; esac\n'
+            'for target in "$@"; do :; done\n'
+            'grep -qxF "$target" "$AIOS_MOUNTS"\n')
+        for name in ("mount", "umount", "mountpoint"):
+            (binaries / name).chmod(0o755)
         result = subprocess.run(
             ["sh", "-c",
              f'. "{LIBRARY}"\naios_finalize_target "$1" "$2" "$3"', "sh",
              str(target), firmware, str(live)],
             capture_output=True, text=True,
             env=dict(os.environ, PATH=f"{binaries}:{os.environ.get('PATH', '')}",
-                     AIOS_RECORD=str(recorder), AIOS_FAILING=" ".join(failing)))
+                     AIOS_RECORD=str(recorder), AIOS_FAILING=" ".join(failing),
+                     AIOS_MOUNTS=str(mounts), AIOS_FAIL_MOUNT=fail_mount_at))
+        self.mounts = mounts
         recorded = recorder.read_text().splitlines() if recorder.exists() else []
         return result, recorded, live, target
 
@@ -652,6 +720,80 @@ class FinalizeTargetTests(unittest.TestCase):
         _, recorded, _, target = self.finalize()
         self.assertIn(f"mkinitfs -b {target} -c {target}/etc/mkinitfs/mkinitfs.conf "
                       f"-o {target}/boot/initramfs-lts {RELEASE}", recorded)
+
+    def test_the_grub_configuration_is_generated_inside_the_target(self):
+        _, recorded, _, target = self.finalize()
+        expected = [f"mount -o bind /dev {target}/dev",
+                    f"mount -t proc proc {target}/proc",
+                    f"mount -o bind /sys {target}/sys",
+                    f"chroot {target} grub-mkconfig -o /boot/grub/grub.cfg",
+                    f"umount {target}/sys",
+                    f"umount {target}/proc",
+                    f"umount {target}/dev"]
+        self.assertEqual([line for line in recorded
+                          if line.startswith(("mount ", "umount ", "chroot "))], expected)
+        # The configuration must exist before the recovery entry is derived
+        # from it, and the initramfs before the configuration names it.
+        generation = recorded.index(expected[3])
+        self.assertLess(next(index for index, line in enumerate(recorded)
+                             if line.startswith("mkinitfs ")), generation)
+        self.assertLess(generation, next(index for index, line in enumerate(recorded)
+                                         if "install_target recovery" in line))
+        self.assertEqual(self.mounts.read_text().splitlines(), [str(target)])
+
+    def test_a_failed_generation_unmounts_everything_it_mounted(self):
+        result, recorded, _, target = self.finalize(failing=("chroot",))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not generate the installed GRUB configuration.", result.stdout)
+        self.assertNotIn("Installation complete", result.stdout)
+        for relative in ("dev", "proc", "sys"):
+            self.assertIn(f"umount {target}/{relative}", recorded)
+        self.assertEqual(self.mounts.read_text().splitlines(), [str(target)])
+
+    def test_a_partial_chroot_mount_is_unwound_before_the_failure_is_reported(self):
+        result, recorded, _, target = self.finalize(fail_mount_at="/sys")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not prepare the installed root for GRUB configuration.",
+                      result.stdout)
+        self.assertEqual([line for line in recorded if line.startswith("umount ")],
+                         [f"umount {target}/proc", f"umount {target}/dev"])
+        self.assertEqual(self.mounts.read_text().splitlines(), [str(target)])
+
+    def test_the_aios_owned_services_are_installed_from_the_live_root(self):
+        _, _, live, target = self.finalize()
+        for service in ("aios-init", "aios-sessiond"):
+            script = target / "etc" / "init.d" / service
+            self.assertEqual(script.read_text(), (live / "etc/init.d" / service).read_text())
+            self.assertTrue(os.access(str(script), os.X_OK), service)
+        entry = target / "etc" / "runlevels" / "default" / "aios-init"
+        self.assertTrue(entry.is_symlink())
+        self.assertEqual(os.readlink(str(entry)), "/etc/init.d/aios-init")
+
+    def test_no_alpine_owned_init_script_is_replaced(self):
+        result, _, live, target = self.finalize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (live / "etc" / "init.d" / "networkmanager").write_text("live version\n")
+        (target / "etc" / "init.d" / "networkmanager").write_text("installed version\n")
+        repeat = subprocess.run(
+            ["sh", "-c", f'. "{LIBRARY}"\naios_copy_owned_services "$1" "$2"', "sh",
+             str(target), str(live)],
+            capture_output=True, text=True)
+        self.assertEqual(repeat.returncode, 0, repeat.stdout)
+        self.assertEqual((target / "etc/init.d/networkmanager").read_text(),
+                         "installed version\n")
+
+    def test_a_live_root_without_the_aios_service_fails_the_installation(self):
+        result, _, live, _ = self.finalize()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (live / "etc" / "init.d" / "aios-init").unlink()
+        empty = Path(tempfile.mkdtemp(prefix="aios-owned-"))
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(empty)], check=False))
+        repeat = subprocess.run(
+            ["sh", "-c", f'. "{LIBRARY}"\naios_copy_owned_services "$1" "$2"', "sh",
+             str(empty), str(live)],
+            capture_output=True, text=True)
+        self.assertNotEqual(repeat.returncode, 0)
+        self.assertIn("no /etc/init.d/aios-init", repeat.stdout)
 
     def test_a_target_without_an_initramfs_configuration_fails(self):
         result, recorded, _, target = self.finalize()
@@ -697,12 +839,22 @@ class FinalizeTargetTests(unittest.TestCase):
         python.chmod(0o755)
         target = work / "target"
         (target / "var" / "log").mkdir(parents=True)
+        report = json.dumps({"kind": install_target.REPORT_KIND, "status": "fail",
+                             "failed": ["apk_world_installed"],
+                             "checks": {"apk_world_installed": {"status": "fail",
+                                                                "missing": {"count": 1,
+                                                                            "sample": ["iw"]}}}},
+                            indent=2)
+        (target / install_target.REPORT_PATH).write_text(report)
         result = subprocess.run(
             ["sh", "-c", f'. "{LIBRARY}"\naios_verify_target "$1" bios ""', "sh", str(target)],
             capture_output=True, text=True,
             env=dict(os.environ, PATH=f"{binaries}:{os.environ.get('PATH', '')}"))
         self.assertEqual(result.returncode, 1)
         self.assertIn("Verification report", result.stdout)
+        # The whole bounded report reaches the console, so a failed run says
+        # which check failed and with what sample.
+        self.assertIn(report, result.stdout)
 
 
 class RecoveryEntryTests(unittest.TestCase):
@@ -765,9 +917,32 @@ class InitramfsReadbackTests(unittest.TestCase):
         self.assertTrue(inspection["has_init"])
 
     def test_a_missing_boot_module_is_detected_inside_the_image(self):
-        write_initramfs(self.target, modules=("kernel/drivers/scsi/sd_mod.ko.gz",))
+        write_initramfs(self.target, modules=("kernel/drivers/scsi/sd_mod.ko",))
         inspection = initramfs.inspect(self.target, RELEASE, self.target / "boot/initramfs-lts")
-        self.assertEqual(inspection["missing_modules"], ["kernel/fs/ext4/ext4.ko.gz"])
+        self.assertEqual(inspection["missing_modules"], ["kernel/fs/ext4/ext4.ko"])
+
+    def test_the_real_installed_layout_is_read(self):
+        # What mkinitfs really produces on Alpine: modules under the merged
+        # usr/lib path, compressed exactly as the linux-lts package ships them.
+        write_initramfs(self.target, modules_root="usr/lib", compression=".gz")
+        inspection = initramfs.inspect(self.target, RELEASE, self.target / "boot/initramfs-lts")
+        self.assertEqual(inspection["modules_in_initramfs"], len(BOOT_MODULES))
+        self.assertEqual(inspection["missing_modules"], [])
+
+    def test_a_module_counts_whichever_container_each_side_used(self):
+        # The configuration selects .ko.gz on the target; an image carrying the
+        # uncompressed module satisfies it, and vice versa.
+        write_initramfs(self.target, modules_root="usr/lib", compression="")
+        self.assertEqual(
+            initramfs.inspect(self.target, RELEASE,
+                              self.target / "boot/initramfs-lts")["missing_modules"], [])
+        entries = {f"usr/lib/modules/{RELEASE}/{name}.gz" for name in BOOT_MODULES}
+        self.assertEqual(initramfs.module_names(entries, RELEASE), set(BOOT_MODULES))
+
+    def test_modules_outside_a_known_module_root_are_not_counted(self):
+        entries = {f"opt/modules/{RELEASE}/kernel/fs/ext4/ext4.ko.gz",
+                   f"lib/modules/{RELEASE}/kernel/fs/ext4/ext4.ko.gz"}
+        self.assertEqual(initramfs.module_names(entries, RELEASE), {"kernel/fs/ext4/ext4.ko"})
 
     def test_features_are_parsed_with_the_shell_assignment_rule(self):
         configuration = self.target / "etc/mkinitfs/mkinitfs.conf"
@@ -855,6 +1030,28 @@ class TargetVerificationTests(unittest.TestCase):
         self.assertCheckFails("apk_world_installed", report)
         self.assertIn("wireless-regdb", report["checks"]["apk_world_installed"]["missing"]["sample"])
 
+    def test_world_atoms_are_parsed_the_way_apk_writes_them(self):
+        # Version constraints, repository tags, negations and apk's own virtual
+        # atoms all appear in a real world file.
+        self.assertEqual(
+            {install_target.atom_name(atom) for atom in
+             ("linux-lts", "linux-lts>6.18", "iw@community", "busybox=1.37.0-r0",
+              "!wpa_supplicant", ".aios-build-deps", "musl~1.2")},
+            {"linux-lts", "iw", "busybox", "wpa_supplicant", ".aios-build-deps", "musl"})
+
+    def test_a_constrained_or_tagged_world_atom_is_still_proved_installed(self):
+        world = self.target / "etc/apk/world"
+        world.write_text(world.read_text().replace("iw\n", "iw@community\n")
+                         .replace("linux-lts\n", "linux-lts>6.0\n"))
+        report = self.verify()
+        self.assertEqual(report["checks"]["apk_world_installed"]["status"], "pass",
+                         json.dumps(report["checks"]["apk_world_installed"], indent=2))
+        database = self.target / "lib/apk/db/installed"
+        database.write_text(database.read_text().replace("P:iw\n", "P:iw-other\n"))
+        report = self.verify()
+        self.assertCheckFails("apk_world_installed", report)
+        self.assertEqual(report["checks"]["apk_world_installed"]["missing"]["sample"], ["iw"])
+
     def test_an_installed_version_outside_the_embedded_closure_fails(self):
         database = self.target / "lib/apk/db/installed"
         database.write_text(database.read_text().replace("P:iw\nV:1.0-r0", "P:iw\nV:9.9-r9"))
@@ -901,24 +1098,61 @@ class TargetVerificationTests(unittest.TestCase):
         (self.target / "boot" / "vmlinuz-lts").unlink()
         self.assertCheckFails("kernel_image")
         self.setUp()
-        (self.target / "lib/modules" / RELEASE / MODULES[2]).unlink()
+        target_module(self.target, MODULES[2]).unlink()
         report = self.verify()
         self.assertCheckFails("kernel_modules", report)
         self.assertEqual(report["checks"]["kernel_modules"]["missing"]["sample"], [MODULES[2]])
 
+    def test_an_uncompressed_live_module_matches_its_gzip_installed_copy(self):
+        report = self.verify()
+        check = report["checks"]["kernel_modules"]
+        self.assertEqual(check["status"], "pass", json.dumps(check, indent=2))
+        self.assertEqual(check["target_modules"], len(MODULES))
+        # The two sides really are stored differently on disk.
+        live = self.live / "lib/modules" / RELEASE / MODULES[0]
+        self.assertTrue(live.is_file())
+        self.assertNotEqual(live.read_bytes(), target_module(self.target, MODULES[0]).read_bytes())
+
     def test_a_module_with_different_content_fails_even_at_the_same_count(self):
-        path = self.target / "lib/modules" / RELEASE / MODULES[0]
-        path.write_bytes(b"tampered-but-same-length!!")
+        write_module(target_module(self.target, MODULES[0]), b"tampered-payload", ".gz")
         report = self.verify()
         self.assertCheckFails("kernel_modules", report)
         self.assertEqual(report["checks"]["kernel_modules"]["target_modules"],
                          report["checks"]["kernel_modules"]["live_modules"])
         self.assertEqual(report["checks"]["kernel_modules"]["altered"]["sample"], [MODULES[0]])
 
+    def test_a_module_that_cannot_be_decompressed_fails(self):
+        target_module(self.target, MODULES[0]).write_bytes(b"not-gzip-at-all")
+        report = self.verify()
+        self.assertCheckFails("kernel_modules", report)
+        self.assertEqual(report["checks"]["kernel_modules"]["unreadable"]["sample"], [MODULES[0]])
+
+    def test_a_container_the_readback_cannot_open_is_missing_evidence(self):
+        # zstd has no standard-library decoder, so the payload identity is
+        # unavailable rather than assumed equal to the compressed bytes.
+        live = self.live / "lib/modules" / RELEASE / MODULES[0]
+        live.rename(live.with_name(live.name + ".zst"))
+        target = target_module(self.target, MODULES[0])
+        target.rename(target.with_suffix(".zst"))
+        report = self.verify()
+        check = report["checks"]["kernel_modules"]
+        self.assertEqual(check["compression_not_supported"]["sample"], [MODULES[0]])
+        self.assertEqual(check["missing"]["count"], 0)
+        self.assertEqual(check["status"], "incomplete", json.dumps(check, indent=2))
+        self.assertNotEqual(report["status"], "pass")
+        self.assertIn("kernel_modules", report["incomplete"])
+
+    def test_one_side_that_cannot_be_read_is_never_silently_equal(self):
+        # Only the target is zstd: its payload cannot be compared, so the
+        # module reads as missing rather than as a match on compressed bytes.
+        target = target_module(self.target, MODULES[0])
+        target.rename(target.with_suffix(".zst"))
+        report = self.verify()
+        self.assertCheckFails("kernel_modules", report)
+        self.assertEqual(report["checks"]["kernel_modules"]["missing"]["sample"], [MODULES[0]])
+
     def test_an_extra_module_the_live_image_never_had_fails(self):
-        extra = self.target / "lib/modules" / RELEASE / "kernel/fs/xfs/xfs.ko.gz"
-        extra.parent.mkdir(parents=True, exist_ok=True)
-        extra.write_bytes(b"module")
+        write_module(target_module(self.target, "kernel/fs/xfs/xfs.ko"), b"module", ".gz")
         self.assertCheckFails("kernel_modules")
 
     def test_a_release_the_live_image_does_not_have_fails(self):
@@ -933,11 +1167,11 @@ class TargetVerificationTests(unittest.TestCase):
         self.assertCheckFails("module_dependency_data")
 
     def test_an_initramfs_without_the_configured_modules_fails(self):
-        write_initramfs(self.target, modules=("kernel/drivers/scsi/sd_mod.ko.gz",))
+        write_initramfs(self.target, modules=("kernel/drivers/scsi/sd_mod.ko",))
         report = self.verify()
         self.assertCheckFails("initramfs", report)
         self.assertEqual(report["checks"]["initramfs"]["missing_modules"]["sample"],
-                         ["kernel/fs/ext4/ext4.ko.gz"])
+                         ["kernel/fs/ext4/ext4.ko"])
 
     def test_a_fresh_but_empty_initramfs_fails(self):
         write_initramfs(self.target, modules=(), init=True)
@@ -1002,7 +1236,8 @@ class TargetVerificationTests(unittest.TestCase):
         (self.target / "etc/runlevels/default/networkmanager").unlink()
         report = self.verify()
         self.assertCheckFails("required_services", report)
-        self.assertIn("default/networkmanager", report["checks"]["required_services"]["missing"]["sample"])
+        self.assertIn("default/networkmanager:not_present",
+                      report["checks"]["required_services"]["missing"]["sample"])
 
     def test_a_runlevel_entry_that_is_not_a_symlink_fails(self):
         entry = self.target / "etc/runlevels/default/polkit"
@@ -1010,7 +1245,8 @@ class TargetVerificationTests(unittest.TestCase):
         entry.write_text("not a symlink")
         report = self.verify()
         self.assertCheckFails("required_services", report)
-        self.assertIn("default/polkit", report["checks"]["required_services"]["missing"]["sample"])
+        self.assertIn("default/polkit:not_a_symlink",
+                      report["checks"]["required_services"]["missing"]["sample"])
 
     def test_a_runlevel_symlink_to_the_wrong_executable_fails(self):
         entry = self.target / "etc/runlevels/default/networkmanager"
@@ -1019,15 +1255,38 @@ class TargetVerificationTests(unittest.TestCase):
         report = self.verify()
         self.assertCheckFails("required_services", report)
         self.assertIn(
-            "default/networkmanager",
+            "default/networkmanager:wrong_target",
             report["checks"]["required_services"]["unresolved"]["sample"],
         )
+
+    def test_a_relative_openrc_symlink_resolves_like_an_absolute_one(self):
+        # OpenRC writes an absolute link; a restored configuration may carry a
+        # relative one. Both name the same init script.
+        entry = self.target / "etc/runlevels/default/aios-init"
+        entry.unlink()
+        entry.symlink_to("../../init.d/aios-init")
+        self.assertEqual(self.verify()["checks"]["required_services"]["status"], "pass")
+        entry.unlink()
+        entry.symlink_to("/etc/init.d/aios-init")
+        self.assertEqual(self.verify()["checks"]["required_services"]["status"], "pass")
+
+    def test_an_aios_owned_service_says_why_it_cannot_start(self):
+        for mutate, reason in (
+                (lambda path: path.chmod(0o644), "not_executable"),
+                (lambda path: path.unlink(), "script_missing")):
+            self.setUp()
+            mutate(self.target / "etc/init.d/aios-init")
+            report = self.verify()
+            self.assertCheckFails("required_services", report)
+            self.assertIn(f"default/aios-init:{reason}",
+                          report["checks"]["required_services"]["unresolved"]["sample"])
 
     def test_a_service_whose_init_script_is_absent_or_not_executable_fails(self):
         (self.target / "etc/init.d/dbus").chmod(0o644)
         report = self.verify()
         self.assertCheckFails("required_services", report)
-        self.assertIn("default/dbus", report["checks"]["required_services"]["unresolved"]["sample"])
+        self.assertIn("default/dbus:not_executable",
+                      report["checks"]["required_services"]["unresolved"]["sample"])
         self.setUp()
         (self.target / "etc/init.d/elogind").unlink()
         self.assertCheckFails("required_services")
@@ -1160,6 +1419,11 @@ class DisposableDiskHarnessTests(unittest.TestCase):
         self.assertIn("printf '%s\\\\nERASE %s\\\\n'", self.text)
         self.assertIn("/usr/local/sbin/aios-install", self.text)
         self.assertIn("grep -q 'Installation complete'", self.text)
+
+    def test_a_failed_install_reports_the_whole_installer_log(self):
+        # The verifier prints its bounded report into that log, so the harness
+        # transcript is what names the failing check on a real run.
+        self.assertIn("printf '\\\\ninstall_log='; cat /tmp/install.log;", self.text)
 
     def test_the_second_phase_boots_the_same_disk_without_the_iso(self):
         self.assertIn('["-boot", "c", *attachment]', self.text)
