@@ -139,7 +139,10 @@ class OsCommandTests(unittest.TestCase):
 
         host = ToolHost(browser=Fake(), applications=Fake(), mcp=Fake())
         names = [item["function"]["name"] for item in host.definitions()["tools"]]
-        self.assertEqual(names, ["browser", "application", "os_settings", "os_command"])
+        self.assertEqual(
+            names,
+            ["browser", "application", "build_application", "os_settings", "os_command"],
+        )
         with mock.patch("aios.toolhost.os_command.act", return_value={"exit_code": 0, "stdout": ""}) as act:
             self.assertEqual(host.call("os_command", {"command": "pwd"}), {"exit_code": 0, "stdout": ""})
             act.assert_called_once_with({"command": "pwd"})
