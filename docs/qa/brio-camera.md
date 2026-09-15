@@ -45,8 +45,10 @@ No automatic startup/reconnect service was installed. Keep WSL running during
 capture. After attach, wait up to five seconds for UVC enumeration before probing:
 the first immediate probe in this session ran before `/dev/video0` appeared.
 Probe starts the camera, discards frames, and has a 15-second process timeout.
-It currently requests MJPEG 640x480 at 15 fps; reported probe duration does not
-establish the negotiated frame rate. Inspect actual settings with `v4l2-ctl`.
+It requests MJPEG 640x480 at 15 fps. The diagnostic now reports V4L2/OpenCV
+negotiated properties separately from decoded dimensions and measured duration.
+A zero/null property means unavailable; requested settings are not evidence of
+negotiation. Buffer-request acceptance is reported separately from buffer size.
 
 If Windows reports busy, follow [the ownership TSG](../wsl-webcam.md), identifying
 the current interface holder. Do not repeatedly force-bind or stop unrelated
@@ -81,6 +83,58 @@ it. Verify guest UVC enumeration, capture as the intended unprivileged service
 user, and ten decoded frames before claiming VM success. Keep apps inside the
 VM window. Launch with no attached stable camera and no camera selectors for a
 camera-free VM.
+
+### Stage 1 bounded guest command
+
+Build the optional image locally with
+`AIOS_IDENTITY_BUILD=1 bash scripts/build-iso-container.sh` in WSL, then launch
+that exact image using `scripts/run.ps1 -Name AIOS-recognition-stage1` and the
+current `-CameraBusId`. Record the ISO hash and its identity build-input flag.
+Do not substitute the normal desktop image for dependency validation.
+
+Inside the guest, close Settings camera preview and photo capture. Verify imports
+with `python3 -c 'import cv2, cryptography'` and the shell startup separately.
+The current local-greeting capture account is `aios` (a member of `video`), not
+root or the identity broker. Resolve the selected stable index0 node locally,
+then run from an administrator terminal:
+
+```sh
+su aios -s /bin/sh -c 'PYTHONPATH=/usr/local/share/aios python3 -m aios.camera --guest-probe /dev/video0 --expected-user aios'
+```
+
+Replace `/dev/video0` with the verified stable `/dev/v4l/by-id/...-video-index0`
+path when available; never copy its serial-bearing name into results. The
+command refuses root and any other account, runs three independent acquisitions
+with a 15-second child deadline each, drains three warmup frames per acquisition,
+and requires ten decoded 640x480 frames per acquisition. Every child releases
+the camera on success/failure and is killed and reaped on timeout. A successful
+report includes two reopen timings; warmup draining alone is not proof of
+driver timestamp freshness. No media is written.
+
+OpenCV can collapse busy, unsupported-node and driver errors into `open_failed`;
+do not infer a more specific cause from that result. Ordinary device-access
+failures preserve allowlisted `permission_denied`, `device_busy`, and
+`device_missing` reason codes. Driver stderr and arbitrary worker fields are
+never forwarded. Use `v4l2-ctl --all` locally to distinguish node capabilities;
+retain only aggregate format/capability findings.
+
+| Validation | Required evidence | Current result |
+| --- | --- | --- |
+| Three captures as `aios` | 10 decoded frames each, negotiated format/rate, timings | Not tested |
+| Close/reopen | Second/third open timings and successful frames | Not tested |
+| Permission denied | Unprivileged user outside video group fails within deadline | Not tested |
+| Busy / wrong node | Controlled competing owner or non-capture node, bounded failure | Not tested |
+| Blocked read | Killed child, responsive caller, subsequent device reuse | Unit coverage only |
+| Unplug/replug | Operator disconnect, bounded failure, newly resolved device succeeds | Not tested |
+| Explicit / automatic handoff | Same selected device, no WSL capture holder | Not tested |
+| Scoped USB ACL | Only selected node changes; restore prior ACL after run | Not tested |
+| Optional identity image | OpenCV/crypto imports, Qt shell startup, keyboard/PIN fallback | Not tested |
+
+2026-09-15 inventory: the Brio is disconnected (persisted USB/IP binding only).
+No new physical capture evidence is claimed. Reconnect it before executing the
+matrix. The connected Dell camera is not a substitute. Keep serials, raw driver
+logs and frames out of committed results. Record aggregate JSON, image hash,
+runtime versions and reason counts only.
 
 To deliberately return the dedicated camera to Windows later, detach and unbind
 using the current bus ID; unbind requires Administrator. This is not the normal
