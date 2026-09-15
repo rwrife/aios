@@ -150,9 +150,10 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                     logged_in = True
                 if "aios:~#" in output and not sent_test:
                     # The success marker does not occur literally in the echoed command.
-                    check = "for n in 1 2 3 4 5 6 7 8 9 10; do pgrep -u aios -x aios-shell >/dev/null && break; sleep 1; done; "
+                    check = "{ for n in $(seq 1 60); do pgrep -u aios -x aios-shell >/dev/null && break; sleep 1; done; "
                     if args.boot_entry == "recovery":
                         check += "grep -qw aios.recovery /proc/cmdline && grep -qw nomodeset /proc/cmdline && "
+                        check += "for n in $(seq 1 15); do grep -q '\"status\":\"ready\"' /home/aios/.local/state/aios/renderer.json 2>/dev/null && break; sleep 1; done; "
                         check += "grep -q '\"status\":\"ready\"' /home/aios/.local/state/aios/renderer.json && "
                         check += "grep -q '\"phase\":\"shell_ready\"' /home/aios/.local/state/aios/renderer.json && "
                         check += "grep -q '\"backend\":\"xrender\"' /home/aios/.local/state/aios/renderer.json && "
@@ -162,9 +163,17 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
                         check += "! grep -qw aios.recovery /proc/cmdline && "
                     check += "pgrep -u aios -x aios-shell >/dev/null && su aios -c 'cd; aios-new-app smoke; cmake -S smoke -B smoke/build -G Ninja && cmake --build smoke/build' && "
                     check += "{ for n in $(seq 1 60); do wget -qO /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; "
-                    check += "su aios -c 'aios-llm chat \"Say hello in one sentence.\"'; } && printf '\\nAIOS_QA_%s\\n' READY\n"
+                    check += "su aios -c 'aios-llm chat \"Say hello in one sentence.\"'; } && printf '\\nAIOS_QA_%s\\n' READY; } || "
+                    check += "{ printf '\\ncmdline='; cat /proc/cmdline; "
+                    check += "printf 'renderer='; cat /home/aios/.local/state/aios/renderer.json 2>/dev/null || true; "
+                    check += "printf 'session_log='; tail -n 40 /home/aios/.local/state/aios/session.log 2>/dev/null || true; "
+                    check += "printf 'compositor_log='; tail -n 20 /home/aios/.local/state/aios/compositor.log 2>/dev/null || true; "
+                    check += "printf 'processes='; ps | grep -E 'aios-session|aios-shell|pulseaudio|picom|openbox' || true; "
+                    check += "printf '\\nAIOS_QA_FAILED\\n'; }\n"
                     serial.sendall(check.encode())
                     sent_test = True
+                if "\nAIOS_QA_FAILED" in output:
+                    raise RuntimeError("Guest readiness verification failed. Last output:\n" + output[-4000:])
                 if "\nAIOS_QA_READY" in output:
                     verify_desktop(qmp_path, Path(directory) / "desktop.ppm")
                     print(f"PASS: {args.boot_entry} offline boot, ordinary-user shell, "
