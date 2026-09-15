@@ -9,7 +9,8 @@ metadata:
 Use the advertised `os_settings` tool for OS requests. Inspect its schema;
 installed local MCP tools may offer additional structured OS operations.
 Use only capabilities actually advertised, and report unsupported settings.
-Do not create an application to change a setting.
+Do not create an application to change a setting. File listings and allowlisted
+programs such as ls, cat, and echo use `os_command`, not this tool.
 
 For settings, call `read`, then `set` with exactly `setting` and `value`.
 Volume is an integer percentage from 0 to 100; calculate relative adjustments

@@ -261,6 +261,18 @@ class SkillsTests(unittest.TestCase):
         self.assertIn("Do not call `read` or `write`", skill.instructions)
         self.assertIn("Do not rebuild, re-publish, or retry", skill.instructions)
 
+    def test_real_os_commands_matches_write_and_read_file_prompts(self):
+        catalog = self.load_real_builtin_catalog()
+        skills = load_skills_module()
+        for prompt in (
+            "write 'test' to hello.txt",
+            "read hello.txt",
+            "save file notes.txt",
+        ):
+            with self.subTest(prompt=prompt):
+                activated = skills.initial_skills(catalog, prompt)
+                self.assertIn("os-commands", [skill.name for skill in activated])
+
 
 if __name__ == "__main__":
     unittest.main()

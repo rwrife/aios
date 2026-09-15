@@ -115,7 +115,25 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('env.insert("AIOS_BROWSER_THEME", m_config.value("theme_color", "blue").toString())', source)
         self.assertIn("tieToDesktop(tools)", source)
         self.assertIn("ToolHostGracefulWaitMs", source)
+        self.assertIn('action == "open_application"', source)
+        self.assertIn('name == "terminal"', source)
+        self.assertIn('name == "settings"', source)
+        self.assertIn("Q_PROPERTY(QString debugLog READ debugLog NOTIFY debugChanged)", source)
+        self.assertIn('type == "debug"', source)
         self.assertEqual(source.count("waitForFinished(ToolHostGracefulWaitMs)"), 2)
+
+    def test_chat_debug_window_is_bundled_and_accessible(self):
+        cmake = self.read("apps/shell/CMakeLists.txt")
+        chat = self.read("apps/shell/ChatWindow.qml")
+        debug = self.read("apps/shell/ChatDebugWindow.qml")
+        self.assertIn("ChatDebugWindow.qml", cmake)
+        self.assertIn('objectName: "chatDebugButton"', chat)
+        self.assertIn('tip: "Open raw model debug trace"', chat)
+        self.assertIn('objectName: "chatDebugText"', debug)
+        self.assertIn("readOnly: true", debug)
+        self.assertIn("session.clearDebugLog()", debug)
+        self.assertIn("session.copy(session.debugLog)", debug)
+        self.assertIn("WindowBorder { theme: debugWindow.theme }", debug)
 
     def test_shell_never_caches_plaintext_keys_and_clears_pending_errors(self):
         source = self.read("apps/shell/main.cpp")

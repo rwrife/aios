@@ -24,6 +24,7 @@
 #include <QLocalServer>
 #include <QSysInfo>
 #include <QThread>
+#include <QDateTime>
 #include "BuildInfo.h"
 #include "voice.h"
 #include "CameraDevice.h"
@@ -39,6 +40,7 @@
 #endif
 
 static constexpr int ToolHostGracefulWaitMs = 15000;
+static constexpr int DebugLogLimit = 1024 * 1024;
 
 static void tieToDesktop(QProcess &process) {
 #ifdef Q_OS_LINUX
@@ -128,10 +130,12 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantMap clockState READ clockState NOTIFY clockChanged)
     Q_PROPERTY(bool clockBusy READ clockBusy NOTIFY clockChanged)
     Q_PROPERTY(QString clockNotice READ clockNotice NOTIFY clockChanged)
+    Q_PROPERTY(QString debugLog READ debugLog NOTIFY debugChanged)
 public:
     QVariantMap clockState() const { return m_clockState; }
     bool clockBusy() const { return m_clockBusy; }
     QString clockNotice() const { return m_clockNotice; }
+    QString debugLog() const { return m_debugLog; }
     QVariantList messages() const { return m_messages; }
     QVariantMap config() const { return m_config; }
     QVariantMap localModels() const { return m_localModels; }
@@ -271,8 +275,17 @@ public:
         }
         m_busy = false; m_status = "Stopped"; persist(); emit changed();
     }
-    Q_INVOKABLE void newChat() { if (m_busy) stop(); m_messages.clear(); m_status.clear(); persist(); emit changed(); }
+    Q_INVOKABLE void newChat() {
+        if (m_busy) stop();
+        m_messages.clear();
+        m_status.clear();
+        m_debugLog.clear();
+        persist();
+        emit debugChanged();
+        emit changed();
+    }
     Q_INVOKABLE void copy(const QString &text) { QGuiApplication::clipboard()->setText(text); }
+    Q_INVOKABLE void clearDebugLog() { m_debugLog.clear(); emit debugChanged(); }
     Q_INVOKABLE void terminal() { QProcess::startDetached("aios-terminal", {}); }
     Q_INVOKABLE void refreshVolume() {
         if (m_volumeRefreshing) {
@@ -449,6 +462,7 @@ signals:
     void authenticationRequested();
     void settingsRequested(const QString &section);
     void clockChanged();
+    void debugChanged();
 private:
     QVariantMap m_clockState;
     bool m_clockBusy = false;
@@ -502,6 +516,18 @@ private:
                                 reply = {{"result", QJsonObject{{"requested", true}}}};
                             } else reply = {{"error", "Date & Time settings are unavailable on the protected desktop."}};
                         }
+                    } else if (action == "open_application" && request.size() == 2) {
+                        const auto name = request.value("name").toString();
+                        if (name == "terminal") {
+                            reply = {{"result", QJsonObject{{"opened", QProcess::startDetached("aios-terminal", {})}}}};
+                        } else if (name == "settings") {
+                            if (qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET")) {
+                                emit (owner ? owner : this)->settingsRequested("");
+                                reply = {{"result", QJsonObject{{"requested", true}}}};
+                            } else {
+                                reply = {{"error", "Settings are unavailable on the protected desktop."}};
+                            }
+                        }
                     } else if (action == "authenticate" && request.size() == 1) {
                         authenticationState = "unavailable";
                         emit authenticationRequested();
@@ -526,6 +552,7 @@ private:
     const QVariantMap m_systemInfo = systemInformation();
     QString m_loginUrl, m_loginCode;
     QString m_status;
+    QString m_debugLog;
     bool m_busy = false;
     bool m_configuring = false;
     QProcess *active = nullptr;
@@ -540,6 +567,20 @@ private:
     bool m_volumeAvailable = false;
     bool m_volumeRefreshing = false;
     bool m_volumeRefreshPending = false;
+    void appendDebug(const QString &kind, const QJsonValue &data) {
+        QJsonObject record{
+            {"time", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+            {"kind", kind},
+            {"data", data},
+        };
+        const auto line = QString::fromUtf8(
+            QJsonDocument(record).toJson(QJsonDocument::Compact));
+        if (!m_debugLog.isEmpty()) m_debugLog += "\n";
+        m_debugLog += line;
+        if (m_debugLog.size() > DebugLogLimit)
+            m_debugLog = "[earlier debug records omitted]\n" + m_debugLog.right(DebugLogLimit);
+        emit debugChanged();
+    }
     void setVolumeAvailable(bool available) {
         if (m_volumeAvailable == available) return;
         m_volumeAvailable = available;
@@ -646,7 +687,9 @@ private:
                 const auto value = QJsonDocument::fromJson(buffer->left(end)).object(); buffer->remove(0, end + 1);
                 const auto type = value.value("type").toString();
                 if (value.contains("local_models")) m_localModels = value.value("local_models").toObject().toVariantMap();
-                if (type == "loaded") {
+                if (type == "debug") {
+                    appendDebug(value.value("debug_kind").toString("debug"), value.value("data"));
+                } else if (type == "loaded") {
                     m_config = value.value("config").toObject().toVariantMap();
                     m_messages = value.value("messages").toArray().toVariantList(); startLocal();
                     emit loaded();

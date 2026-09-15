@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -55,6 +56,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -353,7 +355,44 @@ def modloop_identity(modloop: Path) -> dict:
     return {"status": "recorded", "module_versions": sorted(versions)}
 
 
+def remove_extraction_tree(root: Path) -> None:
+    """Remove our private Linux extraction tree, never chmod symlink targets.
+
+    Older TemporaryDirectory permission-recovery handlers can follow symlinks.
+    Normalize only directories via no-follow, descriptor-relative operations,
+    then use rmtree without permission recovery. Unsupported operations or other
+    cleanup errors propagate; never retry with symlink-following chmod.
+    """
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def writable_directories(fd: int) -> None:
+        os.fchmod(fd, 0o700)
+        with os.scandir(fd) as entries:
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                os.chmod(entry.name, 0o700, dir_fd=fd, follow_symlinks=False)
+                child = os.open(entry.name, flags, dir_fd=fd)
+                try:
+                    writable_directories(child)
+                finally:
+                    os.close(child)
+
+    fd = os.open(root, flags)
+    try:
+        writable_directories(fd)
+    finally:
+        os.close(fd)
+    shutil.rmtree(root)
+
+
 def build_manifest(args: argparse.Namespace) -> dict:
+    # ExitStack also cleans up if extraction, hashing or manifest assembly fails.
+    with ExitStack() as cleanup:
+        return _build_manifest(args, cleanup)
+
+
+def _build_manifest(args: argparse.Namespace, cleanup: ExitStack) -> dict:
     file_pins = {}
     build_env_sha = None
     if args.build_env and args.build_env.is_file():
@@ -393,17 +432,18 @@ def build_manifest(args: argparse.Namespace) -> dict:
         })
 
     root = args.extracted_root
-    cleanup: Path | None = None
     extraction_errors = []
     if root is None:
-        work = args.work_dir or Path(tempfile.mkdtemp(prefix="aios-build-manifest-"))
-        work.mkdir(parents=True, exist_ok=True)
+        work = args.work_dir
+        if work is not None:
+            work.mkdir(parents=True, exist_ok=True)
         # xorriso preserves restrictive directory modes from the ISO. Reusing
         # one fixed extraction path in the persistent build cache can therefore
         # make the next build unable to remove a prior tree. Use an isolated
         # directory for each recording instead.
         root = Path(tempfile.mkdtemp(prefix="iso-", dir=work))
-        cleanup = None if args.keep_extraction else root
+        if not args.keep_extraction:
+            cleanup.callback(remove_extraction_tree, root)
         error = run_xorriso_extract(args.iso, "/apks", root / "apks")
         if error:
             extraction_errors.append(error)
@@ -534,8 +574,6 @@ def build_manifest(args: argparse.Namespace) -> dict:
     }
     if extraction_errors:
         manifest["artifacts"]["extraction_errors"] = sorted(set(extraction_errors))
-    if cleanup is not None and cleanup.is_dir():
-        shutil.rmtree(cleanup, ignore_errors=True)
     return manifest
 
 

@@ -20,7 +20,7 @@ from aios.applications import ApplicationStore
 from aios.toolhost import ToolHost, close_service, list_tools, serve
 
 
-USER_REQUEST = "create a calculator application"
+USER_REQUEST = "create a native calculator application"
 APP_TITLE = "Calculator"
 APP_SUMMARY = "A trusted native calculator for basic arithmetic."
 APP_KEYWORDS = ["arithmetic", "calculator", "native"]
@@ -141,18 +141,21 @@ class _ModelState:
         _require(body.get("tool_choice") == "auto", "Tool choice must remain automatic.")
         _require(set(body) == {"model", "messages", "tools", "tool_choice", "stream"}, "Unexpected request fields.")
         tool_names = [tool["function"]["name"] for tool in body["tools"]]
-        _require(tool_names == ["activate_skill", "application"], f"Unexpected tools: {tool_names!r}")
+        _require(
+            tool_names == ["activate_skill", "application", "build_application"],
+            f"Unexpected tools: {tool_names!r}",
+        )
         system = body["messages"][0]
         _require(system.get("role") == "system", "The first message must be the system prompt.")
         prompt = system.get("content", "")
         _require('Activated skill: "application-builder"' in prompt, "Application builder was not active.")
         _require("Search first for an existing cached app" in prompt, "Shipped cache-first instructions were absent.")
         _require("Inspect the advertised `application` tool schema" in prompt, "Schema inspection instructions were absent.")
-        _require("trusted native `calculator` template" in prompt, "Native calculator instructions were absent.")
+        _require("Use a native runtime only when the user explicitly requests native" in prompt,
+                 "Explicit native capability instructions were absent.")
         _require("self-contained `index.html`" in prompt, "Web fallback instructions were absent.")
         _require("finish by launching it in the same turn" in prompt, "Base launch policy was absent.")
         _require("Publication is optional and separate" in prompt, "Optional publication instructions were absent.")
-        _require("then `launch`" in prompt and "then `publish`" not in prompt, "Direct native launch instructions were absent.")
         application_tools = [
             tool for tool in body["tools"]
             if tool.get("function", {}).get("name") == "application"
@@ -417,7 +420,13 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                         time.sleep(0.02)
                 self.assertEqual(
                     [tool["function"]["name"] for tool in listed["tools"]],
-                    ["browser", "application", "os_settings"],
+                    [
+                        "browser",
+                        "application",
+                        "build_application",
+                        "os_settings",
+                        "os_command",
+                    ],
                 )
                 self.assertEqual(listed["warnings"], [])
 
@@ -448,7 +457,7 @@ class ApplicationBuilderAgentTests(unittest.TestCase):
                 self.assertEqual(launched[0].name, state.application_id)
                 self.assertNotEqual(launched[0], app_folder)
                 self.assertFalse(launched[0].exists())
-                self.assertEqual(len(store.search({"query": USER_REQUEST})), 1)
+                self.assertEqual(len(store.search({"query": USER_REQUEST})), 2)
                 # Publication is a separate explicit action, not part of the app request.
                 store.publish({"id": state.application_id, "summary": APP_SUMMARY, "keywords": APP_KEYWORDS})
                 self.assertEqual({path.name for path in app_folder.iterdir()}, {"manifest.json"})
