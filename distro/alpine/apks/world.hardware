@@ -9,6 +9,11 @@
 # Package presence is not a hardware support claim. Every device in the
 # coverage matrix stays "untested" until physical evidence exists.
 
+# Installable release kernel. The live image already boots vmlinuz-lts and its
+# modloop, but setup-disk needs the linux-lts APK in the offline repository to
+# create a self-contained installed system.
+linux-lts
+
 # Firmware for the selected Wi-Fi, GPU, and Ethernet devices. These are
 # redistributable blobs from linux-firmware; linux-firmware-nvidia is the
 # firmware the in-tree nouveau driver loads, not the proprietary NVIDIA

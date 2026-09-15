@@ -99,6 +99,10 @@ non-comment atom of the installed world to exist in the target database.
 `apk_world_parity` requires the complete live world plus the installed
 `linux-lts` atom and rejects other unexplained additions.
 
+`linux-lts` is selected explicitly in `world.hardware`: a live image can boot
+the standalone kernel and modloop without carrying the kernel APK, but
+`setup-disk` requires that APK to construct an installed system offline.
+
 ### Initramfs
 
 `setup-disk` writes `/etc/mkinitfs/mkinitfs.conf` on the *target* for that

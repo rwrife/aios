@@ -109,7 +109,7 @@ class HardwareWorldSelectionTests(unittest.TestCase):
             self.assertTrue(record['version_resolved'], f'{name} has no resolved version')
             self.assertTrue(record['license'], f'{name} has no recorded license')
             self.assertIn(record['role'],
-                          ('firmware', 'regulatory', 'userspace', 'diagnostics'))
+                          ('kernel', 'firmware', 'regulatory', 'userspace', 'diagnostics'))
         resolution = self.manifest['resolution']
         self.assertEqual(resolution['status'], 'resolved-from-repository-index')
         self.assertEqual(len(resolution['indexes']), 2)
@@ -137,6 +137,13 @@ class HardwareWorldSelectionTests(unittest.TestCase):
                       self.manifest['packages']['util-linux-misc']['verified_paths'])
         self.assertIn('/usr/bin/glxinfo',
                       self.manifest['packages']['mesa-utils']['verified_paths'])
+
+    def test_installable_release_kernel_is_present(self):
+        self.assertIn('linux-lts', self.atoms)
+        record = self.manifest['packages']['linux-lts']
+        self.assertEqual(record['role'], 'kernel')
+        self.assertEqual(record['repository'], 'main')
+        self.assertEqual(record['version_resolved'], '6.18.52-r0')
 
     def test_no_proprietary_or_out_of_tree_drivers_are_selected(self):
         for atom in self.atoms:

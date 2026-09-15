@@ -172,6 +172,19 @@
       "verified_paths": [],
       "version_resolved": "20251125-r1"
     },
+    "linux-lts": {
+      "covers": [],
+      "download_size": 137028258,
+      "installed_size": 150460238,
+      "license": "GPL-2.0-only",
+      "rationale": "The installable release kernel required by Alpine setup-disk. The live ISO boots a kernel image and modloop directly, but an offline installed system needs the linux-lts APK in the embedded repository.",
+      "repository": "main",
+      "role": "kernel",
+      "verified_paths": [
+        "/boot/vmlinuz-lts"
+      ],
+      "version_resolved": "6.18.52-r0"
+    },
     "mesa-utils": {
       "covers": [],
       "download_size": 130289,
@@ -267,8 +280,8 @@
   "resolution": {
     "indexes": [
       {
-        "apkindex_sha256": "c7053063d79c7741cc09e74d7ea5ebe05bbafcbb9ec70e6e46d4a1379c264b68",
-        "apkindex_size": 523519,
+        "apkindex_sha256": "368b49304e8aca7772554b2acc946f749fa508075664eeb18fabc75fda58909a",
+        "apkindex_size": 523534,
         "apkindex_url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz",
         "role": "main",
         "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main"
@@ -283,7 +296,7 @@
     ],
     "method": "Every atom in world.hardware was looked up in the v3.23 x86_64 APKINDEX sampled below; file-level claims in verified_paths were checked against https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64.",
     "note": "Alpine v3.23 main/community keep moving. These versions and digests are a dated sample proving the package names exist in that release, not a pin. What a build actually shipped is recorded per ISO in <iso>.build-manifest.json by distro/alpine/record-build-manifest.py.",
-    "resolved_on": "2026-09-14",
+    "resolved_on": "2026-09-15",
     "status": "resolved-from-repository-index"
   },
   "schema_version": 1,
