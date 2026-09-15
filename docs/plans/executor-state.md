@@ -2,6 +2,72 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-15 10:11 UTC
+
+- Preflight succeeded: `gh repo view rwrife/aios`, `gh api repos/rwrife/aios`,
+  `git ls-remote --heads origin`, fresh main fetch/checkout/fast-forward, and
+  temporary ref create/delete. Identity: `gh api user --jq .login` -> `rwrife`.
+  Main remains `f43c9f199d9f649a174e4bbc6414563d19659805`; no direct main commit.
+- PR snapshot: https://github.com/rwrife/aios/pull/126 is the only open PR,
+  OPEN / CLEAN / MERGEABLE with no current-head checks. Merged PRs: none.
+  New PRs: none; this run repairs the existing `hardware-offline-bundle` PR.
+- Repair: enforce `exact_output_closure` in the hardware gate, reusing the
+  existing all-APK hash report. Missing/extra names, stale hashes and duplicate
+  filenames now fail with exit 3; missing recorded closure or APK directory is
+  incomplete (exit 4). Inventory mode remains exit 0 with diagnostic findings.
+  Test fixtures now record real hashes rather than constant placeholder values.
+  Seven CLI regression tests added; no application, UI or package-world changes.
+- **Merge hold remains.** Fresh independent fixture probes, each with matching
+  hashes, still demonstrate:
+  - `version_resolved=0.0-r999; repository=unrelated-repository; provenance=ok; exit=0`
+  - `depend=absent-required-library>=99; offline_package_availability=ok; exit=0`
+  These are the remaining P1 attribution and APK dependency-closure gaps.
+  The prior P2 restrictive extraction-directory cleanup finding also remains
+  unresolved (source-review evidence only). No release approval or physical
+  hardware certification is implied by the repaired hash gate.
+- Verification:
+  - Stale-hash regression failed before repair (`AssertionError: 0 != 3`),
+    with healthy control passing. Both duplicate-name regressions then failed
+    before their repair with the same exit-code mismatch, and passed afterward.
+  - `PYTHONPATH=apps:tests python3 -m unittest test_build_manifest
+    test_hardware_bundle_inspection test_hardware_coverage_manifest
+    test_hardware_world test_identity_image test_inspect_image -q`: 209 passed.
+  - `bash scripts/test.sh`: 692 tests, two failures, nine skips, exit 1.
+    Both failures reproduced this run on untouched main:
+    `test_real_application_builder_skill_loads_cleanly` (expected tuple omits
+    `build_application`) and `test_desktop_launch_paths_use_the_themed_launcher`
+    (`AssertionError: 2 != 1`). No full-suite-green claim; subsequent wrapper
+    checks were not reached. Changed-scope tests pass.
+  - Ad-hoc `/tmp/hermes-verify-aios126-9OyRtVGA.py`: three checks passed (healthy
+    control plus independent attribution/dependency blocker reproductions).
+    PASS means defects were reproduced, not that release gates are safe.
+  - `git diff --check` passed. Host is aarch64; `qemu-system-x86_64` unavailable.
+    No current-head ISO build, BIOS/UEFI boot or physical test was performed.
+- Execution limitations: delegated Codex implementation could not start because
+  `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`; no files or
+  tests changed through that failed delegation. The repair and tests above ran
+  through the normal file/terminal tools. Verifier deletion returned
+  `status=pending_approval`, `description=delete in root path`; its exact path
+  above is retained unchanged. No cleanup approval bypass attempted.
+- CI: Validate remains `disabled_manually`. Successful historical run
+  https://github.com/rwrife/aios/actions/runs/34906440477 belongs to old head
+  `068ae603360104fc31bf787bc787ffda1b7c7fc8`, not this repair. Use `[skip ci]`
+  on the repair commit to honor the no-GitHub-ISO-build rule. No dispatch or merge.
+- Issues: 30 open; issue lane stopped behind #126. Assigned elsewhere and left
+  untouched (all `rwrife`, including same-account concurrent work):
+  https://github.com/rwrife/aios/issues/71,
+  https://github.com/rwrife/aios/issues/77,
+  https://github.com/rwrife/aios/issues/81,
+  https://github.com/rwrife/aios/issues/97,
+  https://github.com/rwrife/aios/issues/98,
+  https://github.com/rwrife/aios/issues/100.
+  Claimed issue/readback: none. Claims released: none. No issue comments.
+- Publication: this state is included in the normal repair commit for existing
+  PR #126 and remains branch-only until that PR can safely merge. Independent
+  review and exact pushed-head readback are recorded in the PR follow-up.
+  Existing issue-77 worktree is preserved; only this run's worktree is disposable.
+- Self-removal: not triggered; retain the every-six-hours schedule.
+
 ## 2026-09-15 04:15 UTC
 
 - Repository: `rwrife/aios`; identity `gh api user --jq .login` -> `rwrife`.

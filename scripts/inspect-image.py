@@ -484,7 +484,13 @@ def _repository_section(manifest: dict, current_env: dict | None, compare: dict 
 def _closure_section(manifest: dict, apks_dir: Path | None, compare: dict | None) -> dict:
     recorded = manifest.get("output_closure") or {}
     packages = recorded.get("packages", [])
-    by_name = {entry.get("filename"): entry for entry in packages}
+    by_name = {}
+    duplicate_recorded = set()
+    for entry in packages:
+        name = entry.get("filename")
+        if name in by_name:
+            duplicate_recorded.add(name)
+        by_name[name] = entry
     result = {
         "kind": "exact-output-closure",
         "status": recorded.get("status"),
@@ -495,7 +501,10 @@ def _closure_section(manifest: dict, apks_dir: Path | None, compare: dict | None
 
     if apks_dir is not None and apks_dir.is_dir():
         actual = {}
+        duplicate_image = set()
         for apk in sorted(apks_dir.rglob("*.apk")):
+            if apk.name in actual:
+                duplicate_image.add(apk.name)
             actual[apk.name] = {"sha256": sha256_file(apk), "size": apk.stat().st_size}
         missing = sorted(set(by_name) - set(actual))
         unexpected = sorted(set(actual) - set(by_name))
@@ -513,7 +522,11 @@ def _closure_section(manifest: dict, apks_dir: Path | None, compare: dict | None
         result["missing_from_image"] = missing
         result["unexpected_in_image"] = unexpected
         result["sha256_mismatches"] = mismatches
-        result["closure_matches_image"] = not (missing or unexpected or mismatches)
+        result["duplicate_recorded_filenames"] = sorted(duplicate_recorded)
+        result["duplicate_image_filenames"] = sorted(duplicate_image)
+        result["closure_matches_image"] = not (
+            missing or unexpected or mismatches or duplicate_recorded or duplicate_image
+        )
     else:
         result["verified_against_image"] = False
         result["closure_matches_image"] = None
@@ -1127,6 +1140,7 @@ def section_hardware_bundle(
     modloop_root: Path | None,
     initramfs_path: Path | None,
     scan_packages: bool,
+    closure_evidence: dict | None = None,
 ) -> dict:
     """Validate the offline hardware bundle against the built artifacts.
 
@@ -1159,6 +1173,29 @@ def section_hardware_bundle(
 
     world, world_source, world_error = load_hardware_world(build_manifest_data, hardware_world_file)
     checks = []
+
+    # Reuse the inventory's hash scan: every APK, not only selected firmware,
+    # must agree with the recorded output before the release gate can pass.
+    closure = closure_evidence or {}
+    description = "every embedded APK agrees with the recorded exact output closure"
+    if closure.get("status") != "recorded" or not closure.get("verified_against_image"):
+        checks.append(_unavailable_check(
+            "exact_output_closure", description,
+            "a recorded --build-manifest output closure and an accessible --apks-dir are required",
+        ))
+    else:
+        checks.append(_check(
+            "exact_output_closure", description,
+            [] if closure.get("closure_matches_image") is True else [
+                {"reason": "embedded APK filenames or SHA-256 digests differ from the recorded closure, "
+                           "or duplicate filenames make the closure ambiguous"}
+            ],
+            missing_from_image=closure.get("missing_from_image", []),
+            unexpected_in_image=closure.get("unexpected_in_image", []),
+            sha256_mismatches=closure.get("sha256_mismatches", []),
+            duplicate_recorded_filenames=closure.get("duplicate_recorded_filenames", []),
+            duplicate_image_filenames=closure.get("duplicate_image_filenames", []),
+        ))
 
     # 1. Live and installed worlds carry the same hardware set, and world.vm survives.
     if world_error:
@@ -1737,6 +1774,10 @@ def build_report(args: argparse.Namespace) -> dict:
     if args.build_manifest is not None and args.build_manifest.is_file():
         build_manifest_data, _ = load_json(args.build_manifest)
 
+    recorded_inputs = section_recorded_inputs(
+        args.build_inputs, args.repo_build_env, args.build_manifest,
+        args.compare_build_manifest, apks_dir,
+    )
     report = {
         "tool": "inspect-image.py",
         "schema_version": SCHEMA_VERSION,
@@ -1758,10 +1799,7 @@ def build_report(args: argparse.Namespace) -> dict:
             "validate_hardware": bool(args.validate_hardware),
         },
         "sections": {
-            "recorded_inputs": section_recorded_inputs(
-                args.build_inputs, args.repo_build_env, args.build_manifest,
-                args.compare_build_manifest, apks_dir,
-            ),
+            "recorded_inputs": recorded_inputs,
             "packages": section_packages(apks_dir, apkovl_path),
             "kernel": section_kernel(modloop_root, root),
             "initramfs": section_initramfs(initramfs_path),
@@ -1772,6 +1810,7 @@ def build_report(args: argparse.Namespace) -> dict:
                 coverage_manifest, hardware_package_manifest, hardware_world,
                 build_manifest_data, apkovl_path, apks_dir, modloop_root,
                 initramfs_path, scan_packages=bool(args.validate_hardware),
+                closure_evidence=recorded_inputs.get("output_closure"),
             ),
             "mesa_userspace": section_mesa_userspace(apkovl_path, apks_dir),
             "bootloader": section_bootloader(syslinux_cfg, grub_cfg),

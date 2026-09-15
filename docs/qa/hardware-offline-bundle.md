@@ -102,6 +102,25 @@ firmware. Nothing was added, no early-KMS module or firmware was added, and
 asserts this rather than assuming it: every module of a coverage entry in the
 `storage` or `usb` family must be in the initramfs.
 
+## Current merge hold
+
+PR #126 is not release-approved. The exact-output check now enforces the
+inventory's filename and SHA-256 comparison at the validation exit boundary,
+including non-hardware APKs and duplicate-name rejection. It reuses the existing
+hash scan rather than re-reading every APK for the additional check. Inventory
+mode without `--validate-hardware` still reports problems but exits zero.
+A matching digest binds bytes to this manifest; it is not package signature or
+repository authenticity verification.
+
+Two independent release-gate gaps remain: `firmware_license_provenance` checks
+that attribution fields exist but does not bind them to shipped APK metadata
+and repository evidence, and `offline_package_availability` checks top-level
+filenames but does not solve APK dependencies/provides. Neither check proves
+an offline installation will succeed. The extractor's restrictive-directory
+cleanup finding also remains unresolved. These gaps and fresh local ISO and
+BIOS/UEFI boot evidence must be addressed before merge; historical image runs
+do not verify the repaired validator. Physical hardware remains untested.
+
 ## Validation
 
 ```sh
@@ -118,6 +137,7 @@ report's `hardware_bundle` section carries every check:
 
 | Check | Fails when |
 | --- | --- |
+| `exact_output_closure` | any embedded APK filename or SHA-256 digest differs from the recorded build closure, or either side contains duplicate filenames; missing recorded closure or APK directory is incomplete |
 | `hardware_world_parity` | the overlay `/etc/apk/world` (live **and** installed world) misses a `world.hardware` package |
 | `virtual_hardware_world_preserved` | the build recorded no `world.vm` |
 | `offline_package_availability` | a selected package has no `.apk` in the ISO's `/apks` repository |

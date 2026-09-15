@@ -269,7 +269,8 @@ class HardwareBundleValidationTests(unittest.TestCase):
             'kind': 'aios-build-manifest',
             'package_worlds': {'kind': 'requested-world-package-sets', 'worlds': recorded},
             'output_closure': {'status': 'recorded', 'packages': [
-                {'filename': apk.name, 'sha256': '1' * 64, 'size': apk.stat().st_size}
+                {'filename': apk.name, 'sha256': inspect_image.sha256_file(apk),
+                 'size': apk.stat().st_size}
                 for apk in sorted(self.apks.glob('*.apk'))
             ]},
         }
@@ -313,6 +314,74 @@ class HardwareBundleValidationTests(unittest.TestCase):
         self.assertEqual(section['result'], 'passed')
         self.assertEqual(section['failed_checks'], [])
         self.assertEqual(section['incomplete_checks'], [])
+
+    def test_stale_apk_digest_fails_hardware_validation(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['output_closure']['packages'][0]['sha256'] = '0' * 64
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(section['result'], 'failed')
+        self.assertIn('exact_output_closure', section['failed_checks'])
+        self.assertIn('FAILED exact_output_closure', result.stderr)
+        check = self.checks(section)['exact_output_closure']
+        self.assertEqual(len(check['sha256_mismatches']), 1)
+
+    def test_duplicate_apk_filename_is_rejected_instead_of_overwritten(self):
+        apk = sorted(self.apks.glob('*.apk'))[0]
+        duplicate_dir = self.apks / 'duplicate'
+        duplicate_dir.mkdir()
+        (duplicate_dir / apk.name).write_bytes(apk.read_bytes())
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['duplicate_image_filenames'],
+                         [apk.name])
+
+    def test_duplicate_recorded_filename_is_rejected_instead_of_overwritten(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        package = manifest['output_closure']['packages'][0]
+        manifest['output_closure']['packages'].append(package.copy())
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['duplicate_recorded_filenames'],
+                         [package['filename']])
+
+    def test_nonhardware_package_missing_or_extra_fails_exact_closure(self):
+        # The top-level hardware presence check alone cannot catch this.
+        apk = self.apks / 'busybox-1.37.0-r0.apk'
+        apk.rename(self.apks / 'unrecorded-1.0-r0.apk')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['offline_package_availability']['status'], 'ok')
+        check = self.checks(section)['exact_output_closure']
+        self.assertEqual(check['missing_from_image'], ['busybox-1.37.0-r0.apk'])
+        self.assertEqual(check['unexpected_in_image'], ['unrecorded-1.0-r0.apk'])
+
+    def test_missing_recorded_closure_is_incomplete(self):
+        original = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        for closure in (None, {}, {'status': 'unavailable', 'packages': []}):
+            with self.subTest(closure=closure):
+                manifest = dict(original)
+                manifest['output_closure'] = closure
+                self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+                result, section = self.run_tool()
+                self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_INCOMPLETE)
+                self.assertIn('exact_output_closure', section['incomplete_checks'])
+                self.assertIn('INCOMPLETE exact_output_closure', result.stderr)
+
+    def test_missing_apk_directory_is_incomplete_even_with_recorded_hashes(self):
+        result, section = self.run_tool(extra=('--apks-dir', str(self.base / 'missing-apks')))
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_INCOMPLETE)
+        self.assertIn('exact_output_closure', section['incomplete_checks'])
+
+    def test_inventory_mode_reports_bad_hash_but_preserves_exit_zero(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['output_closure']['packages'][0]['sha256'] = '0' * 64
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool(validate=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('exact_output_closure', section['failed_checks'])
 
     def test_validation_never_claims_physical_support(self):
         _, section = self.run_tool()
