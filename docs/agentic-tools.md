@@ -250,10 +250,10 @@ The skill permits only the `application` tool and requires this workflow:
    templates are the complete native capability set for that turn.
 3. Reuse an exact or strong cached match unless the user explicitly asks to
    recreate or replace it.
-4. For ordinary requests, call `build` with one model-authored, self-contained
-   offline `index.html`. The application service creates, validates, writes,
-   and launches it atomically. Calculator, Todo List, and Text Editor all use
-   this on-the-fly workflow.
+4. For ordinary requests, call the dedicated `build_application` tool with one
+   model-authored, self-contained offline `index.html`. The application service
+   creates, validates, writes, and launches it atomically. Calculator, Todo List,
+   and Text Editor all use this on-the-fly workflow.
 5. Use native only when the user explicitly requests it and the tool advertises
    a matching capability. Never substitute an unrelated baked-in template.
 6. Report success only after launch returns `launched: true`. A

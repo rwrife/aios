@@ -372,13 +372,18 @@ class Server:
         self.sequence += 1
         request_id = self.sequence
         deadline = time.monotonic() + timeout
+        outbound = {'id': request_id, 'method': method, 'params': params or {}}
+        if method in ('thread/start', 'thread/inject_items', 'turn/start'):
+            core.debug_event('llm.request', outbound)
         self.send(
-            {'id': request_id, 'method': method, 'params': params or {}},
+            outbound,
             deadline=deadline,
         )
         while True:
             value = self.receive(deadline - time.monotonic())
             if value.get('id') == request_id and 'method' not in value:
+                if method in ('thread/start', 'thread/inject_items', 'turn/start'):
+                    core.debug_event('llm.response', value)
                 if 'error' in value:
                     # Provider diagnostics can contain request data or credentials.
                     raise RuntimeError('ChatGPT could not complete this operation. Check your connection, account, and selected model.')
@@ -600,6 +605,7 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
         while True:
             event = server.next_event(min(
                 MAX_EVENT_WAIT, _chat_remaining(deadline, clock)))
+            core.debug_event('llm.response', event)
             if not isinstance(event, dict):
                 raise RuntimeError('ChatGPT returned an invalid event. Try again.')
             method = event.get('method')
@@ -664,6 +670,10 @@ def chat(messages, *, session=None, turn_timeout=MAX_AGENT_SECONDS,
                     deadline=deadline,
                     clock=clock,
                 )
+                core.debug_event('tool.result', {
+                    'name': tool,
+                    'result': response,
+                })
                 continue
 
             if not isinstance(method, str) or not isinstance(params, dict):

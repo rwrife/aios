@@ -117,6 +117,37 @@ def _tool_result_json(value: Any) -> str:
     return encoded.decode("utf-8")
 
 
+def _application_html_prompt(request: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "Create one complete self-contained offline HTML application from the user's request. "
+                "Return only the HTML document starting with <!doctype html>. Use inline CSS and JavaScript, "
+                "no external resources, packages, network calls, storage promises, markdown fences, or prose. "
+                "Keep it under 16 KiB, keyboard accessible, and responsive. Use DejaVu Sans and the AIOS colors "
+                "#101b27, #172633, #203340, #f1f5f6, #b2c3cd, #bde4e6, #4c6574, and #a7c7d5. "
+                "Use 16px outer radii, one-pixel borders, four-pixel spacing increments, and visible focus."
+            ),
+        },
+        {"role": "user", "content": request},
+    ]
+
+
+def _extract_application_html(content: str) -> str:
+    text = content.strip()
+    start = text.casefold().find("<!doctype html")
+    if start < 0:
+        raise RuntimeError("The model did not produce a complete HTML application.")
+    text = text[start:]
+    end = text.casefold().rfind("</html>")
+    if end >= 0:
+        text = text[:end + len("</html>")]
+    if len(text.encode("utf-8")) > 16 * 1024:
+        raise RuntimeError("The model produced an application that is too large.")
+    return text
+
+
 def _sanitize_progress_text(value: Any) -> str:
     if not isinstance(value, str):
         return ""
@@ -330,16 +361,16 @@ class AgentSession:
         if app_id is None:
             if self._application_last_action == "build":
                 return (
-                    "Retry the advertised application tool with action \"build\". You must provide the "
-                    "complete self-contained offline HTML document in the html field; author it yourself "
-                    "from the user's request. Build creates, writes, and launches the app. Never ask the user "
+                    "Retry the advertised build_application tool. You must provide the complete self-contained "
+                    "offline HTML document in the html field; author it yourself from the user's request. "
+                    "The tool creates, writes, and launches the app. Never ask the user "
                     "for HTML, source code, metadata, a framework choice, or an application id."
                 )
             if self._application_search_completed:
                 return (
-                    "No matching application was found. Call the advertised application tool with action "
-                    '"build", inferring the title and request and providing one complete self-contained offline '
-                    "HTML document that you author. Build creates, writes, and launches the web app in one call. "
+                    "No matching application was found. Call the advertised build_application tool with one "
+                    "complete self-contained offline HTML document that you author. Title and request metadata "
+                    "are inferred when omitted, and the tool creates and launches the web app in one call. "
                     "Never ask the user for HTML, metadata, a framework choice, or an application id."
                 )
             return (
@@ -362,6 +393,41 @@ class AgentSession:
             f'action "launch" and id {quoted_id}. Do not ask the user to run a command or provide the '
             "application id, and do not claim success in text."
         )
+
+    def application_completion_tool(self) -> str:
+        if (self._application_last_action == "build"
+                or (self._application_search_completed and not self._application_search_ids)):
+            if "build_application" in self.advertised_names:
+                return "build_application"
+        return "application"
+
+    def integrated_application_events(self) -> list[dict[str, str]] | None:
+        match = re.fullmatch(
+            r"\s*(?:please\s+)?(?:open|launch)\s+(?:the\s+)?"
+            r"(terminal|settings)(?:\s+app(?:lication)?)?\s*",
+            self.messages[-1]["content"],
+            re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        self.tools()
+        title = match.group(1).title()
+        arguments = {"action": "launch", "id": match.group(1).casefold()}
+        result = self.dispatch("application", arguments)
+        if not isinstance(result, dict) or result.get("launched") is not True:
+            raise RuntimeError(f"{title} could not be opened.")
+        return [
+            {"type": "progress", "text": f"Application: launch"},
+            {"type": "token", "text": f"{title} is open."},
+        ]
+
+    def generated_application_request(self) -> str | None:
+        if "application-builder" not in self.active:
+            return None
+        request = self._application_context_request or self.messages[-1]["content"]
+        if re.search(r"\bnative\b", request, re.IGNORECASE):
+            return None
+        return request
 
     @property
     def remote_preferred(self) -> bool:
@@ -469,7 +535,11 @@ class AgentSession:
             return {"activated": skill_name}
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be an object.")
-        application_action = arguments.get("action") if name == "application" else None
+        build_tool = name == "build_application"
+        application_action = "build" if build_tool else (
+            arguments.get("action") if name == "application" else None)
+        if build_tool:
+            arguments = {"action": "build", "runtime": "web", **arguments}
         if application_action in ("read", "write", "publish", "launch"):
             app_id = arguments.get("id")
             if isinstance(app_id, str):
@@ -540,26 +610,47 @@ class AgentSession:
                 arguments["title"] = title
         if application_action in ("create", "build", "write", "launch"):
             self._application_launched = False
-        if name == "application":
+        if application_action is not None:
             self._application_failure = None
             self._application_last_action = application_action
         try:
             if (application_action == "launch" and self._application_recreate
                     and arguments.get("id") not in self._application_created_ids):
                 raise ValueError("Create a new application draft before launching it.")
+            host_arguments = arguments
+            if build_tool:
+                host_arguments = {
+                    key: value
+                    for key, value in arguments.items()
+                    if key not in ("action", "runtime", "template")
+                }
             if timeout is None:
-                result = toolhost.call(self.tool_socket, name, arguments)
+                core.debug_event("tool.call", {
+                    "name": name,
+                    "arguments": host_arguments,
+                })
+                result = toolhost.call(self.tool_socket, name, host_arguments)
             else:
-                result = toolhost.call(self.tool_socket, name, arguments, timeout=timeout)
+                core.debug_event("tool.call", {
+                    "name": name,
+                    "arguments": host_arguments,
+                })
+                result = toolhost.call(
+                    self.tool_socket, name, host_arguments, timeout=timeout)
             _tool_result_json(result)
         except (OSError, ValueError, RuntimeError) as error:
-            if name == "application" and application_action == "launch":
+            core.debug_event("tool.error", {
+                "name": name,
+                "error": _safe_error_text(str(error), "Tool action failed."),
+            })
+            if application_action == "launch":
                 self._application_failure = (
                     _safe_error_text(str(error), "The application tool failed.")
                     if isinstance(error, ValueError) else "The application tool failed."
                 )
             raise
-        if name == "application":
+        core.debug_event("tool.result", {"name": name, "result": result})
+        if application_action is not None:
             if (application_action == "launch" and isinstance(result, dict)
                     and result.get("error")):
                 self._application_failure = _safe_error_text(
@@ -659,7 +750,7 @@ def openai_chat(
     model = core.model_name(profile)
     history = [{"role": "system", "content": ""}, *session.messages]
     completion_retries = 0
-    force_application = False
+    forced_tool: str | None = None
     for _ in range(12 if session.verify_application_completion else 8):
         calls: dict[int, dict[str, Any]] = {}
         fragment_bytes: dict[int, int] = {}
@@ -669,14 +760,15 @@ def openai_chat(
         tools = session.tools()
         history[0]["content"] = session.system_prompt()
         tool_choice = "auto"
-        if force_application:
-            if "application" not in session.advertised_names:
+        if forced_tool is not None:
+            if forced_tool not in session.advertised_names:
                 raise RuntimeError(APPLICATION_LAUNCH_PENDING)
-            tool_choice = {"type": "function", "function": {"name": "application"}}
-            force_application = False
+            tool_choice = {"type": "function", "function": {"name": forced_tool}}
+            forced_tool = None
         body = _request_body(
             {"model": model, "messages": history, "tools": tools, "tool_choice": tool_choice, "stream": True}
         )
+        core.debug_event("llm.request", body)
         remaining = _remaining_time(deadline, clock)
         with core.request(
             "/chat/completions",
@@ -685,6 +777,7 @@ def openai_chat(
             profile=profile,
         ) as response:
             for event in core.sse_events(response):
+                core.debug_event("llm.response", event)
                 _remaining_time(deadline, clock)
                 if event == "[DONE]":
                     break
@@ -806,7 +899,7 @@ def openai_chat(
                 if completion_retries >= MAX_APPLICATION_COMPLETION_RETRIES:
                     raise RuntimeError(APPLICATION_LAUNCH_PENDING)
                 completion_retries += 1
-                force_application = True
+                forced_tool = session.application_completion_tool()
                 history.append({"role": "assistant", "content": content})
                 history.append({
                     "role": "system",
@@ -846,7 +939,59 @@ def select_provider(session, config):
 
 def chat(messages, tool_socket):
     session = AgentSession(messages, tool_socket)
+    integrated_events = getattr(
+        session, "integrated_application_events", lambda: None)()
+    if integrated_events is not None:
+        yield from integrated_events
+        return
     provider, profile = select_provider(session, core.load_config())
+    application_request = getattr(
+        session, "generated_application_request", lambda: None)()
+    if application_request is not None:
+        session.tools()
+        search_arguments = {"action": "search", "query": application_request}
+        yield {"type": "progress", "text": session.progress("application", search_arguments)}
+        search = session.dispatch("application", search_arguments)
+        matches = search.get("matches") if isinstance(search, dict) else None
+        if (not session._application_recreate and isinstance(matches, list) and matches
+                and isinstance(matches[0], dict) and isinstance(matches[0].get("id"), str)):
+            launch_arguments = {"action": "launch", "id": matches[0]["id"]}
+            yield {"type": "progress", "text": session.progress("application", launch_arguments)}
+            launched = session.dispatch("application", launch_arguments)
+            if not isinstance(launched, dict) or launched.get("launched") is not True:
+                raise RuntimeError("The application could not be launched.")
+            title = launched.get("title", "Application")
+            yield {"type": "token", "text": f"{title} is open."}
+            return
+        prompt = _application_html_prompt(application_request)
+        if provider == "chatgpt":
+            from .subscription import chat as subscription_chat
+            pieces = [
+                event["text"]
+                for event in subscription_chat(prompt)
+                if event.get("type") == "token"
+            ]
+        else:
+            pieces = list(core.chat(prompt, profile=profile))
+        html = _extract_application_html("".join(pieces))
+        if session._application_draft_only:
+            create_arguments = {"action": "create"}
+            yield {"type": "progress", "text": session.progress("application", create_arguments)}
+            created = session.dispatch("application", create_arguments)
+            app_id = created.get("id") if isinstance(created, dict) else None
+            if not isinstance(app_id, str):
+                raise RuntimeError("The application could not be created.")
+            write_arguments = {"action": "write", "id": app_id, "html": html}
+            yield {"type": "progress", "text": session.progress("application", write_arguments)}
+            session.dispatch("application", write_arguments)
+            yield {"type": "token", "text": f"{created.get('title', 'Application')} draft is ready."}
+            return
+        yield {"type": "progress", "text": "Build Application"}
+        built = session.dispatch("build_application", {"html": html})
+        if not isinstance(built, dict) or built.get("launched") is not True:
+            raise RuntimeError("The application could not be built and launched.")
+        yield {"type": "token", "text": f"{built.get('title', 'Application')} is open."}
+        return
     if provider == "chatgpt":
         from .subscription import chat as subscription_chat
         yield from subscription_chat(messages, session=session)

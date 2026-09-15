@@ -37,6 +37,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class CoreTests(unittest.TestCase):
+    def test_debug_capture_is_scoped(self):
+        records = []
+        core.debug_event("ignored", {"value": 0})
+        with core.capture_debug(lambda kind, data: records.append((kind, data))):
+            core.debug_event("llm.request", {"model": "test"})
+        core.debug_event("ignored", {"value": 1})
+        self.assertEqual(records, [("llm.request", {"model": "test"})])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.tmp.name + "/config", "XDG_DATA_HOME": self.tmp.name + "/data"})
