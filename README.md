@@ -51,7 +51,9 @@ sudo dd if=alpine-aios-*-x86_64.iso of=/dev/sdX bs=4M status=progress conv=fsync
 
 Replace `/dev/sdX` with the whole USB device, not a partition. This erases that
 device. Boot the result on a 64-bit x86 machine in BIOS or UEFI mode. Secure Boot
-must currently be disabled; physical hardware compatibility is not yet certified.
+must currently be disabled, on the live medium and on an installed system;
+modloop signing is an image integrity check, not Secure Boot. Physical hardware
+compatibility is not yet certified.
 
 Launch with QEMU installed on the host:
 
@@ -195,8 +197,19 @@ cmake --build hello/build
 ```
 
 Installer: `doas /usr/local/sbin/aios-install`. It requires selecting an unused
-whole disk and typing its exact erase confirmation. Use a disposable VM disk
-until the release QA matrix has been completed.
+whole disk and typing its exact erase confirmation, and it re-checks every
+guard and the disk's stable identity immediately before partitioning. It
+installs entirely from the booted medium's own package repository, restores the
+live remote repository configuration afterwards, regenerates module dependency
+data and the initramfs against the target's own `mkinitfs.conf`, adds a
+safe-graphics recovery GRUB entry, and verifies the mounted target before
+reporting success; a failed verification withholds success. An installed system
+also carries the root-only `aios-checkpoint` helper, which records an audit
+checkpoint of what the machine runs. It is **not** a rollback mechanism:
+coordinated update and rollback are not implemented. See
+[offline install parity and audit checkpoints](docs/qa/hardware-install-rollback.md).
+Use a disposable VM disk until the release QA matrix has been completed: no
+physical or QEMU installation has been performed yet.
 
 Run backend and source validation with `bash scripts/test.sh`. On Windows,
 `.\scripts\test.ps1` runs those checks plus the isolated QML, native application,

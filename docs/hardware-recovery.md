@@ -18,6 +18,14 @@ replaces the normal path.
 | Guided install | `install` | `AIOS install` | `aios.install` |
 | Recovery | `recovery` | `AIOS recovery (safe graphics)` | `aios.recovery nomodeset` |
 
+An installed system keeps the same recovery route. `aios-install` adds an
+`AIOS recovery (safe graphics)` entry to `/boot/grub/custom.cfg`, derived from
+the normal entry `grub-mkconfig` generated, so its root identification and
+initrd are whatever Alpine's own tooling chose and only `aios.recovery
+nomodeset` is added. The installation fails rather than completing if that
+entry is missing or the generated configuration would not read it. See
+[offline install parity and audit checkpoints](qa/hardware-install-rollback.md).
+
 - SYSLINUX shows a boot prompt (`PROMPT 1`, three-second timeout) and prints
   the entry list from the config's `SAY` lines; type `recovery` and press
   Enter. GRUB shows the three menu entries and defaults to the first.
@@ -165,12 +173,47 @@ of them starts:
 This is a preflight, not a compatible build. A baseline/dispatch inference
 build for older CPUs remains unimplemented and is not claimed anywhere.
 
+## Installed-system audit checkpoints
+
+An installed system can record what it currently runs. The root-only
+`/usr/local/sbin/aios-checkpoint` helper has three fixed operations: `status`,
+`verify` and `stage`.
+
+- `stage` writes `/var/lib/aios/checkpoints/<id>/manifest.json` — kernel
+  release and Alpine release family, digests of the kernel image and initramfs,
+  a module inventory digest over paths *and* content, and every installed
+  package version — plus a copy of that kernel and initramfs beside it.
+- Identifiers are derived from the recorded content, so no free-form name can
+  be supplied.
+- `verify` re-reads those stored copies against their own manifest.
+- User, chat, model and profile storage is never read or written, and nothing
+  under `/boot` or in any GRUB file is written at all.
+- `status` is sanitized: digests, versions and counts only, no device names or
+  serial numbers.
+
+**This is an audit record, not a way back.** There is no `activate` and no
+`rollback`: restoring a recorded system coherently means restoring the kernel,
+its modules, firmware and the Mesa/Xorg stack together, which on an ext4 root
+needs a full-system snapshot or a signed package bundle that does not exist
+here. Every `status` run says so, reporting `activation_enabled: false`,
+`rollback_enabled: false` and `package_acquisition_enabled: false`. The helper
+is deliberately absent from `/etc/doas.d/aios.conf`, so no desktop user, skill
+or MCP server can reach it. The full contract is in
+[offline install parity and audit checkpoints](qa/hardware-install-rollback.md).
+
+## Secure Boot
+
+Secure Boot is **unsupported and must be disabled** to boot AIOS, on the live
+medium and on an installed system. The optional modloop signature
+(`AIOS_MODLOOP_SIGN`) is the live image's own integrity check and is not Secure
+Boot. Signed bootloaders and kernels, key lifecycle, firmware enrollment,
+revocation and a recovery path are a separate, unstarted project.
+
 ## Physical gates that remain
 
 Everything above is implemented and covered by offline, display-independent
 tests. None of it is hardware evidence. The following still require physical
 machines and are untested:
-
 - Wi-Fi association on real adapters: WPA2 and WPA3, band coverage, DHCP/DNS,
   a 30-minute transfer, rfkill, reconnect, and five suspend/resume cycles per
   adapter family.
@@ -184,3 +227,9 @@ machines and are untested:
 - A machine that actually lacks AVX2, to confirm the preflight message rather
   than a SIGILL.
 - Ocean and generated-palette screenshots on accelerated and software paths.
+- A real installation: no `setup-disk` run, disposable-disk QEMU matrix,
+  sacrificial NVMe/SATA install or cold boot with the USB removed has been
+  performed. eMMC stays untested and unguarded.
+- Coherent update and rollback: not implemented at all. A full-system snapshot
+  or signed package bundle that restores kernel, modules, firmware and
+  Mesa/Xorg together has to be designed before any of it can be tested.
