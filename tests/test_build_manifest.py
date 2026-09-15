@@ -8,11 +8,14 @@ with `--extracted-root`, so no xorriso/ISO tooling is required.
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'distro' / 'alpine' / 'record-build-manifest.py'
@@ -339,6 +342,154 @@ class ManifestRecorderTests(unittest.TestCase):
         text = SCRIPT.read_text(encoding='utf-8')
         self.assertIn('tempfile.mkdtemp(prefix="iso-", dir=work)', text)
         self.assertNotIn('root = work / "iso"', text)
+
+    def extraction_args(self, *extra):
+        return recorder.parse_args([
+            '--iso', str(self.iso), '--work-dir', str(self.base / 'work'),
+            '--skip-index-fetch', '--output', str(self.output), *extra,
+        ])
+
+    def readonly_extractor(self, iso, iso_path, dest):
+        # Model xorriso's directory permissions, not its extraction internals.
+        if iso_path != '/apks':
+            return 'fixture has no boot artifacts'
+        packages = dest / 'x86_64'
+        packages.mkdir(parents=True)
+        (packages / 'busybox-1.0-r0.apk').write_bytes(b'fixture package')
+        (packages / 'busybox-1.0-r0.apk').chmod(0o444)
+        packages.chmod(0o555)
+        dest.chmod(0o555)
+        return None
+
+    def test_recording_removes_readonly_extraction_tree(self):
+        args = self.extraction_args()
+        with mock.patch.object(recorder, 'run_xorriso_extract', self.readonly_extractor), \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}):
+            for _ in range(2):
+                manifest = recorder.build_manifest(args)
+                self.assertEqual(manifest['output_closure']['apk_count'], 1)
+                self.assertEqual(list(args.work_dir.iterdir()), [],
+                                 'successful recording leaked the read-only APK tree')
+
+    def test_failed_recording_cleans_up_and_preserves_original_error(self):
+        args = self.extraction_args()
+        with mock.patch.object(recorder, 'run_xorriso_extract', self.readonly_extractor), \
+                mock.patch.object(recorder, 'collect_closure', side_effect=OSError('hash read failed')):
+            with self.assertRaisesRegex(OSError, 'hash read failed'):
+                recorder.build_manifest(args)
+        self.assertEqual(list(args.work_dir.iterdir()), [])
+
+    def test_extractor_exception_cleans_up_partial_tree(self):
+        args = self.extraction_args()
+
+        def interrupted(iso, iso_path, dest):
+            self.readonly_extractor(iso, iso_path, dest)
+            (dest / 'x86_64').chmod(0o000)
+            dest.chmod(0o000)
+            raise OSError('extraction interrupted')
+
+        with mock.patch.object(recorder, 'run_xorriso_extract', interrupted):
+            with self.assertRaisesRegex(OSError, 'extraction interrupted'):
+                recorder.build_manifest(args)
+        self.assertEqual(list(args.work_dir.iterdir()), [])
+
+    def test_keep_extraction_preserves_tree_and_permissions(self):
+        args = self.extraction_args('--keep-extraction')
+        with mock.patch.object(recorder, 'run_xorriso_extract', self.readonly_extractor), \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}):
+            recorder.build_manifest(args)
+        trees = list(args.work_dir.iterdir())
+        self.assertEqual(len(trees), 1)
+        packages = trees[0] / 'apks' / 'x86_64'
+        self.assertEqual(packages.stat().st_mode & 0o777, 0o555)
+        self.assertEqual((packages / 'busybox-1.0-r0.apk').read_bytes(), b'fixture package')
+
+    def test_caller_extracted_root_is_never_cleaned_or_chmodded(self):
+        args = self.extraction_args('--extracted-root', str(self.extracted))
+        self.apks.chmod(0o555)
+        with mock.patch.object(recorder, 'run_xorriso_extract') as extract, \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}):
+            recorder.build_manifest(args)
+        extract.assert_not_called()
+        self.assertEqual(self.apks.stat().st_mode & 0o777, 0o555)
+        self.assertEqual(len(list(self.apks.glob('*.apk'))), 2)
+        self.assertFalse(args.work_dir.exists())
+
+    def test_cleanup_does_not_follow_symlinks_outside_extraction(self):
+        args = self.extraction_args()
+        outside = self.base / 'outside'
+        outside.mkdir()
+        sentinel = outside / 'keep'
+        sentinel.write_bytes(b'not extraction data')
+        sentinel.chmod(0o400)
+        outside.chmod(0o500)
+
+        def extract_with_links(iso, iso_path, dest):
+            error = self.readonly_extractor(iso, iso_path, dest)
+            if iso_path == '/apks':
+                dest.chmod(0o755)
+                (dest / 'external-directory').symlink_to(outside, target_is_directory=True)
+                (dest / 'external-file').symlink_to(sentinel)
+                (dest / 'broken-link').symlink_to(self.base / 'absent')
+                dest.chmod(0o555)
+            return error
+
+        def legacy_resetperms(path):
+            # Simulate older CPython's symlink-following permission recovery.
+            # Cleanup must not delegate permission repair to that implementation.
+            os.chmod(path, 0o700)
+
+        with mock.patch.object(recorder, 'run_xorriso_extract', extract_with_links), \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}), \
+                mock.patch.object(tempfile, '_resetperms', legacy_resetperms):
+            recorder.build_manifest(args)
+        self.assertEqual(list(args.work_dir.iterdir()), [])
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o500)
+        self.assertEqual(sentinel.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(sentinel.read_bytes(), b'not extraction data')
+
+    def test_default_scratch_directory_is_removed_without_empty_parent_leak(self):
+        args = self.extraction_args()
+        args.work_dir = None
+        scratch = self.base / 'system-tmp'
+        scratch.mkdir()
+        with mock.patch.object(recorder.tempfile, 'tempdir', str(scratch)), \
+                mock.patch.object(recorder, 'run_xorriso_extract', self.readonly_extractor), \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}):
+            recorder.build_manifest(args)
+        self.assertEqual(list(scratch.iterdir()), [])
+
+    def test_cleanup_failure_is_not_reported_as_success(self):
+        args = self.extraction_args()
+        with mock.patch.object(recorder, 'run_xorriso_extract', self.readonly_extractor), \
+                mock.patch.object(recorder, 'iso_member_size', return_value={'status': 'unavailable'}), \
+                mock.patch.object(recorder.shutil, 'rmtree',
+                                  side_effect=PermissionError('cleanup denied')):
+            with self.assertRaisesRegex(PermissionError, 'cleanup denied'):
+                recorder.main([
+                    '--iso', str(args.iso), '--work-dir', str(args.work_dir),
+                    '--skip-index-fetch', '--output', str(args.output),
+                ])
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(shutil.which('xorriso'), 'optional real ISO extraction requires xorriso')
+    def test_real_xorriso_readonly_tree_is_removed(self):
+        self.apks.chmod(0o555)
+        self.apks.parent.chmod(0o555)
+        image = self.base / 'readonly.iso'
+        created = subprocess.run([
+            'xorriso', '-as', 'mkisofs', '-R', '-o', str(image), str(self.extracted),
+        ], capture_output=True, text=True, check=False)
+        self.assertEqual(created.returncode, 0, created.stderr)
+        work = self.base / 'real-extraction'
+        result = subprocess.run([
+            sys.executable, str(SCRIPT), '--iso', str(image), '--work-dir', str(work),
+            '--skip-index-fetch', '--output', str(self.output),
+        ], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(self.output.read_text())
+        self.assertEqual(manifest['output_closure']['apk_count'], 2)
+        self.assertEqual(list(work.iterdir()), [])
 
     # -- integration with the inspector ----------------------------------
 
