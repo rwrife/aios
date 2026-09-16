@@ -160,7 +160,8 @@ class TerminalThemeTests(unittest.TestCase):
         main = (ROOT / "apps/shell/main.cpp").read_text()
         openbox = (ROOT / "distro/alpine/overlay/etc/xdg/openbox/rc.xml").read_text()
         session = (ROOT / "distro/alpine/overlay/usr/local/bin/aios-session").read_text()
-        self.assertEqual(main.count('program = "aios-terminal"'), 1)
+        # Both the desktop and protected-session network panel use the launcher.
+        self.assertEqual(main.count('program = "aios-terminal"'), 2)
         self.assertIn('startDetached("aios-terminal"', main)
         self.assertIn('<command>aios-terminal</command>', openbox)
         self.assertIn('aios-terminal -title "AIOS Recovery"', session)

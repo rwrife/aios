@@ -170,6 +170,12 @@ are approved.
 
 ## Delivery and rollback
 
+The implementation and measured gates are tracked in
+[`recognition-stage-execution.md`](recognition-stage-execution.md).
+Pinned artifacts, packaging, the unexecuted cohort protocol and aggregate review
+checker are documented in [`../qa/recognition-release.md`](../qa/recognition-release.md).
+No calibrated approval is bundled; production accuracy remains unmeasured.
+
 Ship disabled by default, with camera recognition settings showing enabled,
 capturing, unavailable and manual-only states. Explain why the camera activates
 and provide a one-action enable/disable control plus a separate facial-data purge.

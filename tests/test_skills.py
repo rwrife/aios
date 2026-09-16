@@ -249,7 +249,7 @@ class SkillsTests(unittest.TestCase):
         catalog, warnings = self.load_real_builtin_catalog(include_warnings=True)
         self.assertEqual(warnings, [])
         skill = next(skill for skill in catalog if skill.name == "application-builder")
-        self.assertEqual(skill.allowed_tools, ("application",))
+        self.assertEqual(skill.allowed_tools, ("application", "build_application"))
         self.assertEqual(skill.model, "remote-preferred")
         self.assertIn("build an app", skill.triggers)
         self.assertIn("need a calculator", skill.triggers)

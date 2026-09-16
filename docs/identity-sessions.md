@@ -297,3 +297,9 @@ measurements locally; do not upload telemetry automatically.
 References for the optional adapters: [OpenCV face recognition](https://docs.opencv.org/4.13.0/d0/dd4/tutorial_dnn_face.html),
 [bubblewrap](https://github.com/containers/bubblewrap),
 [cryptsetup open](https://man7.org/linux/man-pages/man8/cryptsetup-open.8.html).
+# Optional recognition artifacts
+
+The identity image includes pinned YuNet/SFace artifacts and licenses, without a
+production calibration or approval. Suggestions never assert liveness or grant
+protected-session access. See [recognition release evidence](qa/recognition-release.md)
+for measured gates and remaining cohort requirements.
