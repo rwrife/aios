@@ -15,6 +15,16 @@ for the full multi-phase plan this stage belongs to.
 - Build-side recorder for repository/closure evidence:
   [`distro/alpine/record-build-manifest.py`](../../distro/alpine/record-build-manifest.py),
   invoked by [`distro/alpine/mkimage.sh`](../../distro/alpine/mkimage.sh)
+- Stage 2, which bundles the firmware/driver/userspace closure for these
+  entries offline and validates it:
+  [`hardware-offline-bundle.md`](hardware-offline-bundle.md), with the selected
+  package set in [`hardware-packages.json`](hardware-packages.json)
+
+Two module/firmware names in this matrix were corrected by stage 2 against the
+v3.23 file index: the MediaTek core module is `mt76` (not `mt76_core`), and
+`sof-firmware` installs `intel/sof/sof-cnl.ri` (not `intel/sof-cnl.ri`).
+Correcting a demonstrably wrong mapping is not a support claim; both entries
+remain `untested`.
 
 ## Status values
 
@@ -38,10 +48,20 @@ any physical-device test.
 Each entry follows `hardware-coverage.schema.json`: `id`, `family`, `vendor`,
 `device`, `bus`, `ids` (`pci_id`/`usb_id`/`subsystem_id` plus
 `subsystem_id_status`), `kernel_module`, `module_dependencies`,
-`firmware_files`, `firmware_package`, `firmware_license`,
+`firmware_files`, `firmware_requirements`, `firmware_package`,
+`firmware_license`,
 `firmware_provenance`, `minimum_kernel`, `minimum_mesa`,
 `representative_machine`, `status`, `evidence_date`, `evidence_sources`,
 `supporting_subsystems`, and `notes`.
+
+`firmware_requirements` is the field validation uses. It is a list of required
+groups (`{"id": ..., "any_of": [...]}`): every group must be satisfied, and the
+patterns inside one group are alternatives for the same artifact (an alternate
+packaged layout or a version wildcard). Artifacts that are needed together --
+an ath10k firmware image and its board file, a SOF DSP image and its topology,
+MediaTek RAM code and its MCU patch -- are therefore separate groups, so one of
+them going missing fails the entry. `firmware_files` stays as the flattened
+list of the same patterns for readers that only want the paths.
 
 The schema enforces the evidence contract with conditionals rather than prose:
 

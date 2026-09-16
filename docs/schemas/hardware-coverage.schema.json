@@ -163,6 +163,20 @@
         "notes": {"$ref": "#/$defs/nullableString"}
       }
     },
+    "firmwareRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "any_of"],
+      "description": "One required firmware artifact. 'any_of' holds alternative paths/globs for the same artifact (alternate packaged layouts, version wildcards); at least one must ship. Artifacts that are needed together -- a firmware image and its board file, a DSP image and its topology -- are separate requirements.",
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "any_of": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "representativeMachine": {
       "type": "object",
       "additionalProperties": false,
@@ -227,6 +241,7 @@
       "required": [
         "id", "family", "vendor", "device", "bus", "ids",
         "kernel_module", "module_dependencies", "firmware_files",
+        "firmware_requirements",
         "firmware_package", "firmware_license", "firmware_provenance",
         "minimum_kernel", "minimum_mesa", "representative_machine",
         "status", "evidence_date", "evidence_sources",
@@ -246,7 +261,16 @@
         "ids": {"$ref": "#/$defs/ids"},
         "kernel_module": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "module_dependencies": {"type": "array", "items": {"type": "string"}},
-        "firmware_files": {"type": "array", "items": {"type": "string"}},
+        "firmware_files": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Flat list of every pattern in firmware_requirements, kept for readers that only need the paths. Validation uses firmware_requirements."
+        },
+        "firmware_requirements": {
+          "type": "array",
+          "description": "Required firmware groups. Every group must be satisfied; within a group the patterns are alternatives and one match is enough. Co-required artifacts (a firmware image and its board file or topology) therefore belong in separate groups.",
+          "items": {"$ref": "#/$defs/firmwareRequirement"}
+        },
         "firmware_package": {"type": "array", "items": {"type": "string"}},
         "firmware_license": {"$ref": "#/$defs/firmwareLicense"},
         "firmware_provenance": {"$ref": "#/$defs/firmwareProvenance"},
@@ -286,7 +310,9 @@
             "required": ["firmware_files"]
           },
           "then": {
+            "required": ["firmware_requirements"],
             "properties": {
+              "firmware_requirements": {"minItems": 1},
               "firmware_license": {"properties": {"status": {"enum": ["declared", "unresolved"]}}},
               "firmware_provenance": {"properties": {"status": {"enum": ["packaged", "unresolved"]}}}
             }
