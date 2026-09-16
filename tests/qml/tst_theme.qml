@@ -57,7 +57,9 @@ TestCase {
         signal recognitionDataPurgeFailed(string message)
         function listProfiles() {}
         function setSecureInput(active) {}
-        function setCameraPreviewActive(active) {}
+        property bool cameraPreviewActive: false
+        property string cameraPreview: ""
+        function setCameraPreviewActive(active) { cameraPreviewActive = active; if (!active) cameraPreview = ""; return true }
         function setRecognitionEnabled(enabled) {
             recognitionEnabled = enabled
             recognitionState = enabled ? "ready" : "disabled"
@@ -182,17 +184,23 @@ TestCase {
         compare(findChild(window, "aboutMemory").text, "4.0 GiB")
         window.destroy()
     }
-    function test_camera_preview_uses_bounded_format_without_runtime_enums() {
-        var window = settingsComponent.createObject(test, {backend: backend, theme: palette})
-        verify(window !== null)
-        var selected = window.previewFormat({videoFormats: [
-            {resolution: {width: 640, height: 360}, mode: "raw"},
-            {resolution: {width: 1920, height: 1080}, mode: "large"},
-            {resolution: {width: 640, height: 360}, mode: "compressed"}
-        ]})
-        compare(selected.resolution.width, 640)
-        compare(selected.resolution.height, 360)
-        compare(selected.mode, "compressed")
+    function test_camera_preview_service_lifecycle_data() {
+        return [{tag: "Ocean", theme: "blue"}, {tag: "Sage", theme: "sage"}]
+    }
+    function test_camera_preview_service_lifecycle(data) {
+        backend.config = ({theme_color: data.theme, reduced_motion: true})
+        var window = settingsComponent.createObject(test, {backend: backend, theme: palette, profileControl: profileControl})
+        window.show()
+        findChild(window, "settingsPages").currentIndex = 2
+        profileControl.setCameraPreviewActive(true)
+        tryCompare(window, "previewActive", true)
+        profileControl.cameraReleaseRequested()
+        tryCompare(window, "previewActive", false)
+        profileControl.setCameraPreviewActive(true)
+        window.hide()
+        tryCompare(profileControl, "cameraPreviewActive", false)
+        window.show()
+        compare(window.previewActive, false)
         window.destroy()
     }
     function test_facial_recognition_has_separate_toggle_and_purge_controls() {
