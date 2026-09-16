@@ -38,7 +38,26 @@ node, missing device, contention/release and physical unplug checks passed.
 Physical reconnect, automatic discovery, actual capture deadline cleanup and
 scoped ACL restoration also passed. Stage 1 implementation and validation are
 complete in PR #133, ready for review. The issue closes when that PR lands.
-Stage 2 is next, based on the validated stage 1 branch; stages 3–5 follow it.
+Stage 2 implementation is on `codex/recognition-capture-service`, based on the
+validated stage 1 branch. PR #134 now passes deterministic, display, physical
+Brio service lifecycle, Alpine guest preemption/termination and USB/IP removal
+checks. Measured evidence is in `docs/qa/brio-camera.md`. Stage 3 follows it;
+successful calibrated enrollment and held-out accuracy remain later release gates.
+
+Stage 3 is implemented in PR #135 with durable encrypted generations, immediate
+UUID/PIN revalidation, guided finite sampling and protected-namespace refusal.
+Crash/restart, concurrent purge/deletion, quality guidance and display/PIN tests
+pass; see `docs/facial-data-lifecycle.md`. Stage 4 suggestion-channel hardening is
+next. The operator delegated model/setup selection; no held-out consented cohort
+was supplied, so biometric accuracy gates remain unmeasured and cannot be closed
+by synthetic tests.
+
+Stage 4 is implemented in PR #136: strict native reply validation, absolute expiry,
+approval-bound model/calibration loading, invalidation and UUID-only PIN selection.
+Protocol, matching-state and display/PIN tests pass. Stage 5 will pin/package the
+selected OpenCV-compatible model artifacts, add reproducible evaluation gates,
+and perform the final batched image/runtime checks. Human cohort accuracy remains
+an explicitly unmeasured gate.
 
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates

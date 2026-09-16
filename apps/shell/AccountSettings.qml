@@ -24,7 +24,7 @@ ColumnLayout {
                     required property var modelData
                     Layout.fillWidth: true
                     Label { text: modelData.name; color: accounts.ink; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true }
-                    Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.open(); } }
+                    Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.selectedProfileId = modelData.id; enrollment.open(); } }
                     Button {
                         objectName: "enrollRecognition"; text: "Face recognition…"
                         enabled: accounts.control && accounts.control.greetingOnly &&
@@ -75,6 +75,7 @@ ColumnLayout {
             }
             TextField {
                 id: recognitionPin; objectName: "recognitionPin"
+                Accessible.name: "Account PIN or password"
                 placeholderText: "Account PIN or password"; echoMode: TextInput.Password
                 maximumLength: 128; Layout.fillWidth: true
                 inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
@@ -94,8 +95,11 @@ ColumnLayout {
                 }
             }
             Label {
+                objectName: "recognitionGuidance"
                 visible: accounts.control && accounts.control.recognitionState === "enrolling"
-                text: "Capturing a short local burst…"; wrapMode: Text.Wrap; Layout.fillWidth: true
+                text: accounts.control && accounts.control.recognitionGuidance
+                      ? accounts.control.recognitionGuidance : "Look straight at the camera, then turn slightly to each side. Capture ends within 30 seconds."
+                wrapMode: Text.Wrap; Layout.fillWidth: true
             }
             Label { text: accounts.control ? accounts.control.error : ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
@@ -140,7 +144,7 @@ ColumnLayout {
             faceEnrollment.close()
             accounts.result = "Face recognition was added. Account access still requires the PIN."
         }
-        function onPrivacyLost() { deletion.close() }
+        function onPrivacyLost() { deletion.close(); faceEnrollment.close() }
         function onUnlocked() { accounts.refresh() }
     }
 }

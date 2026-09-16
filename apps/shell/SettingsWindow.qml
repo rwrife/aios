@@ -12,7 +12,7 @@ Window {
     property var profileControl: null
     property string recognitionNotice: ""
     property var selectedCameraDevice: devices.defaultVideoInput
-    readonly property var activeCamera: cameraLoader.item
+    readonly property bool previewActive: profileControl && profileControl.cameraPreviewActive === true
     signal setupRequested()
     title: "AIOS Settings"
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -23,29 +23,11 @@ Window {
     x: Screen.virtualX + (Screen.width-width)/2; y: Screen.virtualY + (Screen.height-height)/2
     color: "transparent"
     function stopCameraPreview() {
-        if (activeCamera) activeCamera.stop()
-        cameraSession.camera = null
-        cameraLoader.active = false
         if (profileControl && typeof profileControl.setCameraPreviewActive === "function")
             profileControl.setCameraPreviewActive(false)
     }
-    function previewFormat(device) {
-        const formats = device.videoFormats || []
-        for (let i = formats.length - 1; i >= 0; --i) {
-            const format = formats[i]
-            if (format.resolution.width === 640 && format.resolution.height === 360)
-                return format
-        }
-        return formats.length ? formats[0] : undefined
-    }
-    function configureCamera(device) {
-        selectedCameraDevice = device
-        if (activeCamera) {
-            activeCamera.cameraDevice = device
-            const format = previewFormat(device)
-            if (format) activeCamera.cameraFormat = format
-        }
-    }
+
+    function configureCamera(device) { selectedCameraDevice = device }
     function recognitionStatusText() {
         if (backend.config.camera_recognition !== true)
             return "Off. AIOS will not use the camera for account suggestions. Enrolled face data is kept until you purge it."
@@ -210,32 +192,28 @@ Window {
                             Layout.minimumHeight: 100
                             Layout.alignment: Qt.AlignHCenter
                             color: theme.night; radius: 8
-                            VideoOutput { id: viewfinder; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
-                            Text { anchors.centerIn: parent; visible: !settings.activeCamera || !settings.activeCamera.active; text: "Camera off"; color: theme.muted }
+                            Image { anchors.fill: parent; fillMode: Image.PreserveAspectFit; cache: false; source: settings.previewActive ? (settings.profileControl.cameraPreview || "") : "" }
+                            Text { anchors.centerIn: parent; visible: !settings.previewActive; text: "Camera off"; color: theme.muted }
                         }
                         Note {
-                            text: settings.activeCamera ? settings.activeCamera.errorString : ""
-                            visible: settings.activeCamera && settings.activeCamera.error !== Camera.NoError
+                            text: settings.profileControl ? (settings.profileControl.error || "") : ""
+                            visible: text.length > 0
                             font.pixelSize: 12
                         }
                         Action {
-                            text: settings.activeCamera && settings.activeCamera.active ? "Stop preview" : "Start preview"
+                            text: settings.previewActive ? "Stop preview" : "Start preview"
                             enabled: devices.videoInputs.length > 0
                             onClicked: {
-                                if (settings.activeCamera && settings.activeCamera.active) settings.stopCameraPreview()
+                                if (settings.previewActive) settings.stopCameraPreview()
                                 else {
                                     if (settings.profileControl &&
                                             typeof settings.profileControl.setCameraPreviewActive === "function" &&
-                                            settings.profileControl.setCameraPreviewActive(true) === false)
+                                            settings.profileControl.setCameraPreviewActive(true, settings.selectedCameraDevice) === false)
                                         return
-                                    cameraLoader.active = true
-                                    settings.configureCamera(settings.selectedCameraDevice)
-                                    cameraSession.camera = settings.activeCamera
-                                    settings.activeCamera.start()
                                 }
                             }
                         }
-                        Note { text: "Preview stays on this computer. Camera attachments and video calls are not enabled."; font.pixelSize: 12 }
+                        Note { text: "Preview stays on this computer and stops after 30 seconds. Nothing is saved or uploaded."; font.pixelSize: 12 }
                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: theme.line; opacity: 0.5 }
                         Text { text: "Facial recognition"; color: theme.ink; font.pixelSize: 17 }
                         Note {
@@ -406,16 +384,6 @@ Window {
     }
     MediaDevices { id: devices }
     WindowBorder { theme: settings.theme }
-    Camera {
-        id: camera
-        cameraDevice: devices.defaultVideoInput
-    }
-    Loader {
-        id: cameraLoader
-        active: false
-        sourceComponent: Camera { cameraDevice: settings.selectedCameraDevice }
-    }
-    CaptureSession { id: cameraSession; videoOutput: viewfinder }
     Dialog {
         id: purgeRecognitionDialog
         objectName: "purgeRecognitionDialog"

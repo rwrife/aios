@@ -10,6 +10,8 @@
 #include <QMediaDevices>
 #include <QPointer>
 #include "ProfilePhoto.h"
+#include <QMap>
+#include "CameraDevice.h"
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <algorithm>
@@ -34,7 +36,10 @@ class SessionControl : public QObject {
     Q_PROPERTY(QVariantMap challenge READ challenge NOTIFY changed)
     Q_PROPERTY(QVariantMap profile READ profile NOTIFY changed)
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY changed)
+    Q_PROPERTY(QString cameraPreview READ cameraPreview NOTIFY changed)
+    Q_PROPERTY(bool cameraPreviewActive READ cameraPreviewActive NOTIFY changed)
     Q_PROPERTY(QString recognitionState READ recognitionState NOTIFY changed)
+    Q_PROPERTY(QString recognitionGuidance READ recognitionGuidance NOTIFY changed)
     Q_PROPERTY(QVariantMap recognitionSuggestion READ recognitionSuggestion NOTIFY changed)
 public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
@@ -57,25 +62,34 @@ public:
         });
         if (enabled()) timer.start();
         if (!qobject_cast<SessionControl *>(parent) && greetingOnly()) {
-            recognitionClock.start();
-            recognitionTimer.setSingleShot(true);
             suggestionTimer.setSingleShot(true);
-            connect(&recognitionTimer, &QTimer::timeout, this, [this] { startRecognition(false); });
-            connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
-                if (state != Qt::ApplicationActive) {
-                    cancelRecognition(); clearRecognitionSuggestion();
-                } else {
-                    scheduleRecognition(0);
+            auto client = CameraClient::instance();
+            connect(client, &CameraClient::received, this, &SessionControl::cameraEvent);
+            connect(client, &CameraClient::generationChanged, this, &SessionControl::clearRecognitionSuggestion);
+            connect(client, &CameraClient::unavailable, this, [this] {
+                m_recognitionState = "unavailable";
+                clearRecognitionSuggestion();
+                previewRequest.clear(); m_cameraPreview.clear(); m_previewActive = false;
+                if (recognitionRequester) {
+                    recognitionRequester->m_error = "The camera service is unavailable; use your account PIN.";
+                    finishCameraOperation(recognitionRequester);
                 }
+                recognitionRequest.clear(); recognitionRequester = nullptr;
+                if (recognitionAction == "purge") emit recognitionDataPurgeFailed("The camera service is unavailable.");
+                notifyRecognitionChanged();
             });
-            connect(&mediaDevices, &QMediaDevices::videoInputsChanged, this, [this] {
-                recognitionFailures = 0; scheduleRecognition(0);
-            });
-            scheduleRecognition(0);
+            connect(qApp, &QGuiApplication::applicationStateChanged, this,
+                    [this](Qt::ApplicationState) { updateCameraGate(); });
+            connect(&mediaDevices, &QMediaDevices::videoInputsChanged, client, &CameraClient::refresh);
+            QTimer::singleShot(0, this, [this] { updateCameraGate(); });
         }
     }
     ~SessionControl() override {
-        if (recognitionRoot() == this) cancelRecognition();
+        if (recognitionRoot() == this) {
+            cancelRecognition();
+            CameraClient::instance()->release(previewConsumer);
+            CameraClient::instance()->configure(false, true);
+        }
     }
     bool enabled() const { return !path.isEmpty(); }
     bool greetingOnly() const { return !enabled(); }
@@ -94,22 +108,27 @@ public:
     bool personalAvailable() const { return greetingOnly() || m_personalAvailable; }
     QVariantMap profile() const { return m_profile; }
     QVariantList profiles() const { return m_profiles; }
+    QString cameraPreview() const { return recognitionRoot()->m_cameraPreview; }
+    bool cameraPreviewActive() const { return recognitionRoot()->m_previewActive; }
     QString recognitionState() const { return recognitionRoot()->m_recognitionState; }
+    QString recognitionGuidance() const { return recognitionRoot()->m_recognitionGuidance; }
     QVariantMap recognitionSuggestion() const { return recognitionRoot()->m_recognitionSuggestion; }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
     Q_INVOKABLE void deleteAccount(const QString &id, const QString &pin) {
-        if (greetingOnly()) call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
+        if (pendingEnrollment) return;
+        if (greetingOnly()) {
+            auto root = recognitionRoot();
+            root->cancelRecognition(); root->clearRecognitionSuggestion();
+            CameraClient::instance()->configure(false, true);
+            call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
+        }
     }
     Q_INVOKABLE void takeProfilePhoto() {
         if (m_secureInput && personalAvailable()) {
             const auto capturePath = CameraDevice::capturePath();
             auto root = recognitionRoot();
             if (!root->beginCameraOperation(this)) return;
-            QTimer::singleShot(1500, this, [this, root, capturePath] {
-                if (root->cameraOperationOwner != this) return;
-                if (m_secureInput && personalAvailable()) photoCapture.take(capturePath);
-                else root->finishCameraOperation(this);
-            });
+            photoCapture.take(capturePath);
         }
     }
     Q_INVOKABLE void setSecureInput(bool active) {
@@ -117,29 +136,37 @@ public:
         if (active) recognitionRoot()->cancelRecognition();
         else {
             photoCapture.cancel();
+            if (recognitionRoot()->recognitionRequester == this) {
+                recognitionRoot()->cancelRecognition();
+                recognitionRoot()->recognitionRequester = nullptr;
+            }
             recognitionRoot()->finishCameraOperation(this);
-            recognitionRoot()->scheduleRecognition(2000);
+            recognitionRoot()->updateCameraGate();
         }
+        recognitionRoot()->updateCameraGate();
         emit changed();
     }
-    Q_INVOKABLE void requestRecognition() { recognitionRoot()->startRecognition(true); }
-    Q_INVOKABLE bool setCameraPreviewActive(bool active) {
+    Q_INVOKABLE void requestRecognition() { recognitionRoot()->runRecognition({{"action", "recognize"}}, 5000); }
+    Q_INVOKABLE bool setCameraPreviewActive(bool active, QCameraDevice device = QCameraDevice()) {
         auto root = recognitionRoot();
-        if (active && root->cameraOperationOwner) return false;
-        root->cameraConsumerActive = active;
-        if (active) root->cancelRecognition();
-        else root->scheduleRecognition(2000);
-        return true;
+        if (!active) {
+            root->previewRequest.clear(); root->m_cameraPreview.clear(); root->m_previewActive = false;
+            CameraClient::instance()->release(root->previewConsumer);
+            root->notifyRecognitionChanged();
+            return true;
+        }
+        if (root->cameraOperationOwner || root->m_previewActive) return false;
+        root->previewRequest = CameraClient::instance()->capture(root->previewConsumer, "preview", CameraDevice::stablePath(device));
+        root->m_previewActive = !root->previewRequest.isEmpty();
+        root->notifyRecognitionChanged();
+        return root->m_previewActive;
     }
     Q_INVOKABLE void enrollRecognition(const QString &id, const QString &pin, bool consent) {
         auto root = recognitionRoot();
         if (!root->beginCameraOperation(this)) return;
         root->recognitionRequester = this;
-        QTimer::singleShot(1500, this, [this, root, id, pin, consent] {
-            if (root->cameraOperationOwner != this) return;
-            root->runRecognition({{"action", "enroll"}, {"owner", id},
-                                  {"pin", pin}, {"consent", consent}}, 35000);
-        });
+        root->runRecognition({{"action", "enroll"}, {"owner", id},
+                              {"pin", pin}, {"consent", consent}}, 30000);
     }
     Q_INVOKABLE void setRecognitionEnabled(bool enabled) {
         auto root = recognitionRoot();
@@ -147,8 +174,7 @@ public:
         root->cancelRecognition();
         root->clearRecognitionSuggestion();
         root->m_recognitionState = enabled ? "starting" : "disabled";
-        root->recognitionFailures = 0;
-        if (enabled) root->scheduleRecognition(0);
+        root->updateCameraGate();
         root->notifyRecognitionChanged();
     }
     Q_INVOKABLE void purgeRecognitionData() {
@@ -196,6 +222,10 @@ public:
         if (enabled()) clearPersonal();
         call({{"action", "activate_verified"}, {"owner", name}, {"pin", pin},
               {"title", QJsonValue::Null}, {"session", QJsonValue::Null}});
+    }
+    Q_INVOKABLE void unlockProfile(const QString &id, const QString &pin) {
+        if (!greetingOnly()) return;
+        call({{"action", "activate_profile"}, {"owner", id}, {"pin", pin}});
     }
     Q_INVOKABLE void recover(const QString &name, const QString &secret, const QString &pin) {
         call({{"action", "recover"}, {"owner", name}, {"recovery", secret}, {"pin", pin}});
@@ -252,18 +282,17 @@ private:
     QVariantList m_profiles;
     ProfilePhoto photoCapture;
     QTimer timer;
-    QTimer recognitionTimer;
     QTimer suggestionTimer;
-    QElapsedTimer recognitionClock;
+    QString recognitionRequest, recognitionAction, previewRequest, m_cameraPreview;
+    QString recognitionConsumer = CameraClient::identifier();
+    QString previewConsumer = CameraClient::identifier();
+    bool m_previewActive = false;
     QMediaDevices mediaDevices;
-    QPointer<QProcess> recognitionProcess;
     QPointer<SessionControl> recognitionRequester;
     QPointer<SessionControl> cameraOperationOwner;
-    qint64 lastRecognitionStart = -2000;
-    int recognitionFailures = 0;
     bool recognitionSuppressed = false;
-    bool cameraConsumerActive = false;
     QString m_recognitionState = "disabled";
+    QString m_recognitionGuidance;
     QVariantMap m_recognitionSuggestion;
     bool pendingStatus = false;
     bool pendingEnrollment = false;
@@ -306,150 +335,114 @@ private:
     void finishCameraOperation(SessionControl *owner) {
         if (cameraOperationOwner != owner) return;
         cameraOperationOwner = nullptr;
-        scheduleRecognition(2000);
+        updateCameraGate();
     }
     void cancelRecognition() {
-        recognitionTimer.stop();
-        if (recognitionProcess) {
-            recognitionProcess->disconnect(this);
-            recognitionProcess->kill();
-            recognitionProcess->waitForFinished(1000);
-            recognitionProcess->deleteLater();
-            recognitionProcess = nullptr;
-        }
+        recognitionRequest.clear();
+        CameraClient::instance()->release(recognitionConsumer);
     }
-    void scheduleRecognition(int milliseconds) {
-        if (!greetingOnly() || recognitionSuppressed || cameraConsumerActive ||
-            cameraOperationOwner || m_secureInput ||
-            QGuiApplication::applicationState() != Qt::ApplicationActive) return;
+    void updateCameraGate() {
+        if (!greetingOnly()) return;
         const auto controls = findChildren<SessionControl *>();
-        if (std::any_of(controls.cbegin(), controls.cend(),
-                        [](SessionControl *control) { return control->m_secureInput; })) return;
-        recognitionTimer.start(milliseconds);
+        const bool secure = m_secureInput || std::any_of(controls.cbegin(), controls.cend(),
+                            [](SessionControl *control) { return control->m_secureInput; });
+        const bool active = QGuiApplication::applicationState() == Qt::ApplicationActive;
+        if (secure || !active) clearRecognitionSuggestion();
+        CameraClient::instance()->configure(active, secure);
     }
-    void startRecognition(bool immediate) {
-        if (recognitionSuppressed || cameraConsumerActive || cameraOperationOwner ||
-            recognitionProcess ||
-            QGuiApplication::applicationState() != Qt::ApplicationActive) return;
-        if (immediate && recognitionClock.elapsed() - lastRecognitionStart < 2000) return;
-        lastRecognitionStart = recognitionClock.elapsed();
-        runRecognition({{"action", "recognize"}}, 3000);
-    }
-    void runRecognition(const QJsonObject &request, int timeout) {
-        if (recognitionProcess) return;
-        const auto action = request.value("action").toString();
-        if (action == "enroll") {
-            m_recognitionState = "enrolling";
+    void runRecognition(const QJsonObject &request, int) {
+        if (!recognitionRequest.isEmpty()) return;
+        recognitionAction = request.value("action").toString();
+        m_recognitionGuidance.clear();
+        recognitionRequest = CameraClient::instance()->capture(recognitionConsumer, recognitionAction, {},
+            request.value("owner").toString(), request.value("pin").toString(), request.value("consent").toBool());
+        if (recognitionRequest.isEmpty()) {
+            m_recognitionState = "unavailable";
+            if (recognitionRequester) {
+                recognitionRequester->m_error = "The camera service is unavailable; use your account PIN.";
+                finishCameraOperation(recognitionRequester);
+                recognitionRequester = nullptr;
+            }
             notifyRecognitionChanged();
         }
-        auto process = new QProcess(this);
-        recognitionProcess = process;
-        auto buffer = new QByteArray;
-        auto environment = QProcessEnvironment::systemEnvironment();
-        const auto modulePath = environment.value("AIOS_PYTHONPATH");
-        if (!modulePath.isEmpty()) environment.insert("PYTHONPATH", modulePath);
-        else if (environment.value("PYTHONPATH").isEmpty())
-            environment.insert("PYTHONPATH", "/usr/local/share/aios");
-        process->setProcessEnvironment(environment);
-        connect(process, &QObject::destroyed, [buffer] { delete buffer; });
-        connect(process, &QProcess::started, process, [process, request] {
-            process->write(QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n');
-            process->closeWriteChannel();
-        });
-        connect(process, &QProcess::readyReadStandardError, process, [process] {
-            process->readAllStandardError();
-        });
-        connect(process, &QProcess::readyReadStandardOutput, process, [process, buffer] {
-            buffer->append(process->readAllStandardOutput());
-            if (buffer->size() > 65536) process->kill();
-        });
-        connect(process, qOverload<int,QProcess::ExitStatus>(&QProcess::finished), this,
-                [this, process, buffer, action](int code, QProcess::ExitStatus) {
-            if (recognitionProcess == process) recognitionProcess = nullptr;
-            const auto reply = buffer->size() <= 65536
-                ? QJsonDocument::fromJson(*buffer).object() : QJsonObject();
-            const bool ok = code == 0 && reply.value("ok").toBool();
+    }
+    void cameraEvent(const QJsonObject &event) {
+        const auto kind = event.value("event").toString();
+        const auto request = event.value("request").toString();
+        const auto reason = event.value("reason").toString();
+        const auto payload = event.value("payload").toObject();
+        if (reason == "device_changed" || reason == "gate_changed" || reason == "shutdown")
+            clearRecognitionSuggestion();
+        if (!previewRequest.isEmpty() && request == previewRequest) {
+            if (kind == "preview") m_cameraPreview = payload.value("image").toString();
+            else if (kind == "error" || kind == "cancelled" || kind == "result") {
+                previewRequest.clear(); m_cameraPreview.clear(); m_previewActive = false;
+                CameraClient::instance()->release(previewConsumer);
+                if (kind == "error") m_error = "Camera preview is unavailable.";
+            }
+            notifyRecognitionChanged();
+        }
+        const bool background = event.value("consumer").toString() == QString(32, '0');
+        if ((!background && (recognitionRequest.isEmpty() || request != recognitionRequest))) return;
+        if (!background && kind == "error" && reason == "cooldown" && recognitionAction == "recognize") {
+            recognitionRequest.clear();
+            return; // Opening the picker does not extend or erase a fresh result.
+        }
+        if (kind == "state") {
+            m_recognitionState = background && recognitionSuppressed ? "disabled" : payload.value("state").toString("unavailable");
+        } else if (kind == "progress" && recognitionAction == "enroll" && !background) {
+            const auto hint = payload.value("reason").toString();
+            const QMap<QString, QString> guidance{
+                {"look_straight", "Look straight at the camera."},
+                {"turn_slightly", "Turn your face slightly to one side."},
+                {"turn_other_way", "Now turn slightly to the other side."},
+                {"improve_light_or_hold_still", "Use even lighting and hold still."},
+                {"one_person_only", "Only one person should be in view."},
+                {"face_camera", "Move closer and keep your whole face in view."},
+                {"sample_accepted", "Sample accepted. Turn slightly for the next sample."}};
+            m_recognitionGuidance = QString("%1 of 3 samples. %2").arg(payload.value("samples").toInt()).arg(guidance.value(hint));
+        } else if (kind == "result") {
+            const auto action = background ? QString("recognize") : recognitionAction;
+            if (action != "recognize") CameraClient::instance()->release(recognitionConsumer);
             if (action == "recognize") {
-                if (ok) {
-                    recognitionFailures = 0;
-                    const auto result = reply.value("result").toObject();
-                    m_recognitionState = result.value("state").toString("unavailable");
-                    const auto suggestion = result.value("suggestion").toObject().toVariantMap();
-                    if (!suggestion.isEmpty()) {
-                        m_recognitionSuggestion = suggestion;
-                        suggestionTimer.start(5000);
-                        connect(&suggestionTimer, &QTimer::timeout, this,
-                                &SessionControl::clearRecognitionSuggestion, Qt::UniqueConnection);
-                    } else clearRecognitionSuggestion();
-                    if (m_recognitionState != "disabled") scheduleRecognition(15000);
-                } else {
-                    m_recognitionState = "unavailable";
-                    clearRecognitionSuggestion();
-                    static const int delays[] = {2000, 5000, 15000, 60000};
-                    scheduleRecognition(delays[qMin(recognitionFailures++, 3)]);
+                m_recognitionState = recognitionSuppressed ? "disabled" : payload.value("state").toString("unavailable");
+                m_recognitionSuggestion = recognitionSuppressed ? QVariantMap() : payload.value("suggestion").toObject().toVariantMap();
+                suggestionTimer.stop();
+                if (!m_recognitionSuggestion.isEmpty()) {
+                    const auto remaining = m_recognitionSuggestion.value("expires_at").toDouble() - CameraProtocol::monotonic();
+                    if (remaining <= 0 || remaining > 5) { clearRecognitionSuggestion(); return; }
+                    suggestionTimer.start(int(std::ceil(remaining * 1000)));
+                    connect(&suggestionTimer, &QTimer::timeout, this,
+                            &SessionControl::clearRecognitionSuggestion, Qt::UniqueConnection);
                 }
             } else if (action == "enroll") {
-                auto requester = recognitionRequester.data();
-                if (ok) {
-                    m_recognitionState = "ready";
-                    const auto id = reply.value("result").toObject().value("enrolled").toString();
-                    emit recognitionEnrollmentCompleted(id);
-                    if (recognitionRequester && recognitionRequester != this)
-                        emit recognitionRequester->recognitionEnrollmentCompleted(id);
-                    scheduleRecognition(2000);
-                } else {
-                    auto target = recognitionRequester ? recognitionRequester.data() : this;
-                    target->m_error = reply.value("error").toString(
-                        "Face recognition enrollment failed; your account and PIN are unchanged.");
-                    m_recognitionState = "ready";
-                    scheduleRecognition(2000);
-                }
-                finishCameraOperation(requester);
+                m_recognitionState = "ready";
+                const auto id = payload.value("enrolled").toString();
+                emit recognitionEnrollmentCompleted(id);
+                if (recognitionRequester && recognitionRequester != this)
+                    emit recognitionRequester->recognitionEnrollmentCompleted(id);
+                finishCameraOperation(recognitionRequester);
                 recognitionRequester = nullptr;
             } else if (action == "purge") {
-                if (ok) {
-                    m_recognitionState = "manual-only";
-                    emit recognitionDataPurged();
-                    scheduleRecognition(0);
-                } else {
-                    m_recognitionState = "unavailable";
-                    const auto error = reply.value("error").toString(
-                        "Facial recognition data could not be purged.");
-                    m_error = error;
-                    emit recognitionDataPurgeFailed(error);
-                }
+                m_recognitionState = "manual-only";
+                clearRecognitionSuggestion();
+                emit recognitionDataPurged();
             }
-            notifyRecognitionChanged();
-            process->deleteLater();
-        });
-        connect(process, &QProcess::errorOccurred, this, [this, process, action](QProcess::ProcessError) {
-            if (recognitionProcess == process) recognitionProcess = nullptr;
-            if (action == "recognize") {
-                m_recognitionState = "unavailable";
-                static const int delays[] = {2000, 5000, 15000, 60000};
-                scheduleRecognition(delays[qMin(recognitionFailures++, 3)]);
-            }
-            else {
-                auto target = recognitionRequester ? recognitionRequester.data() : this;
-                target->m_error = "Face recognition is unavailable; use your account PIN.";
-                if (action == "enroll") {
-                    m_recognitionState = "ready";
-                    finishCameraOperation(target);
-                    scheduleRecognition(2000);
-                } else if (action == "purge") {
-                    m_recognitionState = "unavailable";
-                    emit recognitionDataPurgeFailed(
-                        "Facial recognition data could not be purged.");
-                }
+            if (!background) recognitionRequest.clear();
+        } else if ((kind == "error" || kind == "cancelled") && reason != "completed") {
+            if (!background) CameraClient::instance()->release(recognitionConsumer);
+            clearRecognitionSuggestion();
+            m_recognitionState = recognitionSuppressed ? "disabled" : "unavailable";
+            if (recognitionRequester) {
+                recognitionRequester->m_error = "Face enrollment was unavailable or cancelled; your PIN is unchanged.";
+                finishCameraOperation(recognitionRequester);
                 recognitionRequester = nullptr;
             }
-            notifyRecognitionChanged();
-            process->deleteLater();
-        });
-        QTimer::singleShot(timeout, process, [process] {
-            if (process->state() != QProcess::NotRunning) process->kill();
-        });
-        process->start("python3", {"-m", "aios.recognition"});
+            if (recognitionAction == "purge" && !background)
+                emit recognitionDataPurgeFailed("Facial recognition data could not be purged.");
+            if (!background) recognitionRequest.clear();
+        }
+        notifyRecognitionChanged();
     }
     void clearPersonal() {
         photoCapture.cancel(); m_profile.clear(); m_profiles.clear();
@@ -561,7 +554,7 @@ private:
     void callGreeting(const QJsonObject &request) {
         if (pendingEnrollment) return;
         const auto action = request.value("action").toString();
-        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "delete_profile") return;
+        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "activate_profile" && action != "delete_profile") return;
         pendingEnrollment = true; m_error.clear(); emit changed();
         auto process = new QProcess(this);
         auto environment = QProcessEnvironment::systemEnvironment();
@@ -576,7 +569,8 @@ private:
         });
         connect(process, &QProcess::readyReadStandardError, process, [process] { process->readAllStandardError(); });
         connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError) {
-            m_error = "Could not open local profiles"; pendingEnrollment = false; emit changed(); process->deleteLater();
+            m_error = "Could not open local profiles"; pendingEnrollment = false;
+            recognitionRoot()->updateCameraGate(); emit changed(); process->deleteLater();
         });
         connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
                 [this, process, epoch, action](int code, QProcess::ExitStatus) {
@@ -610,6 +604,7 @@ private:
             }
             emit changed();
             process->deleteLater();
+            recognitionRoot()->updateCameraGate();
         });
         QTimer::singleShot(5000, process, [process] { if (process->state() != QProcess::NotRunning) process->kill(); });
         process->start("python3", {"-m", "aios.chat_profiles"});

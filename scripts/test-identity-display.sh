@@ -11,11 +11,13 @@ docker run --rm --privileged --cgroupns=private \
     gst-inspect-1.0 v4l2src >/dev/null
     cmake -S apps/shell -B /tmp/display-shell -G Ninja -DAIOS_EMBEDDED_DISPLAY=ON -DAIOS_DISPLAY_TESTS=ON -DAIOS_PROFILE_TESTS=ON >/dev/null
     cmake --build /tmp/display-shell
+    /tmp/display-shell/aios-camera-protocol-test
     # Exercise the installed layout without an inherited Python module path.
     mkdir -p /usr/local/share/aios
     cp -r apps/aios /usr/local/share/aios/
-    env -u PYTHONPATH -u AIOS_PYTHONPATH /tmp/display-shell/aios-profile-test
-    env PYTHONPATH=/nonexistent AIOS_PYTHONPATH=/workspace/apps /tmp/display-shell/aios-profile-test
+    adduser -D camera-test
+    su camera-test -s /bin/sh -c "env -u PYTHONPATH -u AIOS_PYTHONPATH /tmp/display-shell/aios-profile-test"
+    su camera-test -s /bin/sh -c "env PYTHONPATH=/nonexistent AIOS_PYTHONPATH=/workspace/apps /tmp/display-shell/aios-profile-test"
     c++ tests/wayland_surface.cpp -o /usr/bin/gnome-calculator $(pkg-config --cflags --libs Qt6Gui)
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_MEDIA_BACKEND=gstreamer \
       /usr/lib/qt6/bin/qmltestrunner -input tests/qml

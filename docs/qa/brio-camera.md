@@ -276,3 +276,48 @@ Stage 1 acquisition validation is complete. USB address changes currently
 require relaunching the selected QEMU VM; transparent QEMU hotplug recovery is
 not claimed. The next service layer must preserve this measured format,
 unprivileged boundary, deadlines and cleanup behavior. Recognition remains off.
+
+## Stage 2 service validation (2026-09-16)
+
+PR #134 centralizes the four camera consumers in one private service and a
+disposable native V4L2 worker. The locally built identity ISO is
+`alpine-aios-recognition-stage2-x86_64.iso`, SHA-256
+`3e134454ec8a20ff533f7251a6e18d05ff143d49e42bbf7624273862eae4e585`.
+Its manifest records 786 packages and a 2147483648-byte image. The image build
+completed; the first manifest step exposed read-only extracted-directory cleanup.
+That recorder bug was fixed, covered by a regression test, and the manifest was
+regenerated from the completed ISO. No package closure was inferred from sources.
+
+Under normal windowed QEMU, the installed service ran as `aios` (UID 1000):
+
+- Three preview-to-photo handoffs passed, each preempting the previous worker.
+- All three requested portraits were returned in memory and immediately discarded.
+- Inactive-desktop capture was rejected.
+- Killing the service killed its active worker; no second owner was opened.
+- The complete lifecycle run took **10.061 seconds**, with maximum delivered
+  frame age **0.127 seconds**, measured from the kernel monotonic timestamp.
+- The physical Brio also passed the same service check in WSL: **12.228 seconds**,
+  maximum frame age **0.116 seconds**.
+- USB/IP detach while a guest preview was active produced `device_changed` and
+  the next photo request was rejected as unavailable. This is a bridge-disconnect
+  test; the actual physical unplug/replug is recorded separately under stage 1.
+- Reattachment changed the host address from `001/002` to `001/003`. Relaunching
+  only this test VM automatically discovered the new address and preview worked.
+  Transparent QEMU hotplug remains unsupported.
+
+The opt-in `tests/manual_camera_service.py` runner retains only counts/times and
+performs these checks without creating accounts, templates or portrait files.
+The first removal attempt timed out in the operator harness before detach; its
+operator deadline was extended to 60 seconds and the complete check passed.
+Production capture deadlines were not changed.
+
+Automated validation passed: **18 service/freshness tests**, **12 camera tests**,
+**6 recognition tests**, **20 manifest tests**, and the full display suite
+(95 QML checks including Ocean/Sage, both installed-layout profile runs,
+application-host protocol and three private display/PIN-routing checks).
+The final dialog-cancellation change was compiled and exercised by that display
+suite after the ISO build; it awaits inclusion in the next batched image.
+
+Successful enrollment/inference transitions still require the calibrated model
+and consented evaluation inputs in later stages. These capture results do not
+establish biometric accuracy, liveness, or protected-session authorization.

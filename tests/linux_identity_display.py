@@ -108,6 +108,9 @@ class DisplayTests(unittest.TestCase):
         path = self.wait(lambda: next(self.runtime.glob('.displays/*/wayland-0'), None))
         self.assertEqual(path.stat().st_uid, self.anon_uid)
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        # The broker publishes the socket before the shell accepts its FD.
+        # Use the same readiness acknowledgement as the real launch path.
+        self.wait(lambda: self.request({'action': 'status'})['display_ready'])
         info = self.inspect_display(path, self.anon_uid)
         self.assertEqual(info.returncode, 0, info.stderr)
         self.assertIn('xdg_wm_base', info.stdout)
@@ -122,6 +125,7 @@ class DisplayTests(unittest.TestCase):
         self.shell = self.start_shell()
         replacement = self.wait(lambda: next(self.runtime.glob('.displays/*/wayland-0'), None))
         self.assertNotEqual(path, replacement)
+        self.wait(lambda: self.request({'action': 'status'})['display_ready'])
         self.assertEqual(self.inspect_display(replacement, self.anon_uid).returncode, 0)
 
     def test_allowlisted_app_surface_is_rendered(self):

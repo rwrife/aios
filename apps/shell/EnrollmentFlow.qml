@@ -9,6 +9,7 @@ Dialog {
     property bool creating: false
     property bool recovering: false
     property string selectedProfile: ""
+    property string selectedProfileId: ""
     property string photoRgb: ""
     property string photoPreview: ""
     property string validationError: ""
@@ -22,7 +23,7 @@ Dialog {
         if (selectedProfile) { profileName.text = selectedProfile; pin.forceActiveFocus(); }
         else profileName.forceActiveFocus()
     }
-    onClosed: { profileName.clear(); selectedProfile = ""; photoRgb = ""; photoPreview = ""; usePhoto.checked = false; validationError = ""; pin.clear(); recoveryInput.clear(); recovering = false; consent.checked = false; recovery.clear(); control.setSecureInput(false); }
+    onClosed: { profileName.clear(); selectedProfile = ""; selectedProfileId = ""; photoRgb = ""; photoPreview = ""; usePhoto.checked = false; validationError = ""; pin.clear(); recoveryInput.clear(); recovering = false; consent.checked = false; recovery.clear(); control.setSecureInput(false); }
     function submit() {
         if (control.busy) return
         validationError = ""
@@ -38,6 +39,7 @@ Dialog {
         if (dialog.creating && dialog.photoRgb) control.enrollProfile(profileName.text, pin.text, dialog.greetingOnly || consent.checked, dialog.photoRgb)
         else if (dialog.creating) control.enroll(profileName.text, pin.text, dialog.greetingOnly || consent.checked)
         else if (dialog.recovering) control.recover(profileName.text, recoveryInput.text, pin.text)
+        else if (dialog.greetingOnly && dialog.selectedProfileId) control.unlockProfile(dialog.selectedProfileId, pin.text)
         else control.unlock(profileName.text, pin.text)
         pin.clear(); recoveryInput.clear()
     }

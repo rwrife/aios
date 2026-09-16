@@ -36,17 +36,32 @@ class FaceEncoder:
         self.detector = cv2.FaceDetectorYN.create(verified_model(manifest, 'yunet'), '', (640, 480))
         self.encoder = cv2.FaceRecognizerSF.create(verified_model(manifest, 'sface'), '')
 
-    def encode(self, frame):
+    def encode(self, frame, include_pose=False):
         height, width = frame.shape[:2]
         self.detector.setInputSize((width, height))
         _, faces = self.detector.detect(frame)
+        if faces is not None and len(faces) > 1:
+            if include_pose:
+                raise ValueError('multiple_faces')
+            return []
         result = []
         for face in ([] if faces is None else faces):
             if min(face[2], face[3]) < self.minimum_size or face[-1] < .9:
                 continue
             crop = self.encoder.alignCrop(frame, face)
             embedding = self.encoder.feature(crop).flatten().tolist()
-            result.append((face[:4].tolist(), embedding))
+            if include_pose:
+                # A modest landmark offset guides sampling; it is not liveness
+                # or a calibrated 3-D pose measurement.
+                ex, ey = float(face[6] - face[4]), float(face[7] - face[5])
+                distance = ex * ex + ey * ey
+                if distance <= 0:
+                    continue
+                nx = float(face[8] - (face[4] + face[6]) / 2)
+                ny = float(face[9] - (face[5] + face[7]) / 2)
+                result.append((face[:4].tolist(), embedding, (nx * ex + ny * ey) / distance))
+            else:
+                result.append((face[:4].tolist(), embedding))
             del crop
         return result
 

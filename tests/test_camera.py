@@ -123,23 +123,22 @@ class CameraTests(unittest.TestCase):
             probe('/dev/video0')
         self.assertNotIn('untrusted', str(error.exception))
 
-    def test_shell_camera_surfaces_prefer_bounded_capture(self):
+    def test_shell_consumers_cannot_open_competing_camera_handles(self):
         for relative in ('apps/shell/SettingsWindow.qml', 'apps/shell/SetupWizard.qml'):
             source = (ROOT / relative).read_text()
             with self.subTest(relative=relative):
-                self.assertIn('640', source)
-                self.assertIn('360', source)
-                self.assertIn('cameraLoader.active = false', source)
-                self.assertIn('sourceComponent: Camera', source)
-                self.assertNotIn('VideoFrameFormat', source)
+                self.assertIn('setCameraPreviewActive(false)', source)
+                self.assertIn('profileControl.cameraPreview', source)
+                self.assertNotIn('Camera {', source)
+                self.assertNotIn('CaptureSession', source)
+                self.assertNotIn('VideoOutput', source)
         photo = (ROOT / 'apps/shell/ProfilePhoto.h').read_text()
-        self.assertIn('"video4linux2"', photo)
-        self.assertIn('"mjpeg"', photo)
-        self.assertIn('640 * 360 * 3', photo)
-        self.assertIn('CameraDevice::capturePath()', photo)
-        self.assertIn('QProcess::nullDevice()', photo)
-        self.assertIn('retryTimer.start(250)', photo)
-        self.assertIn('ffmpeg', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())
+        self.assertIn('client->capture', photo)
+        self.assertNotIn('ffmpeg', photo)
+        self.assertNotIn('QProcess', photo)
+        recognition = (ROOT / 'apps/aios/recognition.py').read_text()
+        self.assertNotIn('VideoCapture(', recognition)
+        self.assertIn('py3-opencv', (ROOT / 'distro/alpine/apks/world.ai').read_text().splitlines())
 
     def test_windows_launcher_discovers_attached_camera(self):
         launcher = (ROOT / 'scripts/run.ps1').read_text()
