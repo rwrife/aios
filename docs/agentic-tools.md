@@ -30,6 +30,8 @@ available. The built-in `os_settings` tool works without MCP configuration.
 | Reduce motion | `{"action":"set","setting":"reduced_motion","value":true}` | Saves configuration and updates the shell |
 | Read machine clock | `{"action":"read","setting":"date_time"}` | Guest UTC/local time, timezone, running sync daemons, accepted range and persistence semantics |
 | Set machine clock | `{"action":"set","setting":"date_time","value":"2026-09-11T14:30:00Z"}` | Changes the guest kernel clock, attempts to save UTC hardware clock, returns actual `state`, `hardware_clock_saved` and `notice` |
+| Read Wi-Fi country | `{"action":"read","setting":"wifi_country"}` | Kernel regulatory country, stored country, whether storage is persistent, live/installed mode and accepted values |
+| Set Wi-Fi country | `{"action":"set","setting":"wifi_country","value":"US"}` | Applies the regulatory country, verifies it by kernel readback, returns `state`, `saved_for_next_boot` and `notice` |
 | Open Date & Time | `{"action":"open","section":"date_time"}` | Requests the native page on the ordinary desktop; unavailable on the protected desktop |
 | Open network settings | `{"action":"open","section":"network"}` | Reports whether the native panel launched; also supports `sound` and `display` |
 | Start sign-in | `{"action":"authenticate"}` | Opens this chat's native profile picker; reports `awaiting_user` or `unavailable` |
@@ -76,6 +78,21 @@ occurred. Without a saved hardware clock the change may be lost at reboot;
 VM RTC policy can override saved time too. Service/permission failures and
 invalid inputs are errors. A timeout or a failed readback may follow a completed
 change, so read state before retrying. No test should change a shared host clock.
+
+The Wi-Fi country uses the same fixed-helper pattern. Values are ISO 3166-1
+alpha-2 codes, or `00` for the world domain; anything else is rejected before
+the bounded, no-argument `/usr/local/sbin/aios-regdomain` helper runs through
+its own exact doas rule. The helper applies `iw reg set` and reports success
+only after the kernel's `iw reg get` readback agrees, so a code the wireless
+regulatory database does not contain is an explicit error rather than a silent
+no-op. Persistence is reported, not assumed: an installed system stores
+`options cfg80211 ieee80211_regdom=<CC>` in `/etc/modprobe.d/aios-cfg80211.conf`
+for the next boot (`saved_for_next_boot: true`), while a live session applies
+the change to the running kernel only and says so. When `cfg80211` is not
+loaded or `iw` is missing, the operation reports that it is unavailable. This
+changes radio regulatory limits only; it does not join, edit or store a
+connection, and it never exposes credentials. Use `{"action":"open",
+"section":"network"}` for connection changes.
 
 For a separate local MCP client, the same implementation is available as
 `python3 -m aios.os_settings`. Configure it with an explicit tool allowlist:

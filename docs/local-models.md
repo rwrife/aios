@@ -24,6 +24,14 @@ host RAM does not count as guest RAM. The launchers default to 16 GiB because
 live-session storage is RAM-backed; downloads are temporary until AIOS is
 installed.
 
+The bundled inference binaries are built for x86_64 CPUs with SSE4.2, AVX,
+AVX2, BMI2, F16C and FMA. AIOS checks those instruction sets before starting
+`llama-server` or `whisper-cli`: on a CPU without them the catalog reports
+every model as unavailable with the missing features, downloads are refused,
+and chat says local models cannot run here. The desktop and remote or
+subscription providers keep working, and no download is started that could not
+be used. See [recovery and diagnostics](hardware-recovery.md).
+
 All entries use Apache-2.0 licensed Qwen models. Qwen's model cards document tool
 capabilities: [0.6B](https://huggingface.co/Qwen/Qwen3-0.6B),
 [1.7B](https://huggingface.co/Qwen/Qwen3-1.7B),

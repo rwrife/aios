@@ -10,21 +10,31 @@ aios_apkovl_section() {
 	build_section apkovl "$hostname" "$(checksum < "$apkovl")" "$content_hash"
 }
 
+# Boot entries shared by both bootloader generators: "<label>|<extra args>".
+# "live" stays first so it remains the default on both bootloaders. "recovery"
+# is selectable without editing kernel arguments and is never the default; it
+# adds nomodeset as a diagnostic graphics fallback plus the aios.recovery flag
+# that /usr/local/bin/aios-session reads to force a software/XRender desktop.
+# Serial and VGA console arguments come from $kernel_cmdline for every entry.
+aios_boot_entries() {
+	printf '%s\n' 'live|' 'install|aios.install' 'recovery|aios.recovery nomodeset'
+}
+
 aios_syslinux_config() {
 	printf 'SERIAL 0 115200\nTIMEOUT 30\nPROMPT 1\nDEFAULT live\n'
-	for entry in live install; do
-		local extra=
-		[ "$entry" != install ] || extra=aios.install
+	printf 'SAY AIOS boot entries: live (default), install, recovery\n'
+	printf 'SAY recovery = conservative graphics (nomodeset); serial console stays enabled\n'
+	aios_boot_entries | while IFS='|' read -r entry extra; do
 		printf '\nLABEL %s\n KERNEL /boot/vmlinuz-lts\n INITRD /boot/initramfs-lts\n APPEND %s %s %s\n' "$entry" "$initfs_cmdline" "$kernel_cmdline" "$extra"
 	done
 }
 
 aios_grub_config() {
 	printf 'set timeout=3\nset default=0\n'
-	for entry in live install; do
-		local extra=
-		[ "$entry" != install ] || extra=aios.install
-		printf 'menuentry "AIOS %s" {\n linux /boot/vmlinuz-lts %s %s %s\n initrd /boot/initramfs-lts\n}\n' "$entry" "$initfs_cmdline" "$kernel_cmdline" "$extra"
+	aios_boot_entries | while IFS='|' read -r entry extra; do
+		title="AIOS $entry"
+		[ "$entry" != recovery ] || title="AIOS recovery (safe graphics)"
+		printf 'menuentry "%s" {\n linux /boot/vmlinuz-lts %s %s %s\n initrd /boot/initramfs-lts\n}\n' "$title" "$initfs_cmdline" "$kernel_cmdline" "$extra"
 	done
 }
 

@@ -117,8 +117,7 @@ The current CPU inference build targets x86_64 with AVX2 (already documented
 in README.md). This manifest does not add a per-CPU entry because
 AVX2 is a build-time compiler target, not a discoverable PCI/USB device;
 recording it here would duplicate the README rather than adding evidence.
-The candidate resolution paths for pre-AVX2 hardware, recorded but **not**
-implemented by this stage, are:
+The candidate resolution paths for pre-AVX2 hardware were:
 
 1. Detect the missing instruction set at boot/first run and show an
    actionable message instead of a crash (lowest engineering cost, still
@@ -127,8 +126,14 @@ implemented by this stage, are:
    path for CPUs without AVX2, at the cost of extra build/QA matrix and
    image size.
 
-This decision is deferred to the phase-3 desktop-usability work in
-`docs/plans/physical-hardware-enablement.md` and is not resolved here.
+Stage 3 (issue #100) implemented option 1 and did not implement option 2.
+`apps/aios/cpu_features.py` preflights SSE4.2, AVX, AVX2, BMI2, F16C and FMA --
+the instruction sets `-DGGML_NATIVE=OFF` leaves enabled in the bundled
+llama.cpp/whisper.cpp build -- before any local inference binary starts, so an
+older CPU reaches the desktop and receives a structured limitation instead of
+SIGILL. No baseline or dispatch build exists, and no pre-AVX2 machine has been
+tested; that remains a physical gate in
+[hardware-predictable-startup.md](hardware-predictable-startup.md).
 
 ## Reproducing the underlying evidence fields
 

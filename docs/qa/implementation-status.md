@@ -78,7 +78,9 @@ This is a development candidate, not a hardware-certified release.
   installed guest reported about 255 MiB used with the starter model loaded;
   this single observation is not a minimum-memory claim.
 - Test VMware and physical machines. Secure Boot, GPU acceleration, ARM and
-  non-AVX2 local inference are outside the current validated target.
+  non-AVX2 local inference are outside the current validated target; non-AVX2
+  CPUs are now refused with an explicit preflight limitation rather than an
+  illegal-instruction crash, but no such machine has been tested.
 
 ## Reproduce the offline smoke checks
 
@@ -281,3 +283,52 @@ Validation results:
 No paid OpenAI/ChatGPT or configured third-party MCP run is claimed by this
 checkpoint. The compiled native host and its readiness protocol were exercised
 directly; user-facing calculator interaction remains a hands-on VM check.
+
+
+## Hardware stage 3 checkpoint (predictable startup and recovery)
+
+Software-addressable part of phase 3 in
+`docs/plans/physical-hardware-enablement.md` (issue #100). The full record is in
+[hardware-predictable-startup.md](hardware-predictable-startup.md); the operator
+runbook is [docs/hardware-recovery.md](../hardware-recovery.md).
+
+Implemented and covered by offline tests:
+
+- NetworkManager is the sole Wi-Fi interface owner. Alpine's standalone
+  `wpa_supplicant` OpenRC service left the default runlevel on artifact
+  evidence (D-Bus activation service, the init script's own `-i<interface>`
+  claim, and its hard failure on radio-less machines). Both supplicant
+  packages remain installed.
+- `aios-hardware-report` (`apps/aios/hardware_diagnostics.py`) classifies the
+  nine required network states plus `unknown`, and accelerated/degraded
+  software/unavailable/unknown graphics with compositor and recovery mode,
+  from fixed reads and a three-program allowlist, with allowlisted enums,
+  bounded lists and an 8 KiB output ceiling and no SSID/MAC/IP/hostname/
+  serial/credential/log/device strings.
+- Explicit `live` (default), `install` and `recovery` entries on both
+  bootloaders. Recovery adds `aios.recovery nomodeset`, keeps serial and VGA
+  console arguments, and makes `aios-session` force a software/XRender desktop
+  while recording its renderer selection for the report.
+- A shared CPU preflight (`apps/aios/cpu_features.py`) gates every bundled
+  llama/whisper launch path, so pre-AVX2 CPUs reach the desktop with a
+  structured limitation instead of SIGILL.
+- A fixed `wifi_country` `os_settings` operation with kernel readback and
+  explicit live-versus-installed persistence.
+
+Validation executed for this checkpoint, under WSL:
+
+- `PYTHONPATH=apps python3 -m unittest discover -s tests` for the four new
+  files: 15 startup, 22 diagnostics, 11 CPU and 15 regulatory tests passed.
+- Full offline suite through `bash scripts/test.sh`: 721 tests, 9 existing
+  skips, plus `sh -n`/`bash -n` for every shell script and the Openbox XML
+  parse. Two failures are pre-existing and unrelated to this change:
+  `test_terminal_theme.test_desktop_launch_paths_use_the_themed_launcher`
+  (`apps/shell/main.cpp` already contains two `program = "aios-terminal"`
+  assignments at this branch's base commit) and
+  `test_applications.test_real_web_default_launcher_times_out_and_reaps_runner_tree`
+  (a one-second launch-timeout race that passes on re-run).
+- `git diff --check`.
+
+Not executed: no ISO build, no VM boot, and no physical Wi-Fi, GPU,
+suspend/resume, recovery-boot or pre-AVX2 machine test. No hardware status was
+promoted; every coverage entry stays `untested`.

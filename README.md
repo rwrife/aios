@@ -170,7 +170,11 @@ is not a reliable tool agent; critical setup controls call deterministic backend
 actions instead of relying on the model. Settings and setup offer
 [three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
-The current CPU inference build targets x86_64 with AVX2. The VM launchers
+The current CPU inference build targets x86_64 with AVX2 (specifically SSE4.2,
+AVX, AVX2, BMI2, F16C and FMA). CPUs below that floor still reach the desktop
+and remote providers: local inference is refused with an explicit limitation
+instead of an illegal-instruction crash. See
+[recovery and diagnostics](docs/hardware-recovery.md). The VM launchers
 default to 16 GiB RAM, four CPUs, and a 64 GiB disposable disk so every curated
 model can be tried from the RAM-backed live environment.
 Secure Boot and physical hardware have not yet been validated.
