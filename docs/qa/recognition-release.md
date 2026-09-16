@@ -265,3 +265,54 @@ Six consent/protocol/preview tests pass; camera-off synthetic layouts were
 visually checked in Ocean and Sage on the guest. The consent prompt has been
 reopened for this version; a fresh soak is gated on its completion and another
 passing guest smoke test. Previous aggregate results remain preserved.
+
+### Participant-controlled pose wizard
+
+Participant feedback identified that the original guided enrollment still
+advanced between straight/left/right poses automatically after the initial
+confirmation. The development harness now uses native Qt instructions and
+Next/Cancel buttons alongside the local preview. Every enrollment pose and
+every repeat check waits for a fresh Next action; the button is disabled during
+measurement. A failed enrollment pose stays on that step and requires Next to
+retry. Escape/window close cancels. Each enrollment step has a two-minute
+positioning/retry budget; it never advances merely because that time elapsed.
+
+This manual QA tool requires Alpine `py3-pyside6`, installed only in the disposable
+validation guest; it is not added to the production image. Raw frames and
+temporary vectors remain in the same worker. Eight focused tests cover consent,
+editing, strict aggregate replies, separate pose confirmations and retry gating.
+The previous preview-session attempt did not complete; its terminal reported
+incomplete enrollment, and no completed aggregate or replacement soak was
+produced. The original four-of-five development result remains the only completed
+participant session so far.
+
+Native Qt synthetic tests in the guest passed three distinct Next-button
+confirmations and Escape cancellation in both Ocean and Sage; screenshots of
+the camera-off layouts were inspected. The revised wizard is reopened for
+participant validation. Synthetic UI actions are not participant consent or
+biometric evidence.
+
+### Visible failures instead of disappearing preview
+
+The participant reported the native wizard closing before Next. That run had no
+completed aggregate; the previous generic exception handling did not preserve
+the exact cause. A fresh 30-second acquisition-only check read 221 frames without
+a capture exception; a real Qt preview check displayed 139 frames over 20 seconds
+without failing. The latter emitted two decoder warnings, so these checks do not
+establish the original cause or prove camera reliability.
+
+Capture exceptions and positioning/pose timeouts now leave a visible paused
+window after the camera context exits. The stale image is cleared; a fixed,
+allowlisted reason appears with Retry/Cancel. Retrying restarts incomplete
+enrollment or repeats the current probe; errors cannot silently skip a probe.
+The two-minute camera/positioning budget is unchanged, but waiting for Retry is
+UI-only. The parent bounds each interactive command to two hours. Fixed pause
+codes are retained in a private `.events.jsonl` companion to the aggregate, and
+successful reports include enrollment/probe retry counts instead of hiding
+failed attempts. No images, vectors or arbitrary exception text enter this log.
+
+Eleven focused tests pass. Synthetic fault injection in the guest, in Ocean and
+Sage, verified that a read failure before Next leaves the window visible and
+clears its image, performs no additional reads while paused, and resumes only
+after an explicit Retry click. The revised consent session is open; completed
+biometric validation and the replacement soak remain pending.
