@@ -2,6 +2,74 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-16 10:10 UTC
+
+- Preflight: `gh repo view rwrife/aios`, `gh api repos/rwrife/aios`,
+  `git ls-remote --heads origin`, fresh main checkout and temporary ref
+  create/delete all succeeded. `gh api user --jq .login`: `rwrife`.
+  Main remains `f43c9f199d9f649a174e4bbc6414563d19659805`; no auth fallback.
+- PR snapshot: four open PRs; no merges and no new PR URL.
+  - https://github.com/rwrife/aios/pull/126: OPEN, CLEAN/MERGEABLE, no
+    current-head checks. Bounded metadata/license consistency repair this run;
+    still held for repository-index binding, dependency/provides validation and
+    current-head local full-image/BIOS/UEFI evidence.
+  - https://github.com/rwrife/aios/pull/131: OPEN, CLEAN/MERGEABLE, build SUCCESS,
+    stacked on blocked #126. No unsafe-parent merge through the stack.
+  - https://github.com/rwrife/aios/pull/132: OPEN, CLEAN/MERGEABLE, build SUCCESS,
+    stacked on #131. Its body leaves real QEMU installation and coherent
+    update/rollback unverified.
+  - https://github.com/rwrife/aios/pull/133: OPEN/DRAFT, CLEAN/MERGEABLE, build
+    SUCCESS. Owner evidence still absent: disconnected Brio, real capture,
+    contention, unplug/replug, interactive PIN, protected-session compositor.
+    Draft left unchanged; no issue comments or assignment changes.
+- Repair to existing #126: compare selected firmware attribution to the shipped
+  APK's bounded regular `.PKGINFO` name, version and license. Reject missing,
+  duplicate, non-regular, oversized, invalid-UTF8 and inconsistent records.
+  Reuse the firmware member scan; no additional full-APK pass. Scan through
+  signature/control/data tar segments; no package extraction or signature
+  verification is implied. Inventory without content scanning stays exit 0 but
+  reports provenance unavailable, not verified. Repository authentication and
+  dependency solver validation remain explicitly outside this repair.
+- Verification:
+  - TDD: healthy control passed, invented-license regression failed
+    `AssertionError: 0 != 3`, then passed. Follow-up tests caught directory-plus-
+    regular ambiguity, an unscanned-provenance false success, and stopping at
+    the first tar segment. All pass after correction.
+  - `PYTHONPATH=apps:tests python3 -m unittest test_build_manifest
+    test_hardware_bundle_inspection test_hardware_coverage_manifest
+    test_hardware_world test_identity_image test_inspect_image -q`: 230 passed.
+    Five new tests include ten independent malformed-metadata subcases and a
+    three-gzip-stream fixture with a fake signature (format, not authenticity).
+  - `bash scripts/test.sh`: first run 713 tests, two failures, one error,
+    nine skips, exit 1. Both assertion failures reproduced on untouched main:
+    `test_real_application_builder_skill_loads_cleanly` has
+    `('application', 'build_application') != ('application',)`;
+    `test_desktop_launch_paths_use_the_themed_launcher` has `2 != 1`.
+    Additional unchanged `test_drip_fed_request_does_not_block_second_client_past_one_deadline`
+    raised `ConnectionRefusedError: [Errno 111] Connection refused`; its isolated
+    main rerun passed, so not claimed as a reproduced main failure. No full-suite
+    green claim; later wrapper checks did not run. Final rerun/review and exact
+    pushed-head readback are recorded in the PR follow-up comment.
+  - Four ad-hoc fixture probes: control exits 0; invented license exits 3 with
+    provenance failed; unrelated repository still exits 0 with provenance ok;
+    injected `depend = absent-required-library>=99` still exits 0 with offline
+    availability ok. All have exact_output_closure ok; dependency APK hashes
+    were regenerated. This PASS proves bounded repair and defect reproduction,
+    not release safety.
+  - `git diff --check` passed. Host aarch64; `qemu-system-x86_64` absent.
+    No full Alpine ISO, VM, installation, physical hardware or Brio executed.
+    No GitHub ISO build dispatched; repair uses `[skip ci]`. Validate remains
+    disabled. #126's prior green run 34906440477 is historical (old head
+    `068ae603360104fc31bf787bc787ffda1b7c7fc8`), not current repair evidence.
+- Issue lane stopped behind blocked PRs. Claimed issue URL/readback: none.
+  Claims released: none. Assigned elsewhere (all `rwrife`, including same-account
+  concurrent work): #71, #77, #81, #91, #92, #93, #94, #95, #97, #98, #100, #101.
+- Publication: normal repair commit to existing PR #126. This state is on
+  `hardware-offline-bundle`, not main. Pre-existing worktrees preserved; only
+  this run's `pr126-license-20260916` worktree is disposable. No direct main
+  commit; no new PR or issue implementation.
+- Self-removal: not triggered; every-six-hours schedule retained.
+
 ## 2026-09-16 04:10 UTC
 
 - Preflight succeeded: `gh repo view rwrife/aios`, `gh api repos/rwrife/aios`,
