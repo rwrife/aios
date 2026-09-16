@@ -19,6 +19,11 @@ cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$
 # and setup-disk reuses the same file, so both worlds stay identical.
 sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_HARDWARE" >> "$tmpdir/etc/apk/world"
 sort -u "$tmpdir/etc/apk/world" -o "$tmpdir/etc/apk/world"
+# The same stripped atom list, kept where the installed-target verifier can
+# read it, so a disconnected installation can check hardware package and
+# firmware parity without a repository index or a manifest in the guest.
+mkdir -p "$tmpdir/usr/local/share/aios"
+sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_HARDWARE" > "$tmpdir/usr/local/share/aios/world.hardware"
 if [ -n "${AIOS_WORLD_IDENTITY:-}" ]; then
   sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_IDENTITY" >> "$tmpdir/etc/apk/world"
   sort -u "$tmpdir/etc/apk/world" -o "$tmpdir/etc/apk/world"
