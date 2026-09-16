@@ -212,6 +212,6 @@ Window {
         }
     }
     MediaDevices { id: devices }
-    EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl }
+    EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: wizard.profileControl; theme: wizard.theme }
     WindowBorder { theme: wizard.theme }
 }

@@ -158,49 +158,70 @@ class Acquisition:
             del frame
 
     def enrollment_embeddings(self, _device, encoder, calibration):
-        from .recognition import _quality
+        """Fixed forward-facing burst; never replace unusable scheduled photos."""
+        from collections import deque
+        from .recognition import _quality, _samples
         import math
-        delta, maximum = calibration.get('enrollment_pose_delta'), calibration.get('maximum_pose_offset')
-        if (type(delta) not in (float, int) or type(maximum) not in (float, int) or
-                not math.isfinite(delta) or not math.isfinite(maximum) or not 0 < delta < maximum < 1):
-            raise ValueError('pose_calibration_required')
-        samples, poses = [], []
-        deadline = self.clock() + 25
-        while len(samples) < 3 and self.clock() < deadline:
-            frame = self.read()
-            reason = 'look_straight' if not samples else 'turn_slightly' if len(samples) == 1 else 'turn_other_way'
+        started = self.clock()
+        recent, shots = deque(), []
+        while len(shots) < 10:
             try:
-                if not _quality(frame, self.cv, calibration):
-                    reason = 'improve_light_or_hold_still'
+                frame = self.read()
+            except RuntimeError as error:
+                if str(error) not in ERROR_CODES:
+                    raise
+                frame = None
+            now = self.clock()
+            if frame is not None:
+                recent.append((self.last_capture, self.sequence, frame))
+            progressed = False
+            while len(shots) < 10 and now >= started + 2 * (len(shots) + 1):
+                due = started + 2 * (len(shots) + 1)
+                eligible = [item for item in recent if due - .5 <= item[0] <= due]
+                shots.append(eligible[-1] if eligible else None)
+                progressed = True
+            while recent and recent[0][0] < now - 2:
+                recent.popleft()
+            if frame is not None:
+                if progressed:
+                    emit({'kind': 'progress', 'sequence': self.sequence, 'captured_at': self.last_capture,
+                          'payload': {'samples': len(shots), 'target': 10, 'reason': 'burst_capture'}})
                 else:
-                    try:
-                        faces = encoder.encode(frame, include_pose=True)
-                    except ValueError:
-                        faces = []
-                        reason = 'one_person_only'
-                    if len(faces) == 1:
-                        pose = faces[0][2]
-                        accepted = math.isfinite(pose) and abs(pose) <= maximum
-                        if not samples:
-                            accepted = accepted and abs(pose) <= delta
-                        elif len(samples) == 1:
-                            accepted = accepted and abs(pose - poses[0]) >= delta
-                        else:
-                            accepted = accepted and (pose - poses[0]) * (poses[1] - poses[0]) < 0 and abs(pose - poses[0]) >= delta
-                        if accepted and self.clock() < deadline:
-                            poses.append(pose)
-                            samples.append({'sequence': self.sequence, 'captured_at': self.last_capture,
-                                            'embedding': faces[0][1]})
-                            reason = 'sample_accepted'
-                    elif reason != 'one_person_only':
-                        reason = 'face_camera'
-                emit({'kind': 'progress', 'sequence': self.sequence, 'captured_at': self.last_capture,
-                      'payload': {'samples': len(samples), 'target': 3, 'reason': reason}})
+                    ok, encoded = self.cv.imencode('.jpg', frame, [self.cv.IMWRITE_JPEG_QUALITY, 70])
+                    if ok and encoded.nbytes <= 180000:
+                        emit({'kind': 'preview', 'sequence': self.sequence, 'captured_at': self.last_capture,
+                              'payload': {'image': 'data:image/jpeg;base64,' + base64.b64encode(encoded).decode()}})
+            frame = None
+        recent.clear()
+        accepted = []
+        for index, item in enumerate(shots):
+            try:
+                if item is None or not _quality(item[2], self.cv, calibration):
+                    continue
+                faces = encoder.encode(item[2])
+                if len(faces) != 1:
+                    continue
+                vector = _samples([faces[0][1]] * 3)[0]
+                norm = math.sqrt(sum(x*x for x in vector))
+                accepted.append({'sequence': item[1], 'captured_at': item[0],
+                                 'embedding': [x / norm for x in vector]})
+            except ValueError:
+                continue
             finally:
-                del frame
-        if len(samples) != 3:
-            raise RuntimeError('enrollment_timeout')
-        return samples
+                shots[index] = None
+        if len(accepted) < 3:
+            raise RuntimeError('insufficient_frames')
+        # Preserve the three-reference storage contract, using disjoint groups
+        # from this burst only. No sample is duplicated to fill a missing group.
+        references = []
+        for offset in range(3):
+            group = accepted[offset::3]
+            mean = [sum(item['embedding'][i] for item in group) / len(group) for i in range(128)]
+            norm = math.sqrt(sum(x*x for x in mean))
+            if not math.isfinite(norm) or norm <= 0:
+                raise ValueError('inconsistent')
+            references.append({**group[-1], 'embedding': [x / norm for x in mean]})
+        return references
 
 
 def run(request):

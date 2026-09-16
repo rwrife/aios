@@ -120,13 +120,25 @@ class ServiceTests(unittest.TestCase):
         self.configure()
         self.service.command(request(mode='enroll', consent=True))
         event = {'kind': 'progress', 'sequence': 1, 'captured_at': self.clock(),
-                 'payload': {'samples': 1, 'target': 3, 'reason': 'sample_accepted'}}
+                 'payload': {'samples': 1, 'target': 10, 'reason': 'burst_capture'}}
         self.assertTrue(self.service.result(json.dumps(event)))
         self.assertIsNotNone(self.service.worker)
         event['sequence'] = 2
         event['payload']['embedding'] = [1, 2]
         self.assertFalse(self.service.result(json.dumps(event)))
         self.assertNotIn('embedding', json.dumps(self.events))
+
+    def test_enrollment_preview_stays_in_correlated_job(self):
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.command(request(mode='enroll', consent=True))
+        event = {'kind': 'preview', 'sequence': 1, 'captured_at': self.clock(),
+                 'payload': {'image': 'data:image/jpeg;base64,AA=='}}
+        self.assertTrue(self.service.result(json.dumps(event)))
+        self.assertIsNotNone(self.service.worker)
+        event['sequence'] = 2
+        event['payload']['embedding'] = [1, 2]
+        self.assertFalse(self.service.result(json.dumps(event)))
 
     def test_opt_in_cadence_and_immediate_cooldown(self):
         self.config['camera_recognition'] = True

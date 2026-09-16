@@ -156,7 +156,7 @@ private:
     static bool payloadValid(const QString &kind, const QString &mode, const QJsonObject &payload, double captured, double now, double sequence) {
         if (kind == "preview") {
             const auto value = payload["image"].toString();
-            return mode == "preview" && captured > 0 && sequence > 0 && keys(payload, {"image"}) &&
+            return (mode == "preview" || mode == "enroll") && captured > 0 && sequence > 0 && keys(payload, {"image"}) &&
                 value.startsWith("data:image/jpeg;base64,") && base64(value.mid(23), 240000);
         }
         if (kind == "photo") {
@@ -166,8 +166,8 @@ private:
                 base64(payload["rgb"].toString(), 16384, &rgb) && rgb.size() == 12288;
         }
         if (kind == "progress") return mode == "enroll" && captured > 0 && keys(payload, {"samples", "target", "reason"}) &&
-            integer(payload["samples"], 0, 3) && integer(payload["target"], 3, 3) && payload["reason"].isString() &&
-            QStringList{"look_straight", "turn_slightly", "turn_other_way", "improve_light_or_hold_still", "one_person_only", "face_camera", "sample_accepted"}.contains(payload["reason"].toString());
+            integer(payload["samples"], 0, 10) && integer(payload["target"], 10, 10) && payload["reason"].isString() &&
+            payload["reason"].toString() == "burst_capture";
         if (kind != "result") return false;
         if (mode == "enroll") return keys(payload, {"enrolled"}) && payload["enrolled"].isString() && uuid(payload["enrolled"].toString()) && captured > 0 && sequence >= 3;
         if (mode == "purge" || mode == "preview") return keys(payload, {"state"}) && payload["state"] == (mode == "purge" ? "purged" : "manual-only");

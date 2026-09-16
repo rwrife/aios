@@ -100,38 +100,32 @@ class CaptureFreshnessTests(unittest.TestCase):
         capture.read = read
         return capture
 
-    def test_guided_enrollment_requires_center_and_both_pose_offsets(self):
+    def test_enrollment_uses_only_ten_forward_snapshots(self):
+        import numpy as np
         capture = self.guided()
+        capture.cv.imencode.return_value = (True, np.zeros(8, dtype=np.uint8))
         encoder = Mock()
-        vector = [1.] + [0.] * 127
-        encoder.encode.side_effect = [[(None, vector, pose)] for pose in (.8, 0., 0., .12, .15, -.12)]
-        progress = []
-        with patch('aios.recognition._quality', return_value=True), patch('aios.capture_worker.emit', progress.append):
-            samples = capture.enrollment_embeddings('', encoder,
-                {'enrollment_pose_delta': .05, 'maximum_pose_offset': .4})
+        encoder.encode.return_value = [(None, [1.] + [0.] * 127)]
+        events = []
+        with patch('aios.recognition._quality', return_value=True), patch('aios.capture_worker.emit', events.append):
+            samples = capture.enrollment_embeddings('', encoder, {})
         self.assertEqual(len(samples), 3)
-        self.assertEqual([sample['sequence'] for sample in samples], [2, 4, 6])
+        self.assertEqual(encoder.encode.call_count, 10)
+        self.assertTrue(all(not call.kwargs for call in encoder.encode.call_args_list))
+        progress = [event for event in events if event['kind'] == 'progress']
+        self.assertEqual(progress[-1]['payload'], {'samples': 10, 'target': 10, 'reason': 'burst_capture'})
         self.assertTrue(all(set(item['payload']) == {'samples', 'target', 'reason'} for item in progress))
-        self.assertNotIn('embedding', repr(progress))
+        self.assertNotIn('embedding', repr(events))
 
-    def test_bad_quality_multiple_faces_and_no_pose_variation_time_out(self):
-        for scenario in ('quality', 'multiple', 'pose'):
-            with self.subTest(scenario=scenario):
-                capture = self.guided()
-                encoder = Mock()
-                if scenario == 'multiple':
-                    encoder.encode.side_effect = ValueError('multiple_faces')
-                else:
-                    encoder.encode.return_value = [(None, [1.] + [0.] * 127, 0.)]
-                progress = []
-                with patch('aios.recognition._quality', return_value=scenario != 'quality'), \
-                        patch('aios.capture_worker.emit', progress.append), self.assertRaisesRegex(RuntimeError, 'timeout'):
-                    capture.enrollment_embeddings('', encoder,
-                        {'enrollment_pose_delta': .05, 'maximum_pose_offset': .4})
-                self.assertLess(progress[-1]['payload']['samples'], 3)
-
-    def test_missing_pose_calibration_never_reads_a_frame(self):
-        capture = self.guided()
-        with self.assertRaisesRegex(ValueError, 'calibration'):
-            capture.enrollment_embeddings('', Mock(), {})
-        self.assertEqual(capture.sequence, 0)
+    def test_unusable_burst_fails_without_replacement_frames(self):
+        import numpy as np
+        for quality in (False, True):
+            capture = self.guided()
+            capture.cv.imencode.return_value = (True, np.zeros(8, dtype=np.uint8))
+            encoder = Mock()
+            encoder.encode.return_value = []
+            with patch('aios.recognition._quality', return_value=quality), patch('aios.capture_worker.emit'), \
+                    self.assertRaisesRegex(RuntimeError, 'insufficient_frames'):
+                capture.enrollment_embeddings('', encoder, {})
+            self.assertEqual(encoder.encode.call_count, 10 if quality else 0)
+            self.assertLess(capture.sequence, 450)

@@ -339,6 +339,7 @@ private:
     }
     void cancelRecognition() {
         recognitionRequest.clear();
+        m_cameraPreview.clear();
         CameraClient::instance()->release(recognitionConsumer);
     }
     void updateCameraGate() {
@@ -391,16 +392,10 @@ private:
         if (kind == "state") {
             m_recognitionState = background && recognitionSuppressed ? "disabled" : payload.value("state").toString("unavailable");
         } else if (kind == "progress" && recognitionAction == "enroll" && !background) {
-            const auto hint = payload.value("reason").toString();
-            const QMap<QString, QString> guidance{
-                {"look_straight", "Look straight at the camera."},
-                {"turn_slightly", "Turn your face slightly to one side."},
-                {"turn_other_way", "Now turn slightly to the other side."},
-                {"improve_light_or_hold_still", "Use even lighting and hold still."},
-                {"one_person_only", "Only one person should be in view."},
-                {"face_camera", "Move closer and keep your whole face in view."},
-                {"sample_accepted", "Sample accepted. Turn slightly for the next sample."}};
-            m_recognitionGuidance = QString("%1 of 3 samples. %2").arg(payload.value("samples").toInt()).arg(guidance.value(hint));
+            m_recognitionGuidance = QString("%1 of 10 photos. Look straight at the camera.").arg(payload.value("samples").toInt());
+        } else if (kind == "preview" && recognitionAction == "enroll" && !background) {
+            m_cameraPreview = payload.value("image").toString();
+
         } else if (kind == "result") {
             const auto action = background ? QString("recognize") : recognitionAction;
             if (action != "recognize") CameraClient::instance()->release(recognitionConsumer);
@@ -417,6 +412,7 @@ private:
                 }
             } else if (action == "enroll") {
                 m_recognitionState = "ready";
+                m_cameraPreview.clear();
                 const auto id = payload.value("enrolled").toString();
                 emit recognitionEnrollmentCompleted(id);
                 if (recognitionRequester && recognitionRequester != this)
@@ -433,6 +429,7 @@ private:
             if (!background) CameraClient::instance()->release(recognitionConsumer);
             clearRecognitionSuggestion();
             m_recognitionState = recognitionSuppressed ? "disabled" : "unavailable";
+            m_cameraPreview.clear();
             if (recognitionRequester) {
                 recognitionRequester->m_error = "Face enrollment was unavailable or cancelled; your PIN is unchanged.";
                 finishCameraOperation(recognitionRequester);

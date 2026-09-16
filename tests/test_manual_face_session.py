@@ -14,6 +14,17 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_enrollment_session_does_not_launch_five_followup_checks(self):
+        result = {'status': 'enrolled', 'seconds': 21., 'matched': False}
+        with patch.object(sys, 'argv', ['manual_face_session']), \
+                patch.object(session.os, 'geteuid', return_value=1000), \
+                patch.dict(os.environ, {}, clear=True), patch.object(sys.stdin, 'isatty', return_value=True), \
+                patch.object(session, 'read_consent', return_value=True), \
+                patch.object(session.subprocess, 'Popen'), patch.object(session, 'exchange', return_value=result) as exchange, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(session.main(), 0)
+        self.assertEqual(exchange.call_count, 1)
+        self.assertEqual(exchange.call_args.args[1], 'enroll')
     def test_worker_owns_one_stream_across_enrollment_and_all_checks(self):
         import tempfile
         from pathlib import Path

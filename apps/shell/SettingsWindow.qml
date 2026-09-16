@@ -380,7 +380,7 @@ Window {
                     }
                     Item { Layout.fillHeight: true }
                 }
-                AccountSettings { id: accountsPage; control: settings.profileControl }
+                AccountSettings { id: accountsPage; control: settings.profileControl; theme: settings.theme }
                 DateTimeSettings { backend: settings.backend; theme: settings.theme; active: settings.visible && pages.currentIndex === 8 }
             }
             Note { text: backend.status; visible: pages.currentIndex !== 0 && pages.currentIndex !== 8 && text.length > 0; font.pixelSize: 11 }

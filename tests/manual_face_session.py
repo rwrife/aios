@@ -214,7 +214,10 @@ class FramingPreview:
         self.QtCore, self.QtGui = QtCore, QtGui
         self.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         self.app.setQuitOnLastWindowClosed(False)
-        colors = palette(load_config().get('theme_color', 'blue'))
+        config = load_config()
+        self.reduced_motion = config.get('reduced_motion', False)
+        self.capture_progress = None
+        colors = palette(config.get('theme_color', 'blue'))
         _, _, panel, control, muted, accent, line = colors
         self.color = tuple(int(accent.lstrip('#')[i:i + 2], 16) for i in (4, 2, 0))
         self.cancelled = self.next_requested = self.waiting = False
@@ -271,6 +274,9 @@ class FramingPreview:
     def show(self, frame):
         display = self.cv.flip(frame, 1)
         self.cv.ellipse(display, (320, 240), (104, 160), 0, 0, 360, self.color, 1)
+        if self.capture_progress is not None and self.capture_progress > 0:
+            self.cv.ellipse(display, (320, 240), (104, 160), 0, -90,
+                            -90 + 360 * self.capture_progress, (156, 181, 146), 3)
         rgb = self.cv.cvtColor(display, self.cv.COLOR_BGR2RGB)
         height, width, _ = rgb.shape
         picture = self.QtGui.QImage(rgb.data, width, height, rgb.strides[0],
@@ -401,14 +407,17 @@ def capture_burst(capture, preview, clock=time.monotonic):
         # Keep only recent frames for the next fixed slot, plus selected shots.
         while recent and recent[0][0] < now - 2:
             recent.popleft()
-        preview.feedback.setText(f'Photos: {len(snapshots)} of 10. {max(0, 20 - int(now - started))} seconds remaining.')
+        preview.capture_progress = len(snapshots) / 10 if preview.reduced_motion else min(1., (now - started) / 20)
+        preview.feedback.setText('Look straight ahead while the green line fills. Capturing your photos...')
     recent.clear()
     return snapshots
 
 
 def guided_enrollment(capture, encoder, preview):
     from aios.recognition import _samples
-    preview.ready(capture, 'Look forward. Next starts 10 photos over 20 seconds.')
+    preview.capture_progress = None
+    preview.ready(capture, 'Look forward, then choose Next to enroll.')
+    preview.capture_progress = 0
     snapshots = capture_burst(capture, preview)
     encoder.metrics.values['enrollment_captured_photos'] = sum(frame is not None for frame in snapshots)
     vectors = []
@@ -604,7 +613,7 @@ def main():
     print('Single-person development check — NOT a production accuracy study.\n'
           'Only you should be in view. Close other camera previews.\n'
           'The camera will measure your face for temporary enrollment,\n'
-          'then five repeat checks. Images and face vectors stay in worker memory\n'
+          'using one set of ten photos. Images and face vectors stay in worker memory\n'
           'and are discarded when it exits. Only anonymous counts/times are saved.\n'
           'No accounts, PINs or approvals change.\n'
           'A mirrored local preview helps you frame your face inside the outline.\n'
@@ -631,23 +640,15 @@ def main():
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=worker_environment)
     try:
-        print('Follow the preview instructions and choose Next for each pose.', flush=True)
+        print('Look forward and choose Next once. Enrollment uses only ten photos.', flush=True)
         enrolled = exchange(process, 'enroll', None, record_notice, record_metrics)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         enrollment_counts = {key: latest_metrics.get(key, 0) for key in ('enrollment_captured_photos', 'enrollment_usable_photos')}
         print(f"Enrollment complete: {enrollment_counts['enrollment_usable_photos']} usable photos from the 10 scheduled shots. No account was created.")
-        results = []
-        for instruction in PROBE_GUIDANCE:
-            print(instruction + ' Choose Next in the preview when ready.', flush=True)
-            result = exchange(process, 'probe', None, record_notice, record_metrics)
-            if result['status'] == 'cancelled':
-                raise RuntimeError('Participant cancelled the preview.')
-            results.append(result)
-            print('Candidate matched.' if result['matched'] else 'No candidate; this counts as a failed genuine attempt.')
         summary = {**enrollment_counts, 'development_only': True, 'production_approval_created': False,
-                   'consent_confirmed': True, 'participants': 1, 'genuine_attempts': len(results),
-                   'correct_candidates': sum(value['matched'] for value in results),
+                   'consent_confirmed': True, 'participants': 1, 'genuine_attempts': 0,
+                   'correct_candidates': 0,
                    'enrollment_frames': ENROLLMENT_FRAMES_PER_POSE,
                    'enrollment_views': 'forward_only',
                    'sampling_interval_seconds': 2,
@@ -655,9 +656,9 @@ def main():
                    'enrollment_replacements': 0,
                    'enrollment_reference_method': 'mean_of_unit_embeddings',
                    'enrollment_retry_count': enrolled.get('retry_count', 0),
-                   'probe_retry_counts': [value.get('retry_count', 0) for value in results],
-                   'unavailable_attempts': sum(value['status'] == 'unavailable' for value in results),
-                   'attempt_seconds': [value['seconds'] for value in results],
+                   'probe_retry_counts': [],
+                   'unavailable_attempts': 0,
+                   'attempt_seconds': [], 'enrollment_seconds': enrolled['seconds'],
                    'framing_preview': True, 'timings_include_participant_framing': True,
                    'calibration': CALIBRATION, 'unknown_person_tested': False, 'held_out_cohort_tested': False}
         if args.output:

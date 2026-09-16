@@ -26,6 +26,13 @@ must collect three quality-approved single-face samples within two seconds.
 V4L2 buffers are limited to four at 1 MiB each, JPEG decode to 640x480, and IPC
 retains only bounded events. No frames or embeddings are saved to disk.
 
+Account enrollment captures ten fixed snapshot slots over twenty seconds after
+Next, without replacement photos. It emits a live preview plus bounded progress
+(`samples` 0..10, `target` 10, `reason` `burst_capture`), then builds three stored
+references from disjoint groups of the usable shots. At least three usable shots
+are required; an inadequate burst fails rather than extending capture. No head
+turns or follow-up recognition checks are part of enrollment.
+
 The service enforces deadlines (photo/recognition five seconds, enrollment 30,
 preview 35). Cancellation kills the worker; an unreaped process is quarantined
 and prevents another acquisition. Linux parent-death signaling also kills the
@@ -43,8 +50,8 @@ Version 1 uses newline-delimited JSON. Requests have exact fields, UUID request
 and consumer IDs, and a 4096-byte limit. Fixed operations are configure, capture,
 release, refresh and shutdown. Events are limited to 262144 bytes and include
 request/consumer IDs, generation, sequence, monotonic capture/processing times,
-reason and payload. Only explicitly requested preview/photo events contain image
-data. Recognition events contain bounded candidate metadata, never embeddings.
+reason and payload. Only explicitly requested preview/photo events, including consented enrollment
+previews, contain bounded image data. Recognition events contain bounded candidate metadata, never embeddings.
 Slow readers disconnect after a bounded write. The shell limits its output queue
 and retries a failed service at most three times.
 

@@ -490,3 +490,25 @@ the fixed batch, no reference from an empty batch, and participant cancellation.
 The real-Brio burst check captured all ten scheduled snapshots in 20.064 seconds
 on the same camera handle and verified cleanup at the end. No face inference or
 participant reference was created by this technical check.
+
+### Account-bound single-capture enrollment
+
+Enrollment now offers one forward-facing capture: ten fixed snapshot slots over
+20 seconds, with a green progress line around the preview and no pose or
+follow-up recognition steps. The development participant harness reports zero
+recognition attempts for this enrollment-only flow and discards its reference.
+The updated harness was uploaded and reopened in the running Brio guest.
+
+Native setup is optional after account creation and available later in Accounts.
+Both entry points require fresh native PIN entry and explicit consent for the
+selected account. Cancellation clears secrets and releases preview/capture.
+Native enrollment processes only the fixed batch, creating three references from
+disjoint groups of usable frames. Its manifest binding now includes
+`forward-burst-10-v1`; previous protocol approvals cannot silently carry over.
+The production manifest, held-out cohort and 24-hour validation remain pending.
+
+Validation: 81 focused Python tests passed after the final protocol changes;
+107 QML tests passed, plus the final 20 identity tests after UI refinements.
+The native shell build and camera protocol test passed. Ocean and generated Sage
+screenshots used synthetic camera fixtures, including the optional offer and
+green capture progress. No participant images were retained in screenshots.

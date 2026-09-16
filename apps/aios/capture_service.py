@@ -381,7 +381,7 @@ class Service:
                 raise ValueError()
             if captured and not 0 <= self.clock() - captured <= 3:
                 raise ValueError()
-            if kind in ('preview', 'photo') and kind != self.job['mode']:
+            if kind in ('preview', 'photo') and kind != self.job['mode'] and not (kind == 'preview' and self.job['mode'] == 'enroll'):
                 raise ValueError()
             if kind == 'preview' and set(event['payload']) != {'image'}:
                 raise ValueError()
@@ -392,9 +392,8 @@ class Service:
             payload = event['payload']
             if kind == 'progress':
                 if (self.job['mode'] != 'enroll' or set(payload) != {'samples', 'target', 'reason'} or
-                        type(payload['samples']) is not int or not 0 <= payload['samples'] <= 3 or
-                        payload['target'] != 3 or payload['reason'] not in ('look_straight', 'turn_slightly',
-                        'turn_other_way', 'improve_light_or_hold_still', 'one_person_only', 'face_camera', 'sample_accepted')):
+                        type(payload['samples']) is not int or not 0 <= payload['samples'] <= 10 or
+                        payload['target'] != 10 or payload['reason'] != 'burst_capture'):
                     raise ValueError()
             if kind == 'result':
                 mode = self.job['mode']

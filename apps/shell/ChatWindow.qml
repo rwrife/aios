@@ -146,6 +146,7 @@ Window {
                 width: 40
                 height: 40
                 control: chat.profileControl
+                theme: chat.theme
                 ink: theme.ink
                 surface: theme.input
             }

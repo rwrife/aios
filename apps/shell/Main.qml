@@ -20,7 +20,7 @@ Window {
     property var awayChats: []
     readonly property int awayChatCount: awayChats.length
     property date currentTime: new Date()
-    Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
+    Theme { id: theme; selected: backendApi.config.theme_color || "blue"; reducedMotion: desktop.reducedMotion }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backendApi.config.reduced_motion === true
     function removeAwayChat(window) {
@@ -194,7 +194,7 @@ Window {
             else setSource("")
         }
     }
-    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi; theme: theme }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
     SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }

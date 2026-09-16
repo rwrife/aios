@@ -68,6 +68,17 @@ int main(int argc, char **argv) {
     check(protocol.accept(event, 100.) == CameraProtocol::Accept, "background start rejected");
     event = result(); event["consumer"] = QString(32, '0');
     check(protocol.accept(event, 100.1) == CameraProtocol::Accept, "correlated background result rejected");
+    protocol = CameraProtocol(); protocol.track(request, consumer, "enroll");
+    check(protocol.accept(envelope("state", {{"state", "enrolling"}}), 100.) == CameraProtocol::Accept,
+          "enrollment start rejected");
+    event = envelope("preview", {{"image", "data:image/jpeg;base64,AA=="}});
+    event["sequence"] = 1; event["captured_at"] = 99.9;
+    check(protocol.accept(event, 100.1) == CameraProtocol::Accept, "enrollment preview rejected");
+    event = envelope("progress", {{"samples", 10}, {"target", 10}, {"reason", "burst_capture"}});
+    event["sequence"] = 2; event["captured_at"] = 99.9;
+    check(protocol.accept(event, 100.1) == CameraProtocol::Accept, "fixed burst progress rejected");
+    event["sequence"] = 3; payload = event["payload"].toObject(); payload["samples"] = 11; event["payload"] = payload;
+    check(protocol.accept(event, 100.1) == CameraProtocol::Invalid, "excess burst samples accepted");
     check(!CameraProtocol::uniqueKeys("{\"a\":1,\"a\":2}"), "duplicate key accepted");
     check(!CameraProtocol::uniqueKeys("{\"x\":{\"a\":1,\"\\u0061\":2}}"), "escaped duplicate key accepted");
     check(CameraProtocol::uniqueKeys("{\"a\":{\"a\":1},\"b\":[{\"a\":2}]}"), "separate object keys rejected");

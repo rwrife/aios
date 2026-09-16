@@ -10,7 +10,8 @@ candidate. Protected identity surfaces never display greeting candidates.
 The local manifest must be a bounded regular file owned by root or the desktop
 UID, without group/world write permission. Both models remain SHA-256 verified
 before inference. A named calibration binds its complete parameter hash, schema,
-consent version, and both model revisions/checksums. Its approval object has exactly
+consent version, the enrollment protocol (`forward-burst-10-v1`), and both model
+revisions/checksums. Its approval object has exactly
 `status`, `binding_sha256`, and `expires_at` (Unix seconds). Status must be
 `approved`, the hash must match the canonical binding, and approval must be current.
 Changing calibration values under the same ID invalidates approval and templates.
@@ -77,3 +78,21 @@ an already-fresh candidate without restarting its expiry.
 These are synthetic protocol/lifecycle checks. The final batched image and actual
 consented multi-person/presentation-attack evaluations belong to stage 5; no such
 biometric result is inferred from the passing tests.
+
+## Optional account enrollment
+
+After a local greeting account is created, an optional prompt offers face setup
+or **Not now**. Existing accounts expose the same dialog in Settings → Accounts.
+The selected account UUID is fixed by the native UI. Setup requires that account's
+PIN and explicit local storage consent; account creation does not retain or reuse
+the creation PIN. PIN verification occurs before capture and again before commit.
+Closing/cancelling or privacy loss clears the PIN and releases capture. A
+completion for a different UUID cannot close the active enrollment dialog.
+
+The preview appears after consent; Next starts one ten-photo capture. A green
+line around the framing outline shows progress, without a countdown or five-step
+recognition test. Raw photos are temporary; the encrypted reference belongs to
+the verified account UUID. Existing deletion, purge, PIN-change and stale-commit
+protections remain in force. The setting remains optional and does not authorize
+PIN-free sign-in. Missing/expired model approval is shown as unavailable; creating
+an account never generates approval or silently enables recognition.
