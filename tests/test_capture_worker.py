@@ -38,12 +38,12 @@ class CaptureFreshnessTests(unittest.TestCase):
     def test_bad_frame_and_driver_error_fail_without_advancing_evidence(self):
         capture = self.capture(iter([(99.9, 1)]))
         capture.cv.imdecode.return_value = None
-        with self.assertRaisesRegex(RuntimeError, 'unusable_frame'):
+        with self.assertRaisesRegex(RuntimeError, 'camera_decode_failed'):
             capture.read()
         self.assertEqual(capture.sequence, 0)
         capture.library.aios_camera_read.side_effect = None
         capture.library.aios_camera_read.return_value = -1
-        with self.assertRaisesRegex(RuntimeError, 'unusable_frame'):
+        with self.assertRaisesRegex(RuntimeError, 'camera_read_failed'):
             capture.read()
 
     def test_stale_stream_is_bounded(self):
@@ -51,6 +51,29 @@ class CaptureFreshnessTests(unittest.TestCase):
         capture.clock = Mock(side_effect=[100., 100., 100., 101.])
         with self.assertRaisesRegex(RuntimeError, 'stale_frame'):
             capture.read()
+        capture.cv.imdecode.assert_not_called()
+
+    def test_driver_damaged_and_empty_frames_are_discarded_before_fresh_evidence(self):
+        capture = self.capture(iter([(99.9, 4)]))
+        valid_read = capture.library.aios_camera_read.side_effect
+        attempts = iter([-7, -8, 1])
+        def read(*args):
+            code = next(attempts)
+            return valid_read(*args) if code == 1 else code
+        capture.library.aios_camera_read.side_effect = read
+        capture.read()
+        self.assertEqual(capture.sequence, 1)
+        self.assertEqual(capture.driver_sequence, 4)
+        self.assertEqual(capture.cv.imdecode.call_count, 1)
+
+    def test_damaged_stream_has_an_attempt_bound_even_with_a_frozen_clock(self):
+        capture = self.capture(iter([]))
+        capture.library.aios_camera_read.side_effect = None
+        capture.library.aios_camera_read.return_value = -7
+        with self.assertRaisesRegex(RuntimeError, 'stale_frame'):
+            capture.read()
+        self.assertEqual(capture.library.aios_camera_read.call_count, 16)
+        self.assertEqual(capture.sequence, 0)
         capture.cv.imdecode.assert_not_called()
 
     def test_three_embeddings_must_complete_within_two_seconds(self):

@@ -15,6 +15,13 @@ import ctypes
 from .camera import video_device
 
 MAX_EVENT = 262144
+ERROR_CODES = frozenset({'camera_open_failed', 'camera_read_failed', 'camera_decode_failed',
+                        'stale_frame', 'timeout', 'ambiguous', 'insufficient_frames',
+                        'multiple_faces', 'parent_unavailable', 'worker_error'})
+READ_ERRORS = {-2: 'camera_poll_timeout', -3: 'camera_poll_failed', -4: 'camera_dequeue_failed',
+               -5: 'camera_metadata_invalid', -6: 'camera_requeue_failed',
+               -7: 'camera_driver_frame_error', -8: 'camera_empty_frame'}
+ERROR_CODES = ERROR_CODES | frozenset(READ_ERRORS.values())
 
 
 def emit(value):
@@ -51,7 +58,7 @@ class Acquisition:
         self.camera = self.library.aios_camera_open(self.device.encode())
         try:
             if not self.camera:
-                raise RuntimeError('unavailable')
+                raise RuntimeError('camera_open_failed')
             for _ in range(3):
                 frame = self.read()
                 del frame
@@ -70,12 +77,18 @@ class Acquisition:
         import numpy as np
         # Drain old queued buffers without accepting them as new evidence.
         deadline = self.clock() + .75
-        while self.clock() < deadline:
+        discarded = {'driver_error_frames': 0, 'empty_frames': 0}
+        attempts = 0
+        while self.clock() < deadline and attempts < 16:
+            attempts += 1
             timestamp, sequence = ctypes.c_double(), ctypes.c_uint32()
             count = self.library.aios_camera_read(self.camera, self.storage, len(self.storage),
                                                   ctypes.byref(timestamp), ctypes.byref(sequence))
+            if count in (-7, -8):
+                discarded['driver_error_frames' if count == -7 else 'empty_frames'] += 1
+                continue
             if count <= 0 or count > len(self.storage):
-                raise RuntimeError('unusable_frame')
+                raise RuntimeError(READ_ERRORS.get(count, 'camera_read_failed'))
             now = self.clock()
             if not 0 <= now - timestamp.value <= .5:
                 continue
@@ -85,14 +98,21 @@ class Acquisition:
                 continue
             break
         else:
+            self.diagnostic(discarded)
             raise RuntimeError('stale_frame')
+        self.diagnostic(discarded)
         frame = self.cv.imdecode(np.frombuffer(self.storage, dtype=np.uint8, count=count), self.cv.IMREAD_COLOR)
         if frame is None or frame.shape != (480, 640, 3) or frame.dtype.name != 'uint8':
-            raise RuntimeError('unusable_frame')
+            raise RuntimeError('camera_decode_failed')
         self.sequence += 1
         self.last_capture = timestamp.value
         self.driver_sequence = sequence.value
         return frame
+
+    @staticmethod
+    def diagnostic(discarded):
+        if os.environ.get('AIOS_CAPTURE_DIAGNOSTICS') == '1' and any(discarded.values()):
+            emit({'kind': 'diagnostic', 'sequence': 0, 'captured_at': 0, 'payload': discarded})
 
     def embeddings(self, _device, encoder, calibration):
         from .recognition import _quality
@@ -235,9 +255,12 @@ def main():
         if len(raw) > 4096:
             raise ValueError('oversized')
         run(json.loads(raw))
-    except Exception:
+    except Exception as error:
         # Never expose driver/model exceptions, paths, PINs or biometric values.
-        emit({'kind': 'error', 'sequence': 0, 'captured_at': 0, 'payload': {}})
+        code = str(error) if type(error) in (RuntimeError, ValueError) else 'worker_error'
+        if code not in ERROR_CODES:
+            code = 'worker_error'
+        emit({'kind': 'error', 'sequence': 0, 'captured_at': 0, 'payload': {'code': code}})
         raise SystemExit(1)
 
 

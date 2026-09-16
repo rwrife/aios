@@ -152,3 +152,53 @@ soak and the unresolved initial photo handoff failure; complete human
 accessibility/fallback/rapid-switching acceptance. Stage 5 stays draft and #95
 stays open. No metric, consent, model approval or successful biometric enrollment
 is inferred from the passing synthetic and acquisition tests.
+
+## Resumed Stage 5: handoff reliability and resource sampling
+
+A repeated physical Brio run reproduced `busy` after two preview completions.
+The service was still reaping the previous disposable worker after its 100 ms
+immediate cleanup budget. It previously rejected the next request even though
+the old job had completed/cancelled. One pending handoff now waits at most one
+second for actual worker exit, within the original request's capture deadline.
+It never starts a second owner. Release, secure-input/inactive transitions,
+device/model changes and shutdown cancel the pending request. Purge supersedes
+it. A worker that does not exit still produces a bounded busy failure.
+
+`tests/manual_camera_service.py` now imports `tests/camera_resources.py`. Copy
+both files together when running the installed guest. For a metadata-only
+idle/active acquisition soak, as the ordinary guest account:
+
+```sh
+PYTHONPATH=/usr/local/share/aios python3 /tmp/manual_camera_service.py \
+  --duration-seconds 86400 --interval 15
+```
+
+This repeatedly previews, preempts with a photo, discards the encodings, releases
+the lease and idles between cycles. It finally checks inactive rejection and
+service/worker termination. It stops on any failed capture instead of hiding
+errors in successful averages. Progress reports contain counts/times only.
+The sampler reads service/worker process metadata every 50 ms: CPU (including
+reaped children), summed RSS, descriptor counts and camera-open ownership.
+Duty fraction and peaks are sampled estimates; brief events between samples
+can be missed. Preview first-frame and photo-handoff latency include startup,
+camera warmup and IPC, not recognition inference or UI paint. This acquisition
+soak does not replace a calibrated recognition soak or the held-out evaluation.
+
+The resumed handoff test then exposed a separate failure after 89 successful
+photos. Bounded private diagnostics identified V4L2 driver-error frames. The
+adapter still rejects these frames, but now requeues them and waits for a valid
+frame within the existing deadline and a 16-read cap. Empty frames receive the
+same treatment. Invalid metadata, failed dequeues/requeues, decode errors and
+timeouts remain failures. Diagnostics contain only fixed error codes and
+discard counts; the native UI protocol receives neither these private events
+nor arbitrary exception text.
+
+The requested target is full production validation. Only one willing adult is
+currently available. `tests/manual_face_session.py` supports an explicitly
+consented, single-person development session in a local ordinary-user terminal
+on the Alpine guest. It uses the pinned models and provisional thresholds,
+keeps temporary enrollment vectors in a disposable worker, and saves only
+aggregate counts/times. Consent must be typed by the participant. This tool
+does not install a manifest, create an account, persist templates or approve
+calibration. Its five repeat probes cannot establish a false-match rate or
+replace separate calibration and held-out participants.
