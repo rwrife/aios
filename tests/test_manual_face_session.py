@@ -181,24 +181,20 @@ class EvaluationSessionTests(unittest.TestCase):
             preview.ready(capture)
         self.assertEqual(len(calls), 4)
 
-    def test_each_enrollment_pose_requires_a_separate_next(self):
-        events = []
+    def test_forward_enrollment_requires_one_click_and_ten_frames(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        preview.ready.side_effect = lambda *args, **kwargs: events.append('next')
-        poses = iter([0.] * 10 + [.1] * 10 + [-.1] * 10)
-        def encode(*args, **kwargs):
-            events.append('sample')
-            return [(None, [1.] * 128, next(poses))]
-        encoder.encode.side_effect = encode
-        with patch.object(session, 'frame_feedback', return_value=None):
+        encoder.encode.return_value = [(None, [1.] * 128)]
+        with patch.object(session, 'frame_feedback', return_value=None), \
+                patch.object(session, 'pose_feedback', side_effect=AssertionError('pose gate used')):
             samples = session.guided_enrollment(capture, encoder, preview)
-        self.assertEqual(len(samples), 3)
-        self.assertEqual(events, (['next'] + ['sample'] * 10) * 3)
-        self.assertEqual(capture.read.call_count, 30)
-        self.assertEqual([call.args[1] for call in preview.ready.call_args_list],
-                         ['Enrollment 1 of 3: Look straight ahead.',
-                          'Enrollment 2 of 3: Turn slightly left.',
-                          'Enrollment 3 of 3: Turn slightly right.'])
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(capture.read.call_count, 10)
+        preview.ready.assert_called_once_with(capture, 'Enrollment: Look straight at the camera lens.')
+        self.assertTrue(all(not call.kwargs for call in encoder.encode.call_args_list))
+        from aios.identity import match
+        self.assertEqual(match([1.] * 128, {'temporary-person': samples},
+                               session.CALIBRATION['match_threshold'], session.CALIBRATION['runner_up_margin']),
+                         'temporary-person')
 
     def test_mistyped_consent_can_be_retried_or_cancelled(self):
         with patch('builtins.input', side_effect=['I CONSET', '']), contextlib.redirect_stdout(io.StringIO()):
@@ -206,19 +202,13 @@ class EvaluationSessionTests(unittest.TestCase):
 
     def test_rejected_frames_do_not_count_or_require_more_clicks(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        good = [1.] * 128
-        encoder.encode.side_effect = (
-            [[], [(None, good, .2)], [(None, [float('nan')] * 128, 0.)]] +
-            [[(None, good, 0.)]] * 5 + [[(None, [-1.] * 128, 0.)]] +
-            [[(None, good, 0.)]] * 5 + [[(None, good, .1)]] * 10 + [[(None, good, -.1)]] * 10)
-        with patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 34):
+        encoder.encode.side_effect = [[], [(None, [float('nan')] * 128)]] + [[(None, [1.] * 128)]] * 10
+        with patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 12):
             samples = session.guided_enrollment(capture, encoder, preview)
-        self.assertEqual(len(samples), 3)
-        self.assertEqual(capture.read.call_count, 35)
-        self.assertEqual(preview.ready.call_count, 3)
-        for vector in samples:
-            self.assertAlmostEqual(sum(value*value for value in vector), 1.)
-            self.assertTrue(all(value > 0 for value in vector))
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(capture.read.call_count, 13)
+        self.assertEqual(preview.ready.call_count, 1)
+        self.assertAlmostEqual(sum(value*value for value in samples[0]), 1.)
 
     def test_collection_continues_beyond_old_timeout(self):
         import itertools
@@ -227,8 +217,8 @@ class EvaluationSessionTests(unittest.TestCase):
         encoder.encode.side_effect = lambda *args, **kwargs: [(None, [1.] * 128, next(poses))]
         with patch.object(session, 'frame_feedback', return_value=None), \
                 patch.object(session.time, 'monotonic', side_effect=itertools.count(step=1000)):
-            self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 3)
-        self.assertEqual(capture.read.call_count, 30)
+            self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 1)
+        self.assertEqual(capture.read.call_count, 10)
 
     def test_reference_uses_all_ten_vectors_with_equal_weight(self):
         first, second = [1.] + [0.] * 127, [0., 20.] + [0.] * 126

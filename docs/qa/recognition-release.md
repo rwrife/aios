@@ -426,3 +426,21 @@ reconnection and partial collection. Camera-off native Qt fault injection in
 Ocean and Sage each performed three automatic retries, then stopped on the
 actual Cancel button. This does not resolve the underlying driver fault or
 establish participant accuracy.
+
+### Forward-only development reference
+
+The participant requested a simpler ten-frame, straight-ahead reference. The
+manual wizard now requires one enrollment Next click and collects ten usable
+single-face frames. It no longer gates collection on the landmark pose offset
+or pairwise enrollment similarity, and no left/right views are requested.
+Image quality, model face detection/size, finite embedding validation, and camera
+freshness checks remain. The ten unit embeddings form one normalized mean
+reference; raw photos are not saved. Five subsequent development checks also
+request a forward-facing view. Matching threshold and margin remain unchanged.
+
+Reports identify `forward_only`, ten enrollment frames, and the averaging method.
+This changes the development protocol and must not be mixed with previous
+three-pose results or treated as production approval. Twenty-three focused tests
+pass, including one-click collection of exactly ten accepted frames, rejected
+frames excluded, and matching against a one-reference gallery. Continuous retry
+and participant cancellation remain in effect.
