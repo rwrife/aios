@@ -45,6 +45,8 @@ if args.disk_size_gb < 1:
     parser.error("the disposable disk must be at least 1 GiB")
 if args.install_and_boot and args.boot_entry != "default":
     parser.error("--install-and-boot drives the default entry; --boot-entry applies to ISO runs")
+if args.install_and_boot == "nvme" and not args.uefi:
+    parser.error("the QEMU NVMe install lifecycle requires UEFI; SeaBIOS cannot boot its NVMe controller")
 
 
 class GuestFailure(RuntimeError):
@@ -63,12 +65,13 @@ def create_disposable_disk(directory, size_gb):
     return image
 
 
-def disk_options(image, interface):
+def disk_options(image, interface, bootable=False):
     options = ["-drive", f"if=none,id=aiosdisk,format=qcow2,file={image}"]
+    bootindex = ",bootindex=1" if bootable else ""
     if interface == "nvme":
-        return options + ["-device", "nvme,drive=aiosdisk,serial=aios-disposable"]
+        return options + ["-device", f"nvme,drive=aiosdisk,serial=aios-disposable{bootindex}"]
     return options + ["-device", "ahci,id=aiosahci",
-                      "-device", "ide-hd,drive=aiosdisk,bus=aiosahci.0"]
+                      "-device", f"ide-hd,drive=aiosdisk,bus=aiosahci.0{bootindex}"]
 
 
 def verify_desktop(qmp_path, screenshot):
@@ -291,9 +294,11 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
         if args.install_and_boot:
             target = INSTALL_TARGETS[args.install_and_boot]
             image = create_disposable_disk(directory, args.disk_size_gb)
-            attachment = disk_options(image, args.install_and_boot)
+            install_attachment = disk_options(image, args.install_and_boot)
+            boot_attachment = disk_options(image, args.install_and_boot, bootable=True)
             run_guest(base_command(f"install-{args.install_and_boot}",
-                                   ["-cdrom", str(args.iso.resolve()), "-boot", "d", *attachment]),
+                                   ["-cdrom", str(args.iso.resolve()), "-boot", "d",
+                                    *install_attachment]),
                       directory=directory, timeout=args.timeout,
                       steps=[(LOGIN_PROMPT, "root\n"),
                              (SHELL_PROMPT, installer_script(target))],
@@ -303,7 +308,7 @@ with tempfile.TemporaryDirectory(prefix="aios-boot-") as directory:
             # The same image, with no ISO and no network attached: an installed
             # machine with the installation medium removed.
             run_guest(base_command(f"installed-{args.install_and_boot}",
-                                   ["-boot", "c", *attachment]),
+                                   ["-boot", "c", *boot_attachment]),
                       directory=directory, timeout=args.timeout,
                       steps=[(LOGIN_PROMPT, "root\n"), (SHELL_PROMPT, installed_system_check())],
                       success=READY, transcript=transcript,

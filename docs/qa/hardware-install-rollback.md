@@ -11,9 +11,9 @@ ext4 root that needs a full-system snapshot or a signed package bundle, neither
 of which exists here, so boot activation and rollback are not implemented and
 no code pretends otherwise. That remains an acceptance blocker.
 
-**Nothing in this stage is hardware evidence.** No physical disk has been
-installed to, the destructive QEMU matrix has been prepared but not run, and no
-device in `docs/qa/hardware-coverage.json` changes status.
+**Nothing in this stage is physical-hardware evidence.** No physical disk has
+been installed to. Disposable QEMU installation results are recorded below,
+and no device in `docs/qa/hardware-coverage.json` changes status.
 
 ## Offline installation parity
 
@@ -311,11 +311,25 @@ model checks plus the framebuffer capture.
 
 There is no `--install-disk`, no `--boot-from`, no image or device argument and
 no passthrough option: the disk path is chosen by the harness and cannot be
-supplied. BIOS and UEFI come from the existing `--uefi` flag. Unit tests assert
+supplied. BIOS and UEFI come from the existing `--uefi` flag. QEMU NVMe
+installation requires UEFI because SeaBIOS does not enumerate QEMU's NVMe
+controller as a boot device; the harness refuses that unsupported combination
+immediately instead of timing out after a successful install. Unit tests assert
 the absence of any host disk input, the single image lifecycle shared by both
 phases, and the exact installer input.
 
-**This matrix has not been run.** The harness change is preparation.
+### Disposable QEMU results
+
+Using the stage-4 ISO built on 2026-09-15, with no network device:
+
+| Controller | Firmware | Offline install verification | Boot same disk with ISO removed |
+| --- | --- | --- | --- |
+| SATA/AHCI | BIOS (SeaBIOS) | Pass | Pass: desktop, app compilation, bundled model reply |
+| SATA/AHCI | UEFI (OVMF) | Pass | Pass: desktop, app compilation, bundled model reply |
+| NVMe | UEFI (OVMF) | Pass | Pass: desktop, app compilation, bundled model reply |
+| NVMe | BIOS (SeaBIOS) | Install passed; firmware cannot boot QEMU NVMe | Unavailable in this harness/firmware combination |
+
+These are disposable virtual disks, not physical compatibility evidence.
 
 ## Secure Boot
 
@@ -377,11 +391,8 @@ Acceptance blockers, none of which this stage clears:
 - **coherent update and rollback is not enabled.** A full-system snapshot or a
   signed package bundle that restores kernel, modules, firmware and Mesa/Xorg
   atomically has to be designed first; #101 stays open.
-- a real `setup-disk` run: every command construction is tested, but no actual
-  Alpine installation has been performed, so the verifier has never run against
-  a genuinely installed root;
-- the disposable-disk QEMU matrix: BIOS and UEFI × NVMe and SATA. Prepared,
-  not run;
+- legacy-BIOS NVMe boot on firmware with a suitable NVMe option ROM; QEMU
+  SeaBIOS cannot provide this, while UEFI NVMe and BIOS/UEFI SATA passed;
 - sacrificial physical NVMe and SATA installs on selected machines, at least
   three cold boots each, with the USB removed and the network disconnected;
 - eMMC, which stays untested and unguarded;

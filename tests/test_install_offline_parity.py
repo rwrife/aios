@@ -1435,8 +1435,14 @@ class DisposableDiskHarnessTests(unittest.TestCase):
         self.assertIn('image = Path(directory) / DISK_IMAGE', self.text)
         self.assertIn('"qemu-img", "create", "-f", "qcow2"', self.text)
         self.assertEqual(self.text.count("create_disposable_disk(directory, args.disk_size_gb)"), 1)
-        self.assertEqual(self.text.count("attachment = disk_options(image"), 1)
-        self.assertEqual(self.text.count("*attachment"), 2)
+        self.assertEqual(self.text.count("disk_options(image, args.install_and_boot"), 2)
+        self.assertIn("*install_attachment", self.text)
+        self.assertIn("*boot_attachment", self.text)
+        self.assertIn('bootindex = ",bootindex=1" if bootable else ""', self.text)
+
+    def test_qemu_legacy_bios_nvme_is_explicitly_unavailable(self):
+        self.assertIn('args.install_and_boot == "nvme" and not args.uefi', self.text)
+        self.assertIn("SeaBIOS cannot boot its NVMe controller", self.text)
 
     def test_no_host_device_or_image_path_can_be_supplied(self):
         for forbidden in ("--disk-path", "--disk-image", "file=/dev", "if=pflash,format=raw,file=",
@@ -1455,7 +1461,7 @@ class DisposableDiskHarnessTests(unittest.TestCase):
         self.assertIn("printf '\\\\ninstall_log='; cat /tmp/install.log;", self.text)
 
     def test_the_second_phase_boots_the_same_disk_without_the_iso(self):
-        self.assertIn('["-boot", "c", *attachment]', self.text)
+        self.assertIn('["-boot", "c", *boot_attachment]', self.text)
         self.assertIn("shut_down=True", self.text)
         self.assertIn("grep -qx installed /etc/aios-mode", self.text)
         self.assertIn("aios-install-verification.json", self.text)

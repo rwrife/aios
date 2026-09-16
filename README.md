@@ -209,7 +209,9 @@ checkpoint of what the machine runs. It is **not** a rollback mechanism:
 coordinated update and rollback are not implemented. See
 [offline install parity and audit checkpoints](docs/qa/hardware-install-rollback.md).
 Use a disposable VM disk until the release QA matrix has been completed: no
-physical or QEMU installation has been performed yet.
+physical installation has been performed. Disposable SATA BIOS/UEFI and NVMe
+UEFI install-and-reboot checks pass; QEMU SeaBIOS cannot boot its NVMe
+controller. See the QA record for the exact matrix.
 
 Run backend and source validation with `bash scripts/test.sh`. On Windows,
 `.\scripts\test.ps1` runs those checks plus the isolated QML, native application,
