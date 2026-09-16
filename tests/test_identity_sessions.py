@@ -379,6 +379,10 @@ class BoundaryTests(unittest.TestCase):
             with self.subTest(app=app, args=args), self.assertRaises(ValueError):
                 application(app, args)
 
+    def test_editor_uses_packaged_binary_without_shared_instance_forwarding(self):
+        self.assertEqual(application('editor', ['notes.txt']),
+                         ['/usr/bin/mousepad', '--disable-server', '/workspace/notes.txt'])
+
     def test_pin_lockout(self):
         record = pin_record('123456')
         for i in range(10):

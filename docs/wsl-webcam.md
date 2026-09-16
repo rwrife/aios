@@ -227,9 +227,12 @@ USB, so it cannot use this USB passthrough path. A second external USB camera is
 the next hardware comparison. The Dell was detached and Logi Tune restored after
 the bounded tests; no capture buffers were retained.
 
-The optional `AIOS_IDENTITY_BUILD=1` image currently has a separate unresolved
-`featherpad` package availability failure. The boot verification above used the
-default desktop image; it does not validate protected-session appliance startup.
+The optional `AIOS_IDENTITY_BUILD=1` image previously failed to resolve
+`featherpad` on Alpine v3.23. Stage 1 uses that release's `mousepad` package and
+updates the fixed editor launch mapping, with single-instance forwarding
+disabled. The boot verification above used the default desktop image; it does
+not validate protected-session appliance startup. See the Brio QA record for
+current optional-image validation evidence.
 
 Keep camera experiments in WSL, and exercise session authorization with deterministic
 identity events. `scripts/test-identity-linux.sh` runs real namespace, cgroup and
