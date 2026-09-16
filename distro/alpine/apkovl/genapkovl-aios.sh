@@ -14,6 +14,11 @@ cp -a "$AIOS_OVERLAY_DIR"/. "$tmpdir"/
 cp -a "$AIOS_STAGE_DIR"/. "$tmpdir"/
 mkdir -p "$tmpdir/etc/apk"
 cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI" | sort -u > "$tmpdir/etc/apk/world"
+# world.hardware is the offline firmware/regulatory/diagnostic set. The live
+# root installs this world from the ISO's /apks repository during initramfs,
+# and setup-disk reuses the same file, so both worlds stay identical.
+sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_HARDWARE" >> "$tmpdir/etc/apk/world"
+sort -u "$tmpdir/etc/apk/world" -o "$tmpdir/etc/apk/world"
 if [ -n "${AIOS_WORLD_IDENTITY:-}" ]; then
   sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_IDENTITY" >> "$tmpdir/etc/apk/world"
   sort -u "$tmpdir/etc/apk/world" -o "$tmpdir/etc/apk/world"

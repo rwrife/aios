@@ -52,6 +52,9 @@ export AIOS_WORLD_X11="$ROOT_DIR/apks/world.x11"
 export AIOS_WORLD_VM="$ROOT_DIR/apks/world.vm"
 export AIOS_WORLD_DEVEL="$ROOT_DIR/apks/world.devel"
 export AIOS_WORLD_AI="$ROOT_DIR/apks/world.ai"
+# Offline firmware/regulatory/diagnostic support for docs/qa/hardware-coverage.json.
+# world.vm stays separate so one ISO keeps working in QEMU and on real machines.
+export AIOS_WORLD_HARDWARE="$ROOT_DIR/apks/world.hardware"
 export AIOS_IDENTITY_BUILD="${AIOS_IDENTITY_BUILD:-0}"
 case "$AIOS_IDENTITY_BUILD" in
   0) export AIOS_WORLD_IDENTITY= ;;
@@ -117,6 +120,14 @@ for iso in "$OUT_DIR"/*-"$RELEASE_TAG"-"$ARCH".iso; do
     --build-setting "REPO_BASE=$REPO_BASE" \
     --build-setting "ARCH=$ARCH" \
     --build-setting "AIOS_IDENTITY_BUILD=$AIOS_IDENTITY_BUILD" \
+    --world "base=$AIOS_WORLD_BASE" \
+    --world "x11=$AIOS_WORLD_X11" \
+    --world "vm=$AIOS_WORLD_VM" \
+    --world "devel=$AIOS_WORLD_DEVEL" \
+    --world "ai=$AIOS_WORLD_AI" \
+    --world "hardware=$AIOS_WORLD_HARDWARE" \
+    ${AIOS_WORLD_IDENTITY:+--world "identity=$AIOS_WORLD_IDENTITY"} \
+    --hardware-package-manifest "$ROOT_DIR/../../docs/qa/hardware-packages.json" \
     --work-dir "$WORK_DIR/build-manifest" \
     --packages-txt "$iso.packages.txt" \
     --output "$iso.build-manifest.json"

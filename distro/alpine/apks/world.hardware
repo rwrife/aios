@@ -1,0 +1,41 @@
+# Offline hardware support for the devices selected in
+# docs/qa/hardware-coverage.json. Every atom is a package name that exists in
+# the Alpine v3.23 x86_64 main/community repositories; the resolved version,
+# repository, license and rationale for each one are recorded in
+# docs/qa/hardware-packages.json. Do not add edge packages, version
+# constraints, repository tags, or out-of-tree modules here: one release
+# family only (distro/alpine/build.env ALPINE_BRANCH).
+#
+# Package presence is not a hardware support claim. Every device in the
+# coverage matrix stays "untested" until physical evidence exists.
+
+# Firmware for the selected Wi-Fi, GPU, and Ethernet devices. These are
+# redistributable blobs from linux-firmware; linux-firmware-nvidia is the
+# firmware the in-tree nouveau driver loads, not the proprietary NVIDIA
+# driver (see docs/architecture/nvidia-decision.md).
+linux-firmware-amdgpu
+linux-firmware-ath10k
+linux-firmware-ath11k
+linux-firmware-ath12k
+linux-firmware-i915
+linux-firmware-intel
+linux-firmware-mediatek
+linux-firmware-nvidia
+linux-firmware-rtl_nic
+
+# Wireless regulatory database loaded by cfg80211 through the firmware loader.
+wireless-regdb
+
+# Audio: SOF DSP firmware/topologies plus the ALSA use-case configuration that
+# SOF and HDA machines need to route a usable default device.
+sof-firmware
+alsa-ucm-conf
+
+# Bounded diagnostics. These are read-only probes used to identify hardware
+# and confirm a renderer; they do not change driver behavior.
+# util-linux-misc provides /usr/sbin/rfkill, mesa-utils provides glxinfo.
+pciutils
+usbutils
+iw
+util-linux-misc
+mesa-utils

@@ -4,7 +4,7 @@ aios_apkovl_section() {
 	[ -n "$apkovl" ] && [ -n "$hostname" ] || return 0
 	local content_hash
 	content_hash=$({ find "$AIOS_OVERLAY_DIR" "$AIOS_STAGE_DIR" -type f -exec sha256sum {} \;;
-		cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI";
+		cat "$AIOS_WORLD_BASE" "$AIOS_WORLD_X11" "$AIOS_WORLD_VM" "$AIOS_WORLD_DEVEL" "$AIOS_WORLD_AI" "$AIOS_WORLD_HARDWARE";
 		[ -z "${AIOS_WORLD_IDENTITY:-}" ] || cat "$AIOS_WORLD_IDENTITY";
 	} | sort | checksum)
 	build_section apkovl "$hostname" "$(checksum < "$apkovl")" "$content_hash"
@@ -63,6 +63,11 @@ profile_aios() {
 	fi
 	if [ -n "$AIOS_WORLD_VM" ] && [ -f "$AIOS_WORLD_VM" ]; then
 		apks="$apks $(tr '\n' ' ' < "$AIOS_WORLD_VM")"
+	fi
+	# world.hardware documents why each package is selected, so strip comments
+	# before they reach the package list.
+	if [ -n "$AIOS_WORLD_HARDWARE" ] && [ -f "$AIOS_WORLD_HARDWARE" ]; then
+		apks="$apks $(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$AIOS_WORLD_HARDWARE" | tr '\n' ' ')"
 	fi
 
 	hostname="aios"

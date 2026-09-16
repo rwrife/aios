@@ -179,6 +179,51 @@ Exit: automated ISO inspection proves module/firmware dependency closure and
 cache invalidation; offline BIOS/UEFI VM boot still works. Hardware claims wait
 for phase 5.
 
+Implementation status (stage 2, issue #97): the offline bundle and its
+validation are implemented; the offline BIOS/UEFI VM regression and every
+hardware claim are not. See
+[docs/qa/hardware-offline-bundle.md](../qa/hardware-offline-bundle.md) for the
+full record. In short: `distro/alpine/apks/world.hardware` carries the
+firmware, `wireless-regdb`, SOF/ALSA audio support and the bounded diagnostics
+(`pciutils`, `usbutils`, `iw`, `util-linux-misc` for `rfkill`, `mesa-utils` for
+`glxinfo`) for the devices in `docs/qa/hardware-coverage.json`, with every name
+resolved against the v3.23 `APKINDEX` and recorded with its repository,
+version, license and rationale in `docs/qa/hardware-packages.json`. It is wired
+through `mkimage.sh`, the profile package aggregation and apkovl content hash,
+and the overlay `/etc/apk/world` that serves both the live root (installed by
+the initramfs from the ISO's `/apks` repository) and `setup-disk`. `world.vm`
+is unchanged.
+
+Two things deliberately did **not** change, on artifact evidence rather than
+assumption. The initramfs already contains every boot-critical storage and USB
+controller module, so nothing was added and no early-KMS module or firmware was
+added. No firmware reprobe service was added either: Alpine's `modloop` service
+declares `before ... hwdrivers ... dev sysfs` and `hwdrivers` declares `after
+modloop`, and the selected firmware is installed into the root filesystem
+before `switch_root`, so no selected driver can probe before its firmware
+exists.
+
+`scripts/inspect-image.py --validate-hardware` validates world parity between
+the live and installed worlds, offline package availability in the ISO's
+`/apks` repository, firmware licenses **and** repositories, each required
+firmware group read from the selected packages' own members (the modloop's
+pruned copy is reported as evidence but cannot satisfy a requirement, because
+`world.hardware` is what populates `/lib/firmware` on the live and installed
+system), firmware symlink targets, module dependency closure including a
+`modules.dep` entry per selected non-builtin module and `modules.builtin`,
+boot-critical initramfs placement and device-alias mapping against the driver
+each entry expects. It exits `3` on a failed check and `4` when evidence is
+missing, so a missing input never reads as a pass, and
+`scripts/verify-iso.sh` -- the release gate the ISO workflow runs -- extracts
+the ISO, unsquashes the modloop and runs exactly that validation, failing the
+build on either code. Per-ISO metrics now record
+ISO/modloop/initramfs/kernel/embedded-APK
+and apkovl sizes; live root usage, boot time and minimum tested RAM are
+recorded as `not_measured` rather than invented, and no firmware pruning has
+been done.
+
+Every entry in the coverage matrix remains `untested`.
+
 ### 3. Make first boot and graphics predictable
 
 Owner role: desktop/network maintainer. Depends on phase 2.
