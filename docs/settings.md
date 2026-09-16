@@ -104,7 +104,7 @@ storage and separate primary chat, Agent tasks, and speech endpoint behavior.
 CLI users can set the same route with `--agent-mode`, `--agent-url`,
 `--agent-model`, and the non-echoing `--ask-agent-key`. See
 [agentic tools](agentic-tools.md).
-# Recognition release status
+## Recognition release status
 
 Recognition remains experimental and off by default. Optional identity images
 bundle pinned model artifacts but no calibrated approval. Missing approval keeps

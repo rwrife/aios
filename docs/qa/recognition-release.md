@@ -123,3 +123,32 @@ Unit, synthetic-runtime and capture checks are labeled separately below.
   was active, so this is compatibility evidence, not a controlled benchmark.
 - Ubuntu host OpenCV 4.6.0 failed YuNet inference (`getLayerData`); it is not
   the validated runtime. The target remains Alpine's recorded 4.12 package.
+
+### Final source and installed image
+
+After the specific capturing/paused status-text change, the native/display suite
+passed again: **104 QML checks**, both profile/PIN runs, strict camera protocol,
+application host and three private-display tests. Production source is
+`1d5cab5`; later changes are evidence documentation only.
+
+Final local identity image: `alpine-aios-recognition-stage5-final-x86_64.iso`,
+2,182,791,168 bytes, 786 resolved packages, SHA-256
+`32fc6b0b126f555d71b25adf92ff4702a918da5448590c5d042ae9f3bb20e9bc`.
+Its build manifest and package list are beside the ISO in `distro/alpine/out`.
+Automatically triggered GitHub ISO jobs were canceled; validation used local
+WSL/Docker builds and ordinary windowed QEMU.
+
+Final guest, `aios` UID 1000: pinned-model synthetic load 0.2533 s, cold
+detect+feature 0.1120 s, warm 0.0639/0.0548/0.0523 s, peak process RSS
+238852 KiB. Three preview/photo preemptions, inactive rejection and service-kill
+worker cleanup passed in 10.602 s; maximum frame age 0.106 s. No calibration
+approval manifest was installed. The same camera backend's earlier extended
+run and unresolved initial handoff failure are reported in `brio-camera.md`.
+
+**Open release blockers:** consented calibration and held-out cohort; real
+enrollment-to-suggestion accuracy and confidence intervals; biometric adverse
+conditions/spoof trials; full CPU/RSS/duty/latency decomposition; long-duration
+soak and the unresolved initial photo handoff failure; complete human
+accessibility/fallback/rapid-switching acceptance. Stage 5 stays draft and #95
+stays open. No metric, consent, model approval or successful biometric enrollment
+is inferred from the passing synthetic and acquisition tests.
