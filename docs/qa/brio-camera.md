@@ -231,7 +231,7 @@ Failure and recovery evidence so far:
   **1.139483 s**, capture **1.342337 s**, close **0.013822 s**).
 - The operator physically unplugged the Brio. A probe during removal returned
   `open_failed`, both guest video nodes disappeared, and the ordinary-user shell
-  remained alive. Reconnect validation is still pending.
+  remained alive. Reconnect validation is recorded below.
 
 The initial long-command contention harness exceeded the serial console's
 reliable interactive input handling. Retrying with short, paced heredoc lines
@@ -245,3 +245,34 @@ the compiled application-host protocol test, and the display-isolation tests.
 This includes native PIN-overlay key routing and account creation/selection
 without a camera. These automated UI/security results are recorded separately
 from the physical camera measurements; they are not biometric evidence.
+
+### Reconnect, deadline and ACL completion
+
+The operator reconnected the Brio. USB/IP reattachment changed its Linux address
+from `001/002` to `001/003`. The running QEMU process remained bound to the old
+address, correctly leaving its guest without a camera. Only that disposable
+test VM was restarted; WSL, Docker and other VMs were not restarted. A normal
+`scripts/run.ps1` launch **without `-CameraBusId`** automatically discovered the
+single stable index0 camera and passed through `001/003`.
+
+Three fresh ten-frame 640x480 MJPG/15-fps captures then passed as `aios`, with
+open times **0.202490, 0.209747, 0.224050 s** and total pre-close times
+**2.591456, 2.796007, 2.649451 s**. The stable by-id path also passed three
+independent captures; no serial-bearing path was retained in evidence.
+
+An actual capture interrupted with a one-second child deadline returned
+`timeout` after **1.552 s** including process startup/cleanup. The worker count
+after return was **zero**. Three subsequent stable-path ten-frame captures
+passed (pre-close times **2.557276, 2.622820, 2.561642 s**). This validates forced
+termination and release during live acquisition; no persistent hardware-driver
+hang was induced.
+
+Host ACL hashes were recorded before launch, during QEMU and after its confirmed
+exit. The only changed node during the run was the selected
+`/dev/bus/usb/001/003`; **all USB-node ACL hashes matched the original snapshot
+after exit**. The camera remains attached to WSL and no test capture is active.
+
+Stage 1 acquisition validation is complete. USB address changes currently
+require relaunching the selected QEMU VM; transparent QEMU hotplug recovery is
+not claimed. The next service layer must preserve this measured format,
+unprivileged boundary, deadlines and cleanup behavior. Recognition remains off.

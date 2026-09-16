@@ -35,8 +35,10 @@ for the artifact hash and test results.
 Three unprivileged ten-frame captures passed in both headless and normal
 windowed Alpine QEMU. Negotiation was MJPG, 640x480, 15 fps. Permission, wrong
 node, missing device, contention/release and physical unplug checks passed.
-Physical reconnect and the remaining validation checks are in progress. Stage
-1 remains open until those results are recorded; stages 2–5 have not started.
+Physical reconnect, automatic discovery, actual capture deadline cleanup and
+scoped ACL restoration also passed. Stage 1 implementation and validation are
+complete in PR #133, ready for review. The issue closes when that PR lands.
+Stage 2 is next, based on the validated stage 1 branch; stages 3–5 follow it.
 
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
