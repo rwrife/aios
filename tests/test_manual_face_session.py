@@ -3,6 +3,8 @@ import contextlib
 import io
 import json
 import subprocess
+import os
+import select
 import sys
 import unittest
 from unittest.mock import patch
@@ -12,6 +14,41 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_mistyped_consent_can_be_retried_or_cancelled(self):
+        with patch('builtins.input', side_effect=['I CONSET', '']), contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(session.read_consent())
+
+    def test_both_backspace_encodings_edit_the_local_prompt(self):
+        import pty
+        import time
+        for backspace in (b'\x08', b'\x7f'):
+            master, slave = pty.openpty()
+            child = subprocess.Popen([sys.executable, '-c',
+                'import sys; sys.path.insert(0,"tests"); from manual_face_session import read_consent; '
+                'print("EDIT_RESULT", read_consent())'], stdin=slave, stdout=slave, stderr=slave)
+            os.close(slave)
+            output = b''
+            try:
+                deadline = time.monotonic() + 3
+                while b'cancels): ' not in output and time.monotonic() < deadline:
+                    if select.select([master], [], [], .1)[0]:
+                        output += os.read(master, 4096)
+                self.assertIn(b'cancels): ', output)
+                # Isolated prompt only: no camera, worker, or participant consent.
+                os.write(master, b'I CONSENX' + backspace + b'T\n')
+                while b'EDIT_RESULT True' not in output and time.monotonic() < deadline:
+                    if select.select([master], [], [], .1)[0]:
+                        try:
+                            output += os.read(master, 4096)
+                        except OSError:
+                            break
+                self.assertIn(b'EDIT_RESULT True', output)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=3)
+                os.close(master)
+
     def test_declining_consent_never_starts_worker(self):
         with patch.object(sys, 'argv', ['manual_face_session']), \
                 patch.object(session.os, 'geteuid', return_value=1000), \

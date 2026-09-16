@@ -34,6 +34,20 @@ GUIDANCE = {
 }
 
 
+def read_consent():
+    import readline
+    readline.parse_and_bind('"\\C-h": backward-delete-char')
+    readline.parse_and_bind('"\\C-?": backward-delete-char')
+    readline.set_auto_history(False)
+    while True:
+        response = input('To consent, type I CONSENT (Enter alone cancels): ').strip()
+        if response == 'I CONSENT':
+            return True
+        if not response or response.casefold() in ('no', 'cancel'):
+            return False
+        print('That did not match. Nothing was captured. Try again or press Enter to cancel.')
+
+
 def worker(directory):
     from aios.biometrics import FaceEncoder
     from aios.capture_service import inventory
@@ -140,11 +154,12 @@ def main():
         raise RuntimeError('Consent must be entered by the participant in a local terminal.')
     print('Single-person development check — NOT a production accuracy study.\n'
           'Only you should be in view. Close other camera previews.\n'
-          'The camera will briefly measure your face for temporary enrollment and five repeat checks.\n'
-          'Images and face vectors stay in worker memory and are discarded when it exits.\n'
-          'Only anonymous counts/times are saved. No accounts, PINs or approvals change.\n'
+          'The camera will measure your face for temporary enrollment,\n'
+          'then five repeat checks. Images and face vectors stay in worker memory\n'
+          'and are discarded when it exits. Only anonymous counts/times are saved.\n'
+          'No accounts, PINs or approvals change.\n'
           'Press Ctrl+C at any time to cancel and erase these temporary samples.\n')
-    if input('To consent, type I CONSENT: ').strip() != 'I CONSENT':
+    if not read_consent():
         print('Cancelled. The camera was not opened.')
         return 1
     worker_environment = {**os.environ, 'AIOS_EVALUATION_PARENT': str(os.getpid())}
