@@ -218,3 +218,21 @@ bytes: `alpine-aios-recognition-stage5-recovery-x86_64.iso`, SHA-256
 `7490a9682c2d86032a21b14d91b6fd8a17590b2862c7d6677fcf6f7f424fbe90`.
 Guest validation and the consented development session are pending. No runtime
 approval or production calibration has been created.
+
+The recovery guest completed three previews/photos/preemptions, inactive
+rejection and worker termination, but initially reproduced the sampler failure.
+A camera-independent reproduction showed that Linux removes a process's address
+space before it always reports zombie/exited state; `/proc/PID/fd` becomes
+inaccessible during that interval. The sampler now explicitly verifies the
+missing address space and records `exiting_process_samples`, while permission
+failures for live address spaces still fail the run. Two regression tests and
+a 300-process exit stress check passed (zero sampling errors). First/last idle
+RSS now exclude interpreter startup before the first observed camera open.
+These are still sampled estimates, not proof of every instantaneous descriptor
+state. The updated sampler is an external test tool; the image is unchanged.
+
+The local consent terminal is open. A bounded supervisor waits up to two hours
+for the participant session to exit with five aggregate probe results, then
+runs a new three-cycle guest smoke check. Only if that passes will it start the
+24-hour acquisition soak with 15-second idle intervals. At this checkpoint its
+state is **waiting for participant**; no completed session or soak is claimed.

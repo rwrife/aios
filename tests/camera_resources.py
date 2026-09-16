@@ -18,6 +18,29 @@ class Resources:
         self.samples = 0
         self.idle_rss = []
         self.errors = 0
+        self.exiting_process_samples = 0
+        self.saw_camera = False
+
+    def handles(self, process):
+        try:
+            return list((process / 'fd').iterdir())
+        except PermissionError:
+            if not self.exiting(process):
+                raise
+            return []
+
+    def exiting(self, process):
+        # Linux can revoke proc-fd access during exit before the process
+        # becomes a zombie. Confirm its address space is already gone;
+        # permission failures for a live address space remain errors.
+        try:
+            status = (process / 'status').read_text().splitlines()
+        except (FileNotFoundError, ProcessLookupError):
+            status = []
+        if any(line.startswith('VmSize:') for line in status):
+            return False
+        self.exiting_process_samples += 1
+        return True
 
     def sample(self):
         root = Path('/proc') / str(self.pid)
@@ -32,18 +55,21 @@ class Resources:
                 cpu += sum(int(fields[index]) for index in (11, 12, 13, 14)) / self.ticks
                 status = (process / 'status').read_text().splitlines()
                 rss += next((int(line.split()[1]) for line in status if line.startswith('VmRSS:')), 0)
-                handles = list((process / 'fd').iterdir())
+                handles = self.handles(process)
                 fds += len(handles)
                 camera = False
                 for handle in handles:
                     try:
                         target = os.readlink(handle)
                         camera |= target.startswith('/dev/video') and target[10:].isdigit()
-                    except FileNotFoundError:
+                    except (FileNotFoundError, ProcessLookupError):
                         pass
                 owners += int(camera)
             except (FileNotFoundError, ProcessLookupError):
                 continue
+            except PermissionError:
+                if not self.exiting(process):
+                    raise
         return cpu, rss, fds, owners, not children
 
     def run(self):
@@ -60,7 +86,8 @@ class Resources:
                 self.peak_rss_kib = max(self.peak_rss_kib, rss)
                 self.peak_fds = max(self.peak_fds, fds)
                 self.peak_camera_owners = max(self.peak_camera_owners, owners)
-                if idle and rss:
+                self.saw_camera |= owners > 0
+                if idle and rss and self.saw_camera:
                     self.idle_rss.append(rss)
                     # Bounded memory even for a day-long run.
                     if len(self.idle_rss) > 1200:
@@ -82,6 +109,7 @@ class Resources:
         elapsed = time.monotonic() - self.started
         return {'sampling_seconds': round(elapsed, 3), 'samples': self.samples,
                 'sampling_errors': self.errors, 'sample_interval_seconds': self.interval,
+                'exiting_process_samples': self.exiting_process_samples,
                 'peak_service_worker_rss_kib': self.peak_rss_kib,
                 'peak_service_worker_fds': self.peak_fds,
                 'peak_camera_owners': self.peak_camera_owners,
