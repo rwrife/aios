@@ -138,6 +138,22 @@ class RecognitionStorageTests(unittest.TestCase):
             enroll(self.profile['id'], '1234', self.root, capture=delete, consent=True)
         self.assertEqual(FaceStore(self.root).snapshot()[1], {})
 
+    def test_interrupted_account_delete_leaves_profile_without_template(self):
+        with self.configured():
+            enroll(self.profile['id'], '1234', self.root, capture=self.samples, consent=True)
+        writes = []
+        def interrupt(path, payload):
+            writes.append(path)
+            if len(writes) == 2:
+                raise RuntimeError('simulated interruption before account commit')
+            atomic_bytes(path, payload)
+        with patch('aios.chat_profiles.atomic_bytes', side_effect=interrupt), self.assertRaises(RuntimeError):
+            profile_dispatch({'action': 'delete_profile', 'owner': self.profile['id'],
+                              'pin': '1234', 'confirmed': True}, self.root)
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
+        profiles = profile_dispatch({'action': 'profiles'}, self.root)['profiles']
+        self.assertEqual(profiles[0]['id'], self.profile['id'])
+
     def test_rejected_samples_preserve_previous_committed_enrollment(self):
         with self.configured():
             enroll(self.profile['id'], '1234', self.root, capture=self.samples, consent=True)

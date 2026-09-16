@@ -73,3 +73,27 @@ snapshots, copied files or old backups. Key rotation cannot revoke external copi
 Real enrollment accuracy and pose thresholds remain unvalidated until the later
 calibration/evaluation gate passes. Synthetic lifecycle tests do not supply that
 evidence. Recognition remains experimental and disabled by default.
+
+## Validation record (2026-09-16)
+
+PR #135 passes eight encrypted-store tests, including actual child-process exit
+immediately before/after the durable pointer commit, key rotation, key permission
+failure, ciphertext tamper, legacy purge and restart recovery. Fourteen recognition
+tests cover consent, exact UUID/PIN, lockout, PIN changes during capture, concurrent
+purge/deletion, interrupted account removal, invalid/inconsistent samples, metadata
+output, and disable-without-purge. Twenty-three service/worker tests include guided
+pose progression, quality/multiple-face/pose timeout, private bounded progress,
+freshness and external opt-out readback.
+
+The full display suite passes: 96 QML checks, both installed-layout profile runs,
+application-host protocol and three private display/PIN-routing checks. One first
+run exposed a test race: socket publication preceded compositor readiness. The
+test now waits for the same `display_ready` acknowledgement as the real launch
+path, retaining its timeout and security assertions, and the rerun passed.
+
+A broad Python run completed 657 tests with 13 skips and the two previously
+confirmed `main` failures (`test_skills` application-builder allowlist expectation
+and `test_terminal_theme` launcher occurrence count). No new failures appeared.
+All lifecycle evidence uses synthetic data in disposable directories. Real
+consented enrollment and calibrated biometric performance remain unverified;
+these results must not be described as a production recognition release.

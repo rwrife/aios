@@ -44,6 +44,14 @@ Brio service lifecycle, Alpine guest preemption/termination and USB/IP removal
 checks. Measured evidence is in `docs/qa/brio-camera.md`. Stage 3 follows it;
 successful calibrated enrollment and held-out accuracy remain later release gates.
 
+Stage 3 is implemented in PR #135 with durable encrypted generations, immediate
+UUID/PIN revalidation, guided finite sampling and protected-namespace refusal.
+Crash/restart, concurrent purge/deletion, quality guidance and display/PIN tests
+pass; see `docs/facial-data-lifecycle.md`. Stage 4 suggestion-channel hardening is
+next. The operator delegated model/setup selection; no held-out consented cohort
+was supplied, so biometric accuracy gates remain unmeasured and cannot be closed
+by synthetic tests.
+
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
 remain unverified. Retain only aggregate camera evidence, never media or serials.
