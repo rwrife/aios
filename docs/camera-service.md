@@ -52,6 +52,8 @@ Suggestions never authenticate, unlock, prove liveness, or grant capabilities.
 PIN access remains available when the service or camera fails. Enrollment and
 template lifecycle hardening is tracked separately in recognition stage 3;
 candidate protocol hardening is stage 4. Production calibration remains stage 5.
+The [suggestion channel](recognition-suggestions.md) specifies strict native
+validation, absolute expiry, manifest approval and UUID-only PIN preselection.
 
 ## Validation
 

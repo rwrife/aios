@@ -9,7 +9,7 @@ Item {
     property color ink: "#e4edf1"
     property color surface: "#263944"
     readonly property var profile: control && control.profile ? control.profile : ({})
-    readonly property var suggestion: !profile.name && control && control.recognitionSuggestion ? control.recognitionSuggestion : ({})
+    readonly property var suggestion: !profile.name && control && control.greetingOnly === true && control.recognitionSuggestion ? control.recognitionSuggestion : ({})
     readonly property var displayProfile: profile.name ? profile : suggestion
     readonly property string name: profile.name || ""
     readonly property string greeting: name ? "Hello, " + name + ". How may I help you?"
@@ -81,8 +81,7 @@ Item {
         palette.highlight: "#405968"
         palette.highlightedText: root.ink
         background: Rectangle { color: root.surface; border.color: "#58717e"; radius: 8 }
-        onAboutToHide: if (root.control) root.control.setSecureInput(false)
-        onOpened: { currentIndex = -1; if (root.control) root.control.setSecureInput(true); }
+        onOpened: { currentIndex = -1; }
         MenuItem {
             objectName: "recognitionSuggestion"
             visible: !!root.suggestion.name
@@ -92,9 +91,12 @@ Item {
             background: Rectangle { color: parent.highlighted ? "#405968" : "transparent"; radius: 4 }
             contentItem: Text { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.ink; verticalAlignment: Text.AlignVCenter }
             onTriggered: {
+                var candidate = root.suggestion
+                if (!candidate.id || !candidate.name) return
                 picker.close()
                 enrollment.creating = false
-                enrollment.selectedProfile = root.suggestion.name
+                enrollment.selectedProfile = candidate.name
+                enrollment.selectedProfileId = candidate.id
                 enrollment.open()
             }
         }
@@ -111,7 +113,9 @@ Item {
                 onTriggered: {
                     picker.close()
                     enrollment.creating = false
-                    enrollment.selectedProfile = modelData.name; enrollment.open()
+                    enrollment.selectedProfile = modelData.name
+                    enrollment.selectedProfileId = modelData.id
+                    enrollment.open()
                 }
             }
             onObjectAdded: (index, object) => picker.insertItem(index, object)

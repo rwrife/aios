@@ -204,6 +204,9 @@ def run(request):
             if request.get('consent') is not True:
                 raise ValueError('consent_required')
             result = recognition.enroll(request['owner'], request['pin'], capture=embeddings, consent=True)
+        if mode == 'recognize' and result.get('suggestion'):
+            result['suggestion'].pop('expires_in', None)
+            result['suggestion']['expires_at'] = metadata['captured_at'] + 5
         emit({'kind': 'result', **metadata, 'payload': result})
         return
     with Acquisition(request['device']) as capture:

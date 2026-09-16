@@ -50,7 +50,7 @@ def dispatch(request, directory=None):
             return {'profiles': [{'id': key, 'name': value['name'], 'photo': value.get('photo', '')}
                                  for key, value in records.items()]}
         if action not in ('enroll_manual', 'enroll_profile', 'activate_verified',
-                          'verify_profile', 'delete_profile'):
+                          'verify_profile', 'activate_profile', 'delete_profile'):
             raise ValueError('Unsupported profile action')
         name = request.get('name') if action.startswith('enroll') else request.get('owner')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
@@ -58,7 +58,7 @@ def dispatch(request, directory=None):
         name = name.strip()
         owner = name if name in records else next(
               (key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
-        if action == 'verify_profile':
+        if action in ('verify_profile', 'activate_profile'):
             owner = name if name in records else None
         if action == 'delete_profile':
             owner = name if name in records else None

@@ -11,6 +11,7 @@ docker run --rm --privileged --cgroupns=private \
     gst-inspect-1.0 v4l2src >/dev/null
     cmake -S apps/shell -B /tmp/display-shell -G Ninja -DAIOS_EMBEDDED_DISPLAY=ON -DAIOS_DISPLAY_TESTS=ON -DAIOS_PROFILE_TESTS=ON >/dev/null
     cmake --build /tmp/display-shell
+    /tmp/display-shell/aios-camera-protocol-test
     # Exercise the installed layout without an inherited Python module path.
     mkdir -p /usr/local/share/aios
     cp -r apps/aios /usr/local/share/aios/

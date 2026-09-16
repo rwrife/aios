@@ -65,6 +65,7 @@ public:
             suggestionTimer.setSingleShot(true);
             auto client = CameraClient::instance();
             connect(client, &CameraClient::received, this, &SessionControl::cameraEvent);
+            connect(client, &CameraClient::generationChanged, this, &SessionControl::clearRecognitionSuggestion);
             connect(client, &CameraClient::unavailable, this, [this] {
                 m_recognitionState = "unavailable";
                 clearRecognitionSuggestion();
@@ -221,6 +222,10 @@ public:
         if (enabled()) clearPersonal();
         call({{"action", "activate_verified"}, {"owner", name}, {"pin", pin},
               {"title", QJsonValue::Null}, {"session", QJsonValue::Null}});
+    }
+    Q_INVOKABLE void unlockProfile(const QString &id, const QString &pin) {
+        if (!greetingOnly()) return;
+        call({{"action", "activate_profile"}, {"owner", id}, {"pin", pin}});
     }
     Q_INVOKABLE void recover(const QString &name, const QString &secret, const QString &pin) {
         call({{"action", "recover"}, {"owner", name}, {"recovery", secret}, {"pin", pin}});
@@ -397,10 +402,12 @@ private:
             if (action != "recognize") CameraClient::instance()->release(recognitionConsumer);
             if (action == "recognize") {
                 m_recognitionState = payload.value("state").toString("unavailable");
-                m_recognitionSuggestion = payload.value("suggestion").toObject().toVariantMap();
+                m_recognitionSuggestion = recognitionSuppressed ? QVariantMap() : payload.value("suggestion").toObject().toVariantMap();
                 suggestionTimer.stop();
                 if (!m_recognitionSuggestion.isEmpty()) {
-                    suggestionTimer.start(5000);
+                    const auto remaining = m_recognitionSuggestion.value("expires_at").toDouble() - CameraProtocol::monotonic();
+                    if (remaining <= 0 || remaining > 5) { clearRecognitionSuggestion(); return; }
+                    suggestionTimer.start(int(std::ceil(remaining * 1000)));
                     connect(&suggestionTimer, &QTimer::timeout, this,
                             &SessionControl::clearRecognitionSuggestion, Qt::UniqueConnection);
                 }
@@ -543,7 +550,7 @@ private:
     void callGreeting(const QJsonObject &request) {
         if (pendingEnrollment) return;
         const auto action = request.value("action").toString();
-        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "delete_profile") return;
+        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "activate_profile" && action != "delete_profile") return;
         pendingEnrollment = true; m_error.clear(); emit changed();
         auto process = new QProcess(this);
         auto environment = QProcessEnvironment::systemEnvironment();
