@@ -110,7 +110,7 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
         self.assertIn("border.width: 1", theme)
         self.assertIn("<keepBorder>yes</keepBorder>", openbox)
-        self.assertIn("<titleLayout>LC</titleLayout>", openbox)
+        self.assertIn("<titleLayout>LMC</titleLayout>", openbox)
         self.assertIn('<application class="AIOS-Terminal">', openbox)
         self.assertIn("<decor>yes</decor>", openbox)
         terminal_rule = re.search(

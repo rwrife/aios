@@ -8,7 +8,7 @@
 
   <theme>
     <name>AIOS</name>
-    <titleLayout>LC</titleLayout>
+    <titleLayout>LMC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
