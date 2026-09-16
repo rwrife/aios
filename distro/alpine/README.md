@@ -16,9 +16,21 @@ Every build writes recorded evidence next to each ISO:
   environment override
 - `<iso>.build-manifest.json` -- effective repository URLs, a post-build
   SHA-256 sample of each architecture-specific `APKINDEX.tar.gz`, the exact
-  embedded APK closure (filename, size, SHA-256), the ISO hash, and
-  kernel/initramfs/modloop identity, written by `record-build-manifest.py`
+  embedded APK closure (filename, size, SHA-256), the ISO hash,
+  kernel/initramfs/modloop identity, the package atoms every `apks/world.*`
+  file requested, the license/provenance record for the selected hardware
+  packages, and size metrics, written by `record-build-manifest.py`
 - `<iso>.packages.txt` and `SHA256SUMS`
+
+Package lists live in `apks/world.*` and are aggregated by
+`profiles/mkimg.aios.sh` (ISO closure) and `apkovl/genapkovl-aios.sh`
+(`/etc/apk/world`, which is both the live and the installed world):
+`world.base`, `world.x11`, `world.vm` (virtual hardware),
+`world.hardware` (offline firmware, regulatory database and bounded hardware
+diagnostics -- see [`docs/qa/hardware-offline-bundle.md`](../../docs/qa/hardware-offline-bundle.md)),
+`world.devel`, `world.ai`, and the optional `world.identity`. Changing any of
+them changes the profile package list and the apkovl content hash, so a cached
+ISO is never reused across a package change.
 
 Alpine's release repositories keep moving. The APK closure is the authoritative
 record of what shipped; the index samples are diagnostic and do not prove the

@@ -24,6 +24,7 @@ class IdentityImageTests(unittest.TestCase):
                 AIOS_WORLD_VM=str(ROOT / 'distro/alpine/apks/world.vm'),
                 AIOS_WORLD_DEVEL=str(ROOT / 'distro/alpine/apks/world.devel'),
                 AIOS_WORLD_AI=str(ROOT / 'distro/alpine/apks/world.ai'),
+                AIOS_WORLD_HARDWARE=str(ROOT / 'distro/alpine/apks/world.hardware'),
                 AIOS_WORLD_IDENTITY='',
                 AIOS_APKOVL_SCRIPT='genapkovl-aios.sh',
             ),
@@ -46,6 +47,7 @@ class IdentityImageTests(unittest.TestCase):
                 env = dict(os.environ, AIOS_STAGE_DIR=str(stage),
                            AIOS_OVERLAY_DIR=str(ROOT / 'distro/alpine/overlay'),
                            AIOS_REPOSITORIES='https://example.invalid/main',
+                           AIOS_WORLD_HARDWARE=str(ROOT / 'distro/alpine/apks/world.hardware'),
                            AIOS_WORLD_IDENTITY=str(ROOT / 'distro/alpine/apks/world.identity') if enabled else '')
                 for name in ('BASE', 'X11', 'VM', 'DEVEL', 'AI'):
                     env['AIOS_WORLD_' + name] = str(ROOT / 'distro/alpine/apks' / ('world.' + name.lower()))
