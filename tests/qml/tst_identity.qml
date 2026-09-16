@@ -283,47 +283,38 @@ TestCase {
         panel.destroy()
         control.greetingOnly = false
     }
-    function test_new_account_offers_optional_face_setup_without_reusing_pin() {
+    function test_account_creation_does_not_offer_or_start_face_setup() {
         control.greetingOnly = true
-        control.recognitionState = "ready"
+        control.cameraPreview = ""
         var form = enrollmentComponent.createObject(test, {control: control, creating: true})
-        form.open()
-        tryCompare(form, "opened", true)
+        form.open(); tryCompare(form, "opened", true)
         findChild(form, "enrollmentPin").text = "1234"
         control.profile = {id: "test-id", name: "New account"}
         var before = control.recognitionEnrollments
         control.unlocked()
-        var offer = findChild(form, "optionalRecognitionAfterCreate")
-        tryCompare(offer, "opened", true)
+        tryCompare(form, "opened", false)
         compare(findChild(form, "enrollmentPin").text, "")
+        compare(findChild(form, "optionalRecognitionAfterCreate"), null)
+        compare(control.cameraPreview, "")
         compare(control.recognitionEnrollments, before)
-        mouseClick(findChild(offer, "setupOptionalRecognition"))
-        var face = findChild(form, "newAccountFaceEnrollment")
-        tryCompare(face, "opened", true)
-        compare(face.accountId, "test-id")
-        compare(face.accountName, "New account")
-        compare(findChild(face, "recognitionPin").text, "")
-        compare(findChild(face, "confirmRecognitionEnrollment").enabled, false)
-        control.recognitionEnrollmentCompleted("different-account")
-        compare(face.opened, true)
-        face.close()
-        compare(control.secureInput, false)
         form.destroy(); control.profile = {}; control.greetingOnly = false
     }
-    function test_new_account_can_skip_face_setup_and_return_later() {
+    function test_face_setup_is_hidden_until_account_screen_opt_in() {
         control.greetingOnly = true
-        var form = enrollmentComponent.createObject(test, {control: control, creating: true})
-        form.open(); tryCompare(form, "opened", true)
-        control.profile = {id: "test-id", name: "New account"}
-        var before = control.recognitionEnrollments
-        control.unlocked()
-        var offer = findChild(form, "optionalRecognitionAfterCreate")
-        tryCompare(offer, "opened", true)
-        mouseClick(findChild(offer, "skipOptionalRecognition"))
-        tryCompare(offer, "opened", false)
-        compare(control.profile.id, "test-id")
-        compare(control.recognitionEnrollments, before)
-        form.destroy(); control.profile = {}; control.greetingOnly = false
+        control.cameraPreview = ""
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 620, height: 440})
+        waitForRendering(panel)
+        var face = findChild(panel, "faceEnrollmentDialog")
+        compare(face.opened, false)
+        compare(control.cameraPreview, "")
+        mouseClick(findChild(panel, "enrollRecognition"))
+        tryCompare(face, "opened", true)
+        compare(findChild(face, "recognitionPin").text, "")
+        compare(findChild(face, "recognitionConsent").checked, false)
+        compare(control.cameraPreview, "")
+        control.recognitionEnrollmentCompleted("different-account")
+        compare(face.opened, true)
+        face.close(); panel.destroy(); control.greetingOnly = false
     }
     function test_unavailable_face_feature_explains_status_without_enrollment() {
         control.greetingOnly = true; control.recognitionState = "disabled"

@@ -5,21 +5,6 @@ import QtQuick.Window
 
 Dialog {
     id: dialog
-    component EnrollmentButton: Button {
-        padding: 8
-        leftPadding: 16; rightPadding: 16
-        font.family: "DejaVu Sans"; font.pixelSize: 14
-        background: Rectangle {
-            color: parent.down ? dialog.theme.horizon : dialog.theme.input
-            border.width: 1
-            border.color: parent.activeFocus ? dialog.theme.accent : dialog.theme.line
-        }
-        contentItem: Text {
-            text: parent.text; font: parent.font
-            color: parent.enabled ? dialog.theme.ink : dialog.theme.muted
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-        }
-    }
     required property var control
     property var theme: fallbackTheme
     Theme { id: fallbackTheme }
@@ -68,58 +53,11 @@ Dialog {
     Connections {
         target: control
         ignoreUnknownSignals: true
-        function onPrivacyLost() { pin.clear(); recovery.clear(); dialog.close(); optionalRecognition.close(); newAccountFace.close(); }
+        function onPrivacyLost() { pin.clear(); recovery.clear(); dialog.close(); }
         function onEnrollmentCompleted(secret) { pin.clear(); recoveryInput.clear(); recovery.text = secret; }
-        function onUnlocked() {
-            const offer = dialog.opened && dialog.creating && dialog.greetingOnly && control.profile && control.profile.id
-            const id = offer ? control.profile.id : ""
-            const name = offer ? control.profile.name : ""
-            dialog.close()
-            if (offer) { optionalRecognition.accountId = id; optionalRecognition.accountName = name; optionalRecognition.open(); }
-        }
+        function onUnlocked() { dialog.close(); }
         function onPhotoCaptured(preview, rgb) { if (dialog.opened && dialog.creating) { dialog.photoPreview = preview; dialog.photoRgb = rgb; } }
     }
-    Dialog {
-        id: optionalRecognition; objectName: "optionalRecognitionAfterCreate"
-        property string accountId: ""
-        property string accountName: ""
-        parent: Overlay.overlay; anchors.centerIn: parent
-        width: Math.min(440, parent ? parent.width - 32 : 440)
-        title: "Account created"; modal: true
-        padding: 16
-        font.family: "DejaVu Sans"; font.pixelSize: 14
-        background: Rectangle { color: dialog.theme.panel; border.color: dialog.theme.line }
-        palette.window: dialog.theme.panel
-        palette.base: dialog.theme.input
-        palette.text: dialog.theme.ink
-        palette.windowText: dialog.theme.ink
-        palette.button: dialog.theme.input
-        palette.buttonText: dialog.theme.ink
-        palette.highlight: dialog.theme.accent
-        palette.highlightedText: dialog.theme.night
-        standardButtons: Dialog.NoButton
-        onClosed: { accountId = ""; accountName = "" }
-        contentItem: ColumnLayout {
-            Label {
-                text: "Your account is ready. Add optional face recognition now, or set it up later in Settings → Accounts."
-                wrapMode: Text.Wrap; Layout.fillWidth: true
-            }
-            Label { text: "Face recognition suggests your account. Your PIN is still required."; wrapMode: Text.Wrap; Layout.fillWidth: true }
-            RowLayout {
-                EnrollmentButton { objectName: "skipOptionalRecognition"; text: "Not now"; onClicked: optionalRecognition.close() }
-                EnrollmentButton {
-                    objectName: "setupOptionalRecognition"; text: "Set up face recognition"
-                    onClicked: {
-                        const id = optionalRecognition.accountId
-                        const name = optionalRecognition.accountName
-                        optionalRecognition.close()
-                        newAccountFace.openForProfile(id, name)
-                    }
-                }
-            }
-        }
-    }
-    FaceEnrollmentDialog { id: newAccountFace; objectName: "newAccountFaceEnrollment"; control: dialog.control; theme: dialog.theme }
     contentItem: ColumnLayout {
         spacing: 10
         Label {

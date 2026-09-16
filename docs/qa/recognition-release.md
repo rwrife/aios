@@ -512,3 +512,12 @@ Validation: 81 focused Python tests passed after the final protocol changes;
 The native shell build and camera protocol test passed. Ocean and generated Sage
 screenshots used synthetic camera fixtures, including the optional offer and
 green capture progress. No participant images were retained in screenshots.
+
+### Account-screen opt-in only
+
+The automatic post-creation offer was removed at the participant’s request.
+Consent and PIN entry now open only from the selected account’s Face recognition
+action in Settings → Accounts; preview still requires explicit consent. The
+standalone development wizard was stopped. All 20 identity UI tests pass,
+including no automatic offer/capture after creation and no consent/preview before
+the account-screen action. The prior ISO predates this follow-up change.

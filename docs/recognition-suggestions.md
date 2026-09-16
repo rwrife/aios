@@ -81,8 +81,9 @@ biometric result is inferred from the passing tests.
 
 ## Optional account enrollment
 
-After a local greeting account is created, an optional prompt offers face setup
-or **Not now**. Existing accounts expose the same dialog in Settings → Accounts.
+Face setup opens only after the user chooses **Face recognition…** for an account
+in Settings → Accounts. Creating or signing in to an account does not show an
+enrollment offer, consent form or camera preview.
 The selected account UUID is fixed by the native UI. Setup requires that account's
 PIN and explicit local storage consent; account creation does not retain or reuse
 the creation PIN. PIN verification occurs before capture and again before commit.
