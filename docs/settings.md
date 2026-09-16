@@ -78,6 +78,9 @@ individual applications.
   Apply changes for this session. Save a desired layout as
   ~/.screenlayout/default.sh to restore it at login. An unsuccessful saved
   layout does not prevent the desktop from starting.
+  Without a saved layout, virtual displays start at 1920 × 1080 when supported;
+  displays already at that size or larger keep their mode. Physical displays
+  retain their native default. The live VM was verified at 1920 × 1080.
 - **Appearance:** chooses a theme color and enables or reduces background motion.
 - **About:** shows the AIOS version, build number, source commit, operating system,
   kernel, architecture, CPU and total memory.
