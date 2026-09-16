@@ -14,6 +14,23 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_pose_feedback_distinguishes_direction_and_amount(self):
+        self.assertIsNone(session.pose_feedback(0., []))
+        self.assertEqual(session.pose_feedback(.1, []), 'face_forward')
+        self.assertEqual(session.pose_feedback(.01, [0.]), 'turn_more')
+        self.assertEqual(session.pose_feedback(.1, [0., .1]), 'turn_other_side')
+        self.assertEqual(session.pose_feedback(.5, [0.]), 'turn_less')
+        self.assertIsNone(session.pose_feedback(-.1, [0., .1]))
+
+    def test_lighting_feedback_only_follows_measured_quality_failure(self):
+        cv = MagicMock()
+        cv.Laplacian.return_value.var.return_value = 100.
+        for brightness, expected in ((10., 'too_dark'), (250., 'too_bright'), (120., None)):
+            cv.cvtColor.return_value.mean.return_value = brightness
+            self.assertEqual(session.frame_feedback(object(), cv), expected)
+        cv.Laplacian.return_value.var.return_value = 1.
+        self.assertEqual(session.frame_feedback(object(), cv), 'blurred')
+
     def test_metrics_distinguish_rejections_without_changing_native_result(self):
         import ctypes
         metrics = session.CaptureMetrics()
@@ -153,7 +170,7 @@ class EvaluationSessionTests(unittest.TestCase):
             events.append('sample')
             return [(None, [1.] * 128, next(poses))]
         encoder.encode.side_effect = encode
-        with patch('aios.recognition._quality', return_value=True):
+        with patch.object(session, 'frame_feedback', return_value=None):
             samples = session.guided_enrollment(capture, encoder, preview)
         self.assertEqual(len(samples), 3)
         self.assertEqual(events, ['next', 'sample'] * 3)
@@ -171,7 +188,7 @@ class EvaluationSessionTests(unittest.TestCase):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
         poses = iter((0., 0., 0., .1, -.1))
         encoder.encode.side_effect = lambda *args, **kwargs: [(None, [1.] * 128, next(poses))]
-        with patch('aios.recognition._quality', return_value=True), \
+        with patch.object(session, 'frame_feedback', return_value=None), \
                 patch.object(session.time, 'monotonic', side_effect=itertools.count()):
             self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 3)
         steps = [call.args[1] for call in preview.ready.call_args_list]

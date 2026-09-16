@@ -368,3 +368,19 @@ rejection classification, inference timing on failure, valid protocol delivery,
 and rejection of extra fields or invalid numeric values. No frames, embeddings,
 device identifiers, or arbitrary exception messages enter the diagnostic log.
 Root cause and participant completion remain pending a diagnostic attempt.
+
+The next participant attempt recorded 20 inference calls (maximum 0.2171 s),
+11 driver-error frames across the original stream and its restart, and zero
+old/future timestamp or ordering rejections. Maximum observed frame age was
+0.1916 s. Thus its eventual `stale_frame` exhaustion was associated with damaged
+driver frames, not stale timestamps; the underlying USB/driver fault is still
+unresolved. No completed participant aggregate was produced.
+
+The participant also reported a misleading lighting/pose retry message. The
+manual wizard now distinguishes measured darkness, excess brightness, blur,
+missing/multiple faces, and head angle/direction. Each failed attempt emits fixed
+reason counts and keeps the same pose behind an explicit Next click. Existing
+quality and pose thresholds are preserved. The previous log cannot establish
+which pose check failed. Eighteen focused tests pass, including distinct pose and
+quality feedback. Driver-only failures receive a camera-driver message instead
+of generic freshness wording. Participant validation remains pending.

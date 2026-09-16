@@ -49,6 +49,7 @@ PAUSE_REASONS.update({
     'camera_decode_failed': 'The camera returned a damaged image.',
     'camera_poll_timeout': 'The camera did not respond in time.',
     'stale_frame': 'The camera did not provide a fresh frame in time.',
+    'camera_driver_frame_error': 'The camera driver returned damaged frames. Check the camera connection.',
 })
 
 
@@ -58,8 +59,46 @@ def pause_reason(error):
 
 
 METRIC_COUNTS = ('reads', 'old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
-                 'driver_error_frames', 'empty_frames', 'other_read_errors', 'inference_calls')
+                 'driver_error_frames', 'empty_frames', 'other_read_errors', 'inference_calls',
+                 'too_dark', 'too_bright', 'blurred', 'face_not_detected', 'multiple_faces',
+                 'face_forward', 'turn_more', 'turn_other_side', 'turn_less')
 METRIC_TIMES = ('maximum_frame_age', 'maximum_read_seconds', 'maximum_inference_seconds')
+POSE_FEEDBACK = {
+    'too_dark': 'The image is too dark. Add light in front of you.',
+    'too_bright': 'The image is too bright. Reduce direct light on your face.',
+    'blurred': 'The image is blurred. Hold still and check the camera focus.',
+    'face_not_detected': 'No usable face detected. Move closer with your whole face in view.',
+    'multiple_faces': 'More than one face detected. Only you should be in view.',
+    'face_forward': 'The pose check sees your head turned. Look directly at the camera lens.',
+    'turn_more': 'The pose check needs a slightly larger head turn. Keep your face visible.',
+    'turn_other_side': 'Turn toward the other side from the previous pose.',
+    'turn_less': 'The pose check cannot use this angle. Turn back slightly toward the camera.',
+}
+
+
+def frame_feedback(frame, cv):
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    brightness = float(gray.mean())
+    if brightness < CALIBRATION['minimum_brightness']:
+        return 'too_dark'
+    if brightness > CALIBRATION['maximum_brightness']:
+        return 'too_bright'
+    if float(cv.Laplacian(gray, cv.CV_64F).var()) < CALIBRATION['minimum_sharpness']:
+        return 'blurred'
+    return None
+
+
+def pose_feedback(pose, poses):
+    delta, maximum = CALIBRATION['enrollment_pose_delta'], CALIBRATION['maximum_pose_offset']
+    if not math.isfinite(pose) or abs(pose) > maximum:
+        return 'turn_less'
+    if not poses:
+        return 'face_forward' if abs(pose) > delta else None
+    if abs(pose - poses[0]) < delta:
+        return 'turn_more'
+    if len(poses) > 1 and (pose - poses[0]) * (poses[1] - poses[0]) >= 0:
+        return 'turn_other_side'
+    return None
 
 
 class CaptureMetrics:
@@ -287,9 +326,7 @@ class FramingPreview:
 
 
 def guided_enrollment(capture, encoder, preview):
-    from aios.recognition import _quality
     samples, poses = [], []
-    delta, maximum = CALIBRATION['enrollment_pose_delta'], CALIBRATION['maximum_pose_offset']
     for index, instruction in enumerate(PROBE_GUIDANCE[:3]):
         deadline = time.monotonic() + 120
         accepted = False
@@ -298,36 +335,39 @@ def guided_enrollment(capture, encoder, preview):
             preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}',
                           timeout=max(.1, deadline - time.monotonic()), notice=notice)
             attempt_end = min(deadline, time.monotonic() + 3)
+            reason = 'face_not_detected'
             while time.monotonic() < attempt_end:
                 frame = capture.read()
                 try:
-                    if not _quality(frame, capture.cv, CALIBRATION):
+                    reason = frame_feedback(frame, capture.cv)
+                    if reason:
+                        encoder.metrics.values[reason] += 1
                         continue
                     try:
                         faces = encoder.encode(frame, include_pose=True)
                     except ValueError:
+                        reason = 'multiple_faces'
+                        encoder.metrics.values[reason] += 1
                         continue
                     if len(faces) != 1:
+                        reason = 'multiple_faces' if len(faces) > 1 else 'face_not_detected'
+                        encoder.metrics.values[reason] += 1
                         continue
                     pose = faces[0][2]
-                    valid = math.isfinite(pose) and abs(pose) <= maximum
-                    if not poses:
-                        valid = valid and abs(pose) <= delta
-                    elif len(poses) == 1:
-                        valid = valid and abs(pose - poses[0]) >= delta
-                    else:
-                        valid = valid and (pose - poses[0]) * (poses[1] - poses[0]) < 0 and abs(pose - poses[0]) >= delta
-                    if valid:
+                    reason = pose_feedback(pose, poses)
+                    if reason is None:
                         samples.append(faces[0][1])
                         poses.append(pose)
                         accepted = True
                         break
+                    encoder.metrics.values[reason] += 1
                 finally:
                     del frame
             if accepted:
                 break
             # Retrying the same pose also requires another explicit Next click.
-            notice = 'Pose not captured. Adjust lighting/position, then choose Next to retry.'
+            encoder.metrics.emit()
+            notice = 'Pose not captured. ' + POSE_FEEDBACK[reason] + ' Choose Next to retry this pose.'
         if not accepted:
             raise RuntimeError('enrollment_timeout')
     return samples
@@ -372,6 +412,7 @@ def worker(directory):
         preview = FramingPreview(encoder.cv, 'Position your face')
         try:
             while True:
+                capture = None
                 try:
                     devices = inventory()
                     if len(devices) != 1:
@@ -402,6 +443,12 @@ def worker(directory):
                     if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled':
                         raise
                     reason = pause_reason(error)
+                    if (reason == 'stale_frame' and capture is not None and
+                            capture.metrics.values['driver_error_frames'] and
+                            not any(capture.metrics.values[key] for key in
+                                    ('old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
+                                     'empty_frames', 'other_read_errors'))):
+                        reason = 'camera_driver_frame_error'
                     print(json.dumps({'kind': 'notice', 'reason': reason}), flush=True)
                     preview.retry(reason, command['action'])
         except RuntimeError as error:
