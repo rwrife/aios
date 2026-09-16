@@ -10,6 +10,7 @@ qt6-qtmultimedia
 qt6-qtmultimedia-gstreamer
 gst-plugins-good
 ffmpeg
+py3-opencv
 pulseaudio
 pulseaudio-alsa
 pulseaudio-utils

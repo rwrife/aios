@@ -161,47 +161,8 @@ def _quality(frame, cv, calibration):
             sharpness >= calibration['minimum_sharpness'])
 
 
-def capture_embeddings(device, encoder, calibration, frames=TARGET_FRAMES,
-                       deadline=BURST_SECONDS, clock=time.monotonic, capture_factory=None):
-    import cv2
-    video_device(device, stable=True)
-    capture_factory = capture_factory or (lambda path: cv2.VideoCapture(path, cv2.CAP_V4L2))
-    capture = capture_factory(device)
-    started = clock()
-    sequence = 0
-    embeddings = []
-    try:
-        if not capture.isOpened():
-            raise RuntimeError('Camera is unavailable')
-        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        capture.set(cv2.CAP_PROP_FPS, 15)
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        for _ in range(2):
-            if clock() - started >= deadline:
-                raise RuntimeError('Camera warmup exceeded the capture deadline')
-            capture.grab()
-        while len(embeddings) < frames and clock() - started < deadline:
-            ok, frame = capture.read()
-            sequence += 1
-            captured_at = clock()
-            if not ok or frame is None or not frame.size:
-                raise RuntimeError('Camera did not deliver a fresh frame')
-            if not _quality(frame, cv2, calibration):
-                del frame
-                continue
-            faces = encoder.encode(frame)
-            del frame
-            if len(faces) != 1:
-                raise ValueError('Show exactly one well-lit face to the camera')
-            embeddings.append({'sequence': sequence, 'captured_at': captured_at,
-                               'embedding': faces[0][1]})
-        if len(embeddings) != frames:
-            raise RuntimeError('Camera burst did not produce enough quality frames')
-        return embeddings
-    finally:
-        capture.release()
+def capture_embeddings(*_args, **_kwargs):
+    raise RuntimeError('Camera acquisition requires the desktop capture service')
 
 
 def _consistent(samples, threshold):
