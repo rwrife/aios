@@ -33,9 +33,13 @@ Window {
             return "Off. AIOS will not use the camera for account suggestions. Enrolled face data is kept until you purge it."
         if (!profileControl)
             return "On, but facial recognition is unavailable. Account sign-in continues to use the PIN."
+        if (profileControl.recognitionState === "disabled")
+            return "On, but camera suggestions are paused. Use your account PIN."
+        if (profileControl.recognitionState === "capturing")
+            return "On. Briefly checking the camera for an account suggestion. A PIN is still required."
         if (profileControl.recognitionState === "manual-only")
             return "On, but no face data is enrolled. Add face recognition from Accounts."
-        if (profileControl.recognitionState === "unavailable")
+        if (profileControl.recognitionState === "unavailable" || profileControl.recognitionState === "error")
             return "On, but the camera or recognition model is unavailable. Account sign-in continues to use the PIN."
         if (profileControl.recognitionState === "enrolling")
             return "On. Facial recognition enrollment is in progress."
@@ -376,7 +380,7 @@ Window {
                     }
                     Item { Layout.fillHeight: true }
                 }
-                AccountSettings { id: accountsPage; control: settings.profileControl }
+                AccountSettings { id: accountsPage; control: settings.profileControl; theme: settings.theme }
                 DateTimeSettings { backend: settings.backend; theme: settings.theme; active: settings.visible && pages.currentIndex === 8 }
             }
             Note { text: backend.status; visible: pages.currentIndex !== 0 && pages.currentIndex !== 8 && text.length > 0; font.pixelSize: 11 }

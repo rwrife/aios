@@ -27,10 +27,11 @@ TestCase {
         property var profiles: [{id: "test-id", name: "Test profile"}]
         property string recognitionState: "ready"
         property string recognitionGuidance: ""
+        property string cameraPreview: ""
         property var recognitionSuggestion: ({})
         function listProfiles() {}
         function requestRecognition() {}
-        function setCameraPreviewActive(active) {}
+        function setCameraPreviewActive(active) { cameraPreview = active ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwcHAAAAGEAMGDX2mUAAAAAElFTkSuQmCC" : "" }
         function setRecognitionEnabled(enabled) {}
         function purgeRecognitionData() {}
         function recognitionConfigurationChanged(enabled) {}
@@ -282,6 +283,77 @@ TestCase {
         panel.destroy()
         control.greetingOnly = false
     }
+    function test_account_creation_does_not_offer_or_start_face_setup() {
+        control.greetingOnly = true
+        control.cameraPreview = ""
+        var form = enrollmentComponent.createObject(test, {control: control, creating: true})
+        form.open(); tryCompare(form, "opened", true)
+        findChild(form, "enrollmentPin").text = "1234"
+        control.profile = {id: "test-id", name: "New account"}
+        var before = control.recognitionEnrollments
+        control.unlocked()
+        tryCompare(form, "opened", false)
+        compare(findChild(form, "enrollmentPin").text, "")
+        compare(findChild(form, "optionalRecognitionAfterCreate"), null)
+        compare(control.cameraPreview, "")
+        compare(control.recognitionEnrollments, before)
+        form.destroy(); control.profile = {}; control.greetingOnly = false
+    }
+    function test_unlock_keeps_account_management_open_until_dismissed() {
+        control.greetingOnly = true
+        control.cameraPreview = ""
+        var form = enrollmentComponent.createObject(test, {control: control, creating: false})
+        form.open(); tryCompare(form, "opened", true)
+        findChild(form, "enrollmentPin").text = "1234"
+        control.profile = {id: "test-id", name: "Saved account"}
+        control.unlocked()
+        var account = findChild(form, "unlockedAccountDetails")
+        tryCompare(account, "opened", true)
+        compare(account.accountName, "Saved account")
+        compare(findChild(form, "enrollmentPin").text, "")
+        compare(control.cameraPreview, "")
+        var face = findChild(form, "unlockedAccountFaceEnrollment")
+        compare(face.opened, false)
+        mouseClick(findChild(account, "accountFaceSetup"))
+        tryCompare(face, "opened", true)
+        compare(face.accountId, "test-id")
+        face.close()
+        compare(account.opened, true)
+        control.privacyLost()
+        tryCompare(account, "opened", false)
+        form.destroy(); control.profile = {}; control.greetingOnly = false
+    }
+    function test_face_setup_is_hidden_until_account_screen_opt_in() {
+        control.greetingOnly = true
+        control.cameraPreview = ""
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 620, height: 440})
+        waitForRendering(panel)
+        var face = findChild(panel, "faceEnrollmentDialog")
+        compare(face.opened, false)
+        compare(control.cameraPreview, "")
+        mouseClick(findChild(panel, "enrollRecognition"))
+        tryCompare(face, "opened", true)
+        compare(findChild(face, "recognitionPin").text, "")
+        compare(findChild(face, "recognitionConsent").checked, false)
+        compare(control.cameraPreview, "")
+        control.recognitionEnrollmentCompleted("different-account")
+        compare(face.opened, true)
+        face.close(); panel.destroy(); control.greetingOnly = false
+    }
+    function test_unavailable_face_feature_explains_status_without_enrollment() {
+        control.greetingOnly = true; control.recognitionState = "disabled"
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 620, height: 440})
+        waitForRendering(panel)
+        mouseClick(findChild(panel, "enrollRecognition"))
+        var face = findChild(panel, "faceEnrollmentDialog")
+        tryCompare(face, "opened", true)
+        verify(findChild(face, "recognitionAvailability").visible)
+        findChild(face, "recognitionPin").text = "1234"
+        findChild(face, "recognitionConsent").checked = true
+        compare(findChild(face, "confirmRecognitionEnrollment").enabled, false)
+        face.close(); panel.destroy()
+        control.greetingOnly = false; control.recognitionState = "ready"
+    }
     function test_face_enrollment_guidance_and_privacy_cancellation() {
         control.greetingOnly = true
         control.recognitionState = "ready"
@@ -293,8 +365,9 @@ TestCase {
         var pin = findChild(prompt, "recognitionPin")
         pin.text = "1234"
         control.recognitionState = "enrolling"
-        control.recognitionGuidance = "1 of 3 samples. Turn slightly."
-        tryCompare(findChild(prompt, "recognitionGuidance"), "text", control.recognitionGuidance)
+        control.recognitionGuidance = "5 of 10 photos."
+        verify(findChild(prompt, "recognitionGuidance").text.indexOf("green line") >= 0)
+        verify(!findChild(prompt, "confirmRecognitionEnrollment").visible)
         control.privacyLost()
         tryCompare(prompt, "opened", false)
         compare(pin.text, "")

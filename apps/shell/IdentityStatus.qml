@@ -5,9 +5,11 @@ import QtQuick.Layouts
 Rectangle {
     id: panel
     required property var control
+    property var theme: fallbackTheme
+    Theme { id: fallbackTheme }
     width: 340; height: column.implicitHeight + 32
     radius: 12; color: "#172633"; border.color: "#52616c"
-    EnrollmentFlow { id: enrollment; control: panel.control }
+    EnrollmentFlow { id: enrollment; control: panel.control; theme: panel.theme }
     Connections {
         target: control
         function onPrivacyLost() {
@@ -39,7 +41,7 @@ Rectangle {
     ColumnLayout {
         id: column; anchors.fill: parent; anchors.margins: 16; spacing: 8
         enabled: !control.busy
-        UserBubble { control: panel.control; Layout.alignment: Qt.AlignHCenter }
+        UserBubble { control: panel.control; theme: panel.theme; Layout.alignment: Qt.AlignHCenter }
         Label { text: control.simulator ? "Identity simulator · no apps execute" : "Experimental session broker"; color: "#bde4e6" }
         Label { text: control.authority; color: "white" }
         RowLayout {

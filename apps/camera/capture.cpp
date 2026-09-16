@@ -76,30 +76,33 @@ extern "C" void *aios_camera_open(const char *path) {
     return camera;
 }
 
-// Returns JPEG byte count, or -1. Timestamp is the driver's monotonic capture
+// Returns JPEG byte count, or a fixed negative diagnostic code. Timestamp is the driver's monotonic capture
 // timestamp, never the time read() completed. Unsupported clocks fail closed.
 extern "C" int aios_camera_read(void *handle, unsigned char *output, size_t capacity,
                                 double *timestamp, uint32_t *sequence) {
     auto *camera = static_cast<Camera *>(handle);
     if (!camera || !output || !timestamp || !sequence) return -1;
     pollfd descriptor{camera->fd, POLLIN, 0};
-    if (poll(&descriptor, 1, 1500) <= 0 || !(descriptor.revents & POLLIN)) return -1;
+    const int ready = poll(&descriptor, 1, 1500);
+    if (ready == 0) return -2;
+    if (ready < 0 || !(descriptor.revents & POLLIN)) return -3;
     v4l2_buffer buffer{};
     buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buffer.memory = V4L2_MEMORY_MMAP;
-    if (control(camera->fd, VIDIOC_DQBUF, &buffer) < 0) return -1;
-    bool valid = buffer.index < 4 && camera->buffers[buffer.index] && buffer.bytesused > 0 &&
+    if (control(camera->fd, VIDIOC_DQBUF, &buffer) < 0) return -4;
+    const bool safe = buffer.index < 4 && camera->buffers[buffer.index] &&
         buffer.bytesused <= capacity && buffer.bytesused <= camera->lengths[buffer.index] &&
-        !(buffer.flags & V4L2_BUF_FLAG_ERROR) &&
         (buffer.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK) == V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC &&
         buffer.timestamp.tv_sec >= 0 && buffer.timestamp.tv_usec >= 0 && buffer.timestamp.tv_usec < 1000000;
+    const bool valid = safe && buffer.bytesused > 0 && !(buffer.flags & V4L2_BUF_FLAG_ERROR);
     if (valid) {
         std::memcpy(output, camera->buffers[buffer.index], buffer.bytesused);
         *timestamp = double(buffer.timestamp.tv_sec) + double(buffer.timestamp.tv_usec) / 1000000;
         *sequence = buffer.sequence;
     }
-    const int count = valid ? int(buffer.bytesused) : -1;
-    if (control(camera->fd, VIDIOC_QBUF, &buffer) < 0) return -1;
+    const int count = valid ? int(buffer.bytesused) :
+        (!safe ? -5 : ((buffer.flags & V4L2_BUF_FLAG_ERROR) ? -7 : -8));
+    if (control(camera->fd, VIDIOC_QBUF, &buffer) < 0) return -6;
     return count;
 }
 

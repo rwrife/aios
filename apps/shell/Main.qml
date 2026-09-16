@@ -12,7 +12,9 @@ Window {
     title: "AIOS Desktop"
     width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
     height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
-    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    // A normal window can be raised over applications even with the below hint.
+    // The desktop role keeps wallpaper and its controls in the desktop layer.
+    flags: windowed ? Qt.Window : Qt.Desktop | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
@@ -20,7 +22,7 @@ Window {
     property var awayChats: []
     readonly property int awayChatCount: awayChats.length
     property date currentTime: new Date()
-    Theme { id: theme; selected: backendApi.config.theme_color || "blue" }
+    Theme { id: theme; selected: backendApi.config.theme_color || "blue"; reducedMotion: desktop.reducedMotion }
     Connections { target: theme; function onWaveChanged() { waves.requestPaint() } }
     property bool reducedMotion: backendApi.config.reduced_motion === true
     function removeAwayChat(window) {
@@ -194,7 +196,7 @@ Window {
             else setSource("")
         }
     }
-    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi }
+    IdentityStatus { x: 48; y: 84; z: 100; visible: sessionControlApi.enabled; control: sessionControlApi; theme: theme }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { PrivacyShield { control: sessionControlApi } } }
     Loader { active: !displayBridgeApi.enabled; sourceComponent: Component { SecurePinPrompt { control: sessionControlApi } } }
     SecurePinOverlay { parent: desktop.contentItem; control: sessionControlApi; visible: displayBridgeApi.enabled && sessionControlApi.enabled && Object.keys(sessionControlApi.challenge).length > 0 }
