@@ -75,6 +75,7 @@ ColumnLayout {
             }
             TextField {
                 id: recognitionPin; objectName: "recognitionPin"
+                Accessible.name: "Account PIN or password"
                 placeholderText: "Account PIN or password"; echoMode: TextInput.Password
                 maximumLength: 128; Layout.fillWidth: true
                 inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
@@ -94,6 +95,7 @@ ColumnLayout {
                 }
             }
             Label {
+                objectName: "recognitionGuidance"
                 visible: accounts.control && accounts.control.recognitionState === "enrolling"
                 text: accounts.control && accounts.control.recognitionGuidance
                       ? accounts.control.recognitionGuidance : "Look straight at the camera, then turn slightly to each side. Capture ends within 30 seconds."
@@ -142,7 +144,7 @@ ColumnLayout {
             faceEnrollment.close()
             accounts.result = "Face recognition was added. Account access still requires the PIN."
         }
-        function onPrivacyLost() { deletion.close() }
+        function onPrivacyLost() { deletion.close(); faceEnrollment.close() }
         function onUnlocked() { accounts.refresh() }
     }
 }

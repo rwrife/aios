@@ -44,6 +44,7 @@ TestCase {
     QtObject {
         id: profileControl
         property string recognitionState: "disabled"
+        property string recognitionGuidance: ""
         property int purges: 0
         property bool recognitionEnabled: false
         property bool busy: false

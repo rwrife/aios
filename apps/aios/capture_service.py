@@ -219,6 +219,8 @@ class Service:
         now = self.clock()
         if now >= self.next_scan:
             self.refresh()
+            if (self.config().get('camera_recognition') is True) != self.enabled:
+                self.command({'action': 'configure', 'active': self.active, 'secure': self.secure})
             self.next_scan = now + .5
         if self.worker:
             if not self.job:

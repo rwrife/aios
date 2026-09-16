@@ -104,6 +104,30 @@ class ServiceTests(unittest.TestCase):
         self.service.command(request())
         self.assertEqual(len(self.workers), 1)
 
+    def test_external_disable_cancels_worker_at_next_configuration_readback(self):
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.tick()
+        self.assertIsNotNone(self.service.worker)
+        self.config['camera_recognition'] = False
+        self.clock.advance(.5)
+        self.service.tick()
+        self.assertIsNone(self.service.worker)
+        self.assertFalse(self.service.enabled)
+
+    def test_enrollment_progress_is_bounded_metadata_and_not_completion(self):
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.command(request(mode='enroll', consent=True))
+        event = {'kind': 'progress', 'sequence': 1, 'captured_at': self.clock(),
+                 'payload': {'samples': 1, 'target': 3, 'reason': 'sample_accepted'}}
+        self.assertTrue(self.service.result(json.dumps(event)))
+        self.assertIsNotNone(self.service.worker)
+        event['sequence'] = 2
+        event['payload']['embedding'] = [1, 2]
+        self.assertFalse(self.service.result(json.dumps(event)))
+        self.assertNotIn('embedding', json.dumps(self.events))
+
     def test_opt_in_cadence_and_immediate_cooldown(self):
         self.config['camera_recognition'] = True
         self.configure()

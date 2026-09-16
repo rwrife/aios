@@ -1,4 +1,5 @@
 import json
+from contextlib import ExitStack
 from pathlib import Path
 import tempfile
 import unittest
@@ -6,6 +7,8 @@ from unittest.mock import patch
 
 from aios.chat_profiles import dispatch as profile_dispatch
 from aios.face_store import FaceStore
+from aios.authority import pin_record
+from aios.secure_store import atomic_bytes
 from aios.recognition import CaptureSchedule, dispatch, enroll, recognize, revoke
 
 
@@ -79,6 +82,82 @@ class RecognitionStorageTests(unittest.TestCase):
         self.profile = profile_dispatch({
             'action': 'enroll_manual', 'name': 'Alice', 'pin': '1234', 'consent': True
         }, self.root)['profile']
+
+    def configured(self):
+        stack = ExitStack()
+        stack.enter_context(patch('aios.recognition._manifest', return_value=(MANIFEST, CALIBRATION)))
+        stack.enter_context(patch('aios.recognition.FaceEncoder'))
+        stack.enter_context(patch('aios.recognition.load_config', return_value={
+            'camera_recognition': True, 'camera_device': '/dev/v4l/by-id/test-video-index0'}))
+        return stack
+
+    def samples(self, *_):
+        return [{'embedding': [1.] + [0.] * 127} for _ in range(3)]
+
+    def test_missing_consent_or_non_uuid_never_captures(self):
+        with self.configured():
+            for owner, consent in ((self.profile['id'], False), ('Alice', True)):
+                with self.assertRaises(ValueError):
+                    enroll(owner, '1234', self.root, capture=self.samples, consent=consent)
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
+
+    def test_locked_account_does_not_capture(self):
+        path = self.root / 'profiles.json'
+        records = json.loads(path.read_text())
+        records[self.profile['id']]['pin']['failures'] = 10
+        atomic_bytes(path, json.dumps(records).encode())
+        with self.configured(), self.assertRaisesRegex(ValueError, 'locked'):
+            enroll(self.profile['id'], '1234', self.root, capture=self.samples, consent=True)
+        self.assertFalse((self.root / 'biometrics').exists())
+
+    def test_rechecks_pin_immediately_before_commit(self):
+        def change_pin(*_):
+            path = self.root / 'profiles.json'
+            records = json.loads(path.read_text())
+            records[self.profile['id']]['pin'] = pin_record('5678')
+            atomic_bytes(path, json.dumps(records).encode())
+            return self.samples()
+        with self.configured(), self.assertRaisesRegex(ValueError, 'PIN'):
+            enroll(self.profile['id'], '1234', self.root, capture=change_pin, consent=True)
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
+
+    def test_purge_during_capture_cannot_be_undone_by_late_enrollment(self):
+        def purge(*_):
+            revoke(root=self.root)
+            return self.samples()
+        with self.configured(), self.assertRaisesRegex(ValueError, 'changed'):
+            enroll(self.profile['id'], '1234', self.root, capture=purge, consent=True)
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
+
+    def test_account_deleted_during_capture_cannot_receive_a_template(self):
+        def delete(*_):
+            profile_dispatch({'action': 'delete_profile', 'owner': self.profile['id'],
+                              'pin': '1234', 'confirmed': True}, self.root)
+            return self.samples()
+        with self.configured(), self.assertRaisesRegex(ValueError, 'PIN'):
+            enroll(self.profile['id'], '1234', self.root, capture=delete, consent=True)
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
+
+    def test_rejected_samples_preserve_previous_committed_enrollment(self):
+        with self.configured():
+            enroll(self.profile['id'], '1234', self.root, capture=self.samples, consent=True)
+            epoch, records = FaceStore(self.root).snapshot()
+            cases = [[], self.samples()[:2], [{'embedding': [float('nan')] * 128}] * 3,
+                     [{'embedding': [0.] * 128}] * 3,
+                     [{'embedding': [1.] + [0.] * 127}, {'embedding': [0., 1.] + [0.] * 126},
+                      {'embedding': [0., 0., 1.] + [0.] * 125}]]
+            for samples in cases:
+                with self.subTest(samples=len(samples)), self.assertRaises(ValueError):
+                    enroll(self.profile['id'], '1234', self.root, capture=lambda *_: samples, consent=True)
+                self.assertEqual(FaceStore(self.root).snapshot(), (epoch, records))
+
+    def test_disabling_preserves_templates(self):
+        with patch('aios.recognition.revoke') as purge, \
+                patch('aios.recognition.load_config', return_value={'camera_recognition': True}), \
+                patch('aios.recognition.save_config') as save:
+            self.assertEqual(dispatch({'action': 'disable'}), {'state': 'disabled'})
+            purge.assert_not_called()
+            save.assert_called_once_with({'camera_recognition': False})
 
     def test_enrollment_requires_pin_and_stores_only_encrypted_versioned_templates(self):
         try:

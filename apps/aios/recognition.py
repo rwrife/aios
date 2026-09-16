@@ -11,7 +11,7 @@ import time
 from .biometrics import FaceEncoder
 from .camera import video_device
 from .chat_profiles import dispatch as profile_dispatch, verified_operation
-from .core import data_dir, load_config
+from .core import data_dir, load_config, save_config
 from .identity import match
 from .face_store import FaceStore, NAMESPACE, SCHEMA, account_uuid
 
@@ -256,6 +256,9 @@ def dispatch(request):
             raise ValueError('Confirm local face recognition enrollment')
         return enroll(request.get('owner'), request.get('pin'), consent=True)
     if action == 'disable':
+        config = load_config()
+        config['camera_recognition'] = False
+        save_config(config)
         return {'state': 'disabled'}
     if action == 'purge':
         revoke()
