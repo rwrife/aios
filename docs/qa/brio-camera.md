@@ -191,3 +191,57 @@ until the full-VM capture and held-out calibration gates in the implementation
 plan are complete. Development can point `AIOS_FACE_MODEL_MANIFEST` at a local
 manifest. The shell exchanges only account metadata with the worker; it never
 receives frames or embeddings, and every suggestion still requires the PIN.
+
+## 2026-09-16 physical Brio guest measurements
+
+The dedicated Brio 101 (`046d:094d`) was connected, explicitly attached with
+`-CameraBusId 2-2`, and passed into the optional identity ISO recorded above.
+After an approved WSLg display-service restart, readback changed from COPY MODE
+to healthy (`use_gfxredir=1`). Neither WSL nor Docker was restarted.
+
+Both a headless run and a normal windowed `scripts/run.ps1` run completed three
+independent ten-frame captures as **`aios`, UID 1000**, using OpenCV **4.12.0** on
+Alpine kernel **6.18.52-0-lts**, QEMU **8.2.2** (Ubuntu package
+`1:8.2.2+ds-0ubuntu1.16`) and usbipd-win **5.3.0**. Every capture decoded **640x480**, negotiated
+**MJPG/15 fps**, accepted a one-buffer request and reported buffer size one.
+Each discarded three warmup frames before measuring ten frames; no frames,
+crops, embeddings or camera serials were retained. Negotiated 15 fps is a driver
+property, not a claim that the virtualized capture loop sustained 15 fps.
+
+Windowed VM: `AIOS-recognition-stage1-Brio-windowed`, WSL QEMU/KVM, four vCPUs,
+16 GiB, disposable disk, audio disabled. The guest desktop and chat rendered
+normally in a framebuffer screenshot; the camera image was never displayed or
+saved by these diagnostics.
+
+| Capture | Open (s) | Warmup (s) | Ten frames (s) | Total before close (s) | Close (s) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.203377 | 1.071249 | 1.332283 | 2.606909 | 0.031060 |
+| 2 (reopen) | 0.235056 | 1.142548 | 1.283369 | 2.660974 | 0.021489 |
+| 3 (reopen) | 0.196605 | 1.076897 | 1.342822 | 2.616324 | 0.014065 |
+
+Failure and recovery evidence so far:
+
+- Guest device permissions were `0660 root:video`. Capture as `nobody` returned
+  `permission_denied` without forwarding driver details.
+- The non-capture `/dev/video1` returned bounded `open_failed`; nonexistent
+  `/dev/video99` returned `Video device is not attached`.
+- A controlled unprivileged OpenCV process held the capture device. A second
+  probe returned `open_failed` in **0.410 s**. After terminating/reaping the
+  holder, another ten-frame capture succeeded (open **0.191708 s**, warmup
+  **1.139483 s**, capture **1.342337 s**, close **0.013822 s**).
+- The operator physically unplugged the Brio. A probe during removal returned
+  `open_failed`, both guest video nodes disappeared, and the ordinary-user shell
+  remained alive. Reconnect validation is still pending.
+
+The initial long-command contention harness exceeded the serial console's
+reliable interactive input handling. Retrying with short, paced heredoc lines
+completed the test. That harness timeout is not counted as a driver timeout.
+Recognition remains disabled; these measurements prove camera acquisition,
+not face matching, liveness, authorization, or production readiness.
+
+The complete `scripts/test-identity-display.sh` run also passed in its disposable
+Alpine container: both installed-layout profile-control runs, **94 QML tests**,
+the compiled application-host protocol test, and the display-isolation tests.
+This includes native PIN-overlay key routing and account creation/selection
+without a camera. These automated UI/security results are recorded separately
+from the physical camera measurements; they are not biometric evidence.

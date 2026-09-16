@@ -29,9 +29,14 @@ Stage 1 implementation is in draft PR #133: bounded guest diagnostics, metadata
 validation, temporary USB ACL restoration, side-effect-free dry runs, and the
 optional-image editor dependency repair. The identity image builds locally and
 passes camera-free headless runtime/desktop checks. See `docs/qa/brio-camera.md`
-for the artifact hash and test results. Windowed WSLg is currently unavailable
-(COPY MODE). Stage 1 remains open; stages 2–5 have not started because the named
-physical capture gate is still unmet.
+for the artifact hash and test results.
+
+2026-09-16: the Brio was connected and WSLg repaired with operator approval.
+Three unprivileged ten-frame captures passed in both headless and normal
+windowed Alpine QEMU. Negotiation was MJPG, 640x480, 15 fps. Permission, wrong
+node, missing device, contention/release and physical unplug checks passed.
+Physical reconnect and the remaining validation checks are in progress. Stage
+1 remains open until those results are recorded; stages 2–5 have not started.
 
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
