@@ -61,9 +61,12 @@ def pause_reason(error):
 METRIC_COUNTS = ('reads', 'old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
                  'driver_error_frames', 'empty_frames', 'other_read_errors', 'inference_calls',
                  'too_dark', 'too_bright', 'blurred', 'face_not_detected', 'multiple_faces',
-                 'face_forward', 'turn_more', 'turn_other_side', 'turn_less')
+                 'face_forward', 'turn_more', 'turn_other_side', 'turn_less', 'invalid_sample', 'inconsistent_sample',
+                 'accepted_enrollment_frames')
 METRIC_TIMES = ('maximum_frame_age', 'maximum_read_seconds', 'maximum_inference_seconds')
 POSE_FEEDBACK = {
+    'invalid_sample': 'This frame could not be used. Keep your face visible.',
+    'inconsistent_sample': 'This frame did not agree with the reference. Hold steady with only you in view.',
     'too_dark': 'The image is too dark. Add light in front of you.',
     'too_bright': 'The image is too bright. Reduce direct light on your face.',
     'blurred': 'The image is blurred. Hold still and check the camera focus.',
@@ -325,52 +328,77 @@ class FramingPreview:
         self.app.processEvents()
 
 
+ENROLLMENT_FRAMES_PER_POSE = 10
+
+
+def reference_vector(vectors):
+    """Equal-weight mean of unit embeddings; raw images are never retained."""
+    unit = [[value / math.sqrt(sum(x*x for x in vector)) for value in vector] for vector in vectors]
+    mean = [sum(column) / len(unit) for column in zip(*unit)]
+    norm = math.sqrt(sum(value*value for value in mean))
+    if not math.isfinite(norm) or norm <= 0:
+        raise ValueError('inconsistent')
+    return [value / norm for value in mean]
+
+
 def guided_enrollment(capture, encoder, preview):
-    samples, poses = [], []
+    from aios.recognition import _samples, _consistent
+    from statistics import median
+    references, poses = [], []
     for index, instruction in enumerate(PROBE_GUIDANCE[:3]):
+        preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}', timeout=120)
         deadline = time.monotonic() + 120
-        accepted = False
-        notice = ''
-        while time.monotonic() < deadline:
-            preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}',
-                          timeout=max(.1, deadline - time.monotonic()), notice=notice)
-            attempt_end = min(deadline, time.monotonic() + 3)
-            reason = 'face_not_detected'
-            while time.monotonic() < attempt_end:
-                frame = capture.read()
+        vectors, accepted_poses = [], []
+        reason = None
+        while len(vectors) < ENROLLMENT_FRAMES_PER_POSE and time.monotonic() < deadline:
+            preview.feedback.setText(
+                f'Good frames: {len(vectors)} of {ENROLLMENT_FRAMES_PER_POSE}. ' +
+                (POSE_FEEDBACK[reason] if reason else 'Hold this pose. Capturing automatically...'))
+            frame = capture.read()
+            faces = None
+            try:
+                reason = frame_feedback(frame, capture.cv)
+                if reason:
+                    continue
                 try:
-                    reason = frame_feedback(frame, capture.cv)
-                    if reason:
-                        encoder.metrics.values[reason] += 1
-                        continue
-                    try:
-                        faces = encoder.encode(frame, include_pose=True)
-                    except ValueError:
-                        reason = 'multiple_faces'
-                        encoder.metrics.values[reason] += 1
-                        continue
-                    if len(faces) != 1:
-                        reason = 'multiple_faces' if len(faces) > 1 else 'face_not_detected'
-                        encoder.metrics.values[reason] += 1
-                        continue
-                    pose = faces[0][2]
-                    reason = pose_feedback(pose, poses)
-                    if reason is None:
-                        samples.append(faces[0][1])
-                        poses.append(pose)
-                        accepted = True
-                        break
+                    faces = encoder.encode(frame, include_pose=True)
+                except ValueError:
+                    reason = 'multiple_faces'
+                    continue
+                if len(faces) != 1:
+                    reason = 'multiple_faces' if len(faces) > 1 else 'face_not_detected'
+                    continue
+                pose, vector = faces[0][2], faces[0][1]
+                reason = pose_feedback(pose, poses)
+                if reason:
+                    continue
+                try:
+                    _samples([vector] * 3)  # Preserve the model's finite 128-D contract.
+                except ValueError:
+                    reason = 'invalid_sample'
+                    continue
+                if not _consistent(references + vectors + [vector], CALIBRATION['enrollment_consistency']):
+                    reason = 'inconsistent_sample'
+                    continue
+                if time.monotonic() >= deadline:
+                    break
+                vectors.append(vector)
+                accepted_poses.append(pose)
+                encoder.metrics.values['accepted_enrollment_frames'] += 1
+            finally:
+                if reason:
                     encoder.metrics.values[reason] += 1
-                finally:
-                    del frame
-            if accepted:
-                break
-            # Retrying the same pose also requires another explicit Next click.
-            encoder.metrics.emit()
-            notice = 'Pose not captured. ' + POSE_FEEDBACK[reason] + ' Choose Next to retry this pose.'
-        if not accepted:
+                faces = None
+                vector = None
+                del frame
+        encoder.metrics.emit()
+        if len(vectors) != ENROLLMENT_FRAMES_PER_POSE:
             raise RuntimeError('enrollment_timeout')
-    return samples
+        references.append(reference_vector(vectors))
+        poses.append(median(accepted_poses))
+        preview.feedback.setText(f'{ENROLLMENT_FRAMES_PER_POSE} good frames captured. Pose complete.')
+        vectors.clear()
+    return references
 
 
 def read_consent():
@@ -544,7 +572,8 @@ def main():
           'and are discarded when it exits. Only anonymous counts/times are saved.\n'
           'No accounts, PINs or approvals change.\n'
           'A mirrored local preview helps you frame your face inside the outline.\n'
-          'Each pose waits for the Next button. Cancel or Esc stops the test.\n'
+          'Each pose waits for Next, then collects 10 good frames automatically.\n'
+          'Rejected frames are discarded. Cancel or Esc stops the test.\n'
           'Press Ctrl+C at any time to cancel and erase these temporary samples.\n')
     if not read_consent():
         print('Cancelled. The camera was not opened.')
@@ -580,6 +609,8 @@ def main():
         summary = {'development_only': True, 'production_approval_created': False,
                    'consent_confirmed': True, 'participants': 1, 'genuine_attempts': len(results),
                    'correct_candidates': sum(value['matched'] for value in results),
+                   'enrollment_frames_per_pose': ENROLLMENT_FRAMES_PER_POSE,
+                   'enrollment_reference_method': 'mean_of_unit_embeddings',
                    'enrollment_retry_count': enrolled.get('retry_count', 0),
                    'probe_retry_counts': [value.get('retry_count', 0) for value in results],
                    'unavailable_attempts': sum(value['status'] == 'unavailable' for value in results),

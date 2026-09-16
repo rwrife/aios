@@ -384,3 +384,25 @@ quality and pose thresholds are preserved. The previous log cannot establish
 which pose check failed. Eighteen focused tests pass, including distinct pose and
 quality feedback. Driver-only failures receive a camera-driver message instead
 of generic freshness wording. Participant validation remains pending.
+
+### Ten accepted frames per enrollment pose
+
+At the participant's request, the manual wizard now collects ten usable frames
+after each pose's Next click, rather than accepting one frame or asking for a
+retry after three seconds. A visible count advances only for frames passing the
+existing image quality, single-face, pose, finite-vector, and consistency checks.
+Rejected frames are discarded and capture continues on the same pose. Each pose
+has a separate two-minute capture budget, Cancel remains active, and the next
+pose still requires an explicit click. A partial batch cannot produce a reference.
+
+The ten accepted embeddings are individually normalized and averaged, then the
+mean is normalized into one reference per pose. The temporary gallery therefore
+still contains three references, now derived from thirty accepted frames; no raw
+images are retained. Reports identify the ten-frame count and aggregation method.
+This is a development harness change, not an approved production calibration.
+Twenty-one focused tests pass, including rejection without extra clicks, exact batch
+size, incomplete-batch failure/cancellation, and equal weighting in the reference. The known
+driver-error interruption remains unresolved and is not hidden by this change.
+Camera-off native Qt checks in Ocean and Sage each accepted thirty synthetic
+samples, rejected one unusable sample, required three Next clicks, and passed
+Escape cancellation. Both progress layouts were inspected in screenshots.
