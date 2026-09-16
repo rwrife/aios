@@ -82,7 +82,11 @@ public:
         }
     }
     ~SessionControl() override {
-        if (recognitionRoot() == this) cancelRecognition();
+        if (recognitionRoot() == this) {
+            cancelRecognition();
+            CameraClient::instance()->release(previewConsumer);
+            CameraClient::instance()->configure(false, true);
+        }
     }
     bool enabled() const { return !path.isEmpty(); }
     bool greetingOnly() const { return !enabled(); }

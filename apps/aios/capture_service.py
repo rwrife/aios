@@ -232,15 +232,19 @@ class Service:
             data = self.worker.stdout.read(MAX_EVENT + 1)
             if data:
                 self.buffer.extend(data)
-                if len(self.buffer) > MAX_EVENT:
-                    self.fail('oversized')
-                    return
                 while b'\n' in self.buffer:
                     line, _, rest = self.buffer.partition(b'\n')
                     self.buffer[:] = rest
+                    if len(line) > MAX_EVENT:
+                        self.fail('oversized')
+                        return
                     if not self.result(line):
                         return
-            if self.worker and self.worker.poll() is not None:
+                if len(self.buffer) > MAX_EVENT:
+                    self.fail('oversized')
+                    return
+            # An exited writer may still have unread bytes in the pipe.
+            if self.worker and not data and self.worker.poll() is not None:
                 self.fail('worker_exit')
         elif not self.explicit_lease and self.enabled and self.active and not self.secure and self.schedule.due():
             self.start({'request': uuid.uuid4().hex, 'consumer': '0' * 32, 'mode': 'recognize',
@@ -370,12 +374,12 @@ def serve(path):
                 if not data:
                     break
                 buffer.extend(data)
-                if len(buffer) > MAX_REQUEST:
-                    break
                 while b'\n' in buffer:
                     line, _, rest = buffer.partition(b'\n')
                     buffer[:] = rest
                     service.command(decode(line))
+                if len(buffer) > MAX_REQUEST:
+                    break
             if connection:
                 service.tick()
     finally:
