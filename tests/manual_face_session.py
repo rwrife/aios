@@ -153,7 +153,7 @@ class TimedEncoder:
 
 
 class PreviewAcquisition(Acquisition):
-    """One camera owner, with one bounded fresh-stream recovery per operation."""
+    """One camera owner; retry failed streams until participant cancellation."""
     def __init__(self, device, preview):
         super().__init__(device)
         self.preview = preview
@@ -163,35 +163,39 @@ class PreviewAcquisition(Acquisition):
         self.observed_library = None
 
     def read(self):
-        if self.camera and self.observed_library is not self.library:
-            native = self.library.aios_camera_read
-            self.library.aios_camera_read = lambda *args: self.metrics.observe(self, native, *args)
-            self.observed_library = self.library
-        try:
-            frame = super().read()
-        except RuntimeError as error:
-            self.metrics.emit()
-            if str(error) != 'stale_frame' or self.restarting or self.stream_restarts:
-                raise
-            self.stream_restarts += 1
-            print(json.dumps({'kind': 'notice', 'reason': 'stale_frame'}), flush=True)
-            previous_feedback = self.preview.feedback.text()
-            self.preview.feedback.setText('Refreshing the camera stream. This step has not advanced.')
-            self.preview.app.processEvents()
-            # Fully release the old stream before opening another one. A new
-            # stream resets sequence history, but all timestamp/age checks and
-            # warmup still run normally; no old frame is relabelled as fresh.
-            self.__exit__()
-            Acquisition.__init__(self, self.device, clock=self.clock)
-            self.restarting = True
+        while True:
+            if self.camera and self.observed_library is not self.library:
+                native = self.library.aios_camera_read
+                self.library.aios_camera_read = lambda *args: self.metrics.observe(self, native, *args)
+                self.observed_library = self.library
             try:
-                self.__enter__()
-            finally:
-                self.restarting = False
-            frame = super().read()
-            self.preview.feedback.setText(previous_feedback)
-        self.preview.show(frame)
-        return frame
+                frame = super().read()
+                self.preview.show(frame)
+                return frame
+            except RuntimeError as error:
+                if str(error) not in ERROR_CODES or self.restarting:
+                    raise
+                self.metrics.emit()
+                previous_feedback = self.preview.feedback.text()
+                while True:
+                    self.stream_restarts += 1
+                    print(json.dumps({'kind': 'notice', 'reason': pause_reason(error)}), flush=True)
+                    self.__exit__()
+                    # Every attempt closes the old handle first. Freshness and
+                    # sequence validation still apply to every new stream.
+                    self.preview.recover('Reconnecting the camera. Keeping this pose and its good frames.')
+                    Acquisition.__init__(self, self.device, clock=self.clock)
+                    self.restarting = True
+                    try:
+                        self.__enter__()
+                        break
+                    except RuntimeError as retry_error:
+                        if str(retry_error) not in ERROR_CODES:
+                            raise
+                        error = retry_error
+                    finally:
+                        self.restarting = False
+                self.preview.feedback.setText(previous_feedback)
 
 
 class FramingPreview:
@@ -272,7 +276,7 @@ class FramingPreview:
         if self.cancelled or not self.window.isVisible():
             raise RuntimeError('preview_cancelled')
 
-    def ready(self, capture, hint=None, timeout=120, notice=''):
+    def ready(self, capture, hint=None, timeout=None, notice=''):
         self.waiting = False
         self.next_button.setEnabled(False)
         self.app.processEvents()  # Drain old clicks before arming a new step.
@@ -285,9 +289,9 @@ class FramingPreview:
         self.waiting = True
         self.next_button.setEnabled(True)
         self.next_button.setFocus()
-        deadline = time.monotonic() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
         try:
-            while time.monotonic() < deadline:
+            while deadline is None or time.monotonic() < deadline:
                 frame = capture.read()
                 del frame
                 if self.next_requested:
@@ -298,29 +302,22 @@ class FramingPreview:
             self.waiting = False
             self.next_button.setEnabled(False)
 
+    def recover(self, message):
+        """Back off between attempts while keeping cancellation responsive."""
+        self.image.clear()
+        self.feedback.setText(message + ' Cancel stops the session.')
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            self.app.processEvents()
+            if self.cancelled or not self.window.isVisible():
+                raise RuntimeError('preview_cancelled')
+            time.sleep(.03)
+
     def retry(self, reason, action):
-        """Camera context has exited before this UI-only wait; never advance."""
         self.waiting = False
         self.next_button.setEnabled(False)
-        self.image.clear()
-        self.heading.setText('Capture paused - no step advanced')
-        self.feedback.setText(PAUSE_REASONS[reason] + (' Retry restarts enrollment.' if action == 'enroll'
-                                                    else ' Retry repeats this check.'))
-        self.app.processEvents()
-        self.next_requested = False
-        self.next_button.setText('&Retry enrollment' if action == 'enroll' else '&Retry check')
-        self.waiting = True
-        self.next_button.setEnabled(True)
-        self.next_button.setFocus()
-        try:
-            while not self.next_requested:
-                self.app.processEvents()
-                if self.cancelled or not self.window.isVisible():
-                    raise RuntimeError('preview_cancelled')
-                time.sleep(.03)
-        finally:
-            self.waiting = False
-            self.next_button.setEnabled(False)
+        self.heading.setText('Recovering capture - no step advanced')
+        self.recover(PAUSE_REASONS[reason] + ' Retrying automatically.')
 
     def close(self):
         self.image.clear()
@@ -346,11 +343,10 @@ def guided_enrollment(capture, encoder, preview):
     from statistics import median
     references, poses = [], []
     for index, instruction in enumerate(PROBE_GUIDANCE[:3]):
-        preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}', timeout=120)
-        deadline = time.monotonic() + 120
+        preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}')
         vectors, accepted_poses = [], []
         reason = None
-        while len(vectors) < ENROLLMENT_FRAMES_PER_POSE and time.monotonic() < deadline:
+        while len(vectors) < ENROLLMENT_FRAMES_PER_POSE:
             preview.feedback.setText(
                 f'Good frames: {len(vectors)} of {ENROLLMENT_FRAMES_PER_POSE}. ' +
                 (POSE_FEEDBACK[reason] if reason else 'Hold this pose. Capturing automatically...'))
@@ -380,8 +376,6 @@ def guided_enrollment(capture, encoder, preview):
                 if not _consistent(references + vectors + [vector], CALIBRATION['enrollment_consistency']):
                     reason = 'inconsistent_sample'
                     continue
-                if time.monotonic() >= deadline:
-                    break
                 vectors.append(vector)
                 accepted_poses.append(pose)
                 encoder.metrics.values['accepted_enrollment_frames'] += 1
@@ -392,8 +386,6 @@ def guided_enrollment(capture, encoder, preview):
                 vector = None
                 del frame
         encoder.metrics.emit()
-        if len(vectors) != ENROLLMENT_FRAMES_PER_POSE:
-            raise RuntimeError('enrollment_timeout')
         references.append(reference_vector(vectors))
         poses.append(median(accepted_poses))
         preview.feedback.setText(f'{ENROLLMENT_FRAMES_PER_POSE} good frames captured. Pose complete.')
@@ -494,12 +486,12 @@ def worker(directory):
 def exchange(process, action, timeout, on_notice=None, on_metrics=None):
     process.stdin.write(json.dumps({'action': action}).encode() + b'\n')
     process.stdin.flush()
-    deadline = time.monotonic() + timeout
+    deadline = None if timeout is None else time.monotonic() + timeout
     buffer = bytearray()
     last_hint = None
     retries = 0
-    while time.monotonic() < deadline:
-        ready, _, _ = select.select([process.stdout], [], [], max(0, min(.2, deadline - time.monotonic())))
+    while deadline is None or time.monotonic() < deadline:
+        ready, _, _ = select.select([process.stdout], [], [], .2 if deadline is None else max(0, min(.2, deadline - time.monotonic())))
         if not ready:
             continue
         data = os.read(process.stdout.fileno(), 4096)
@@ -528,8 +520,6 @@ def exchange(process, action, timeout, on_notice=None, on_metrics=None):
                 if set(value) != {'kind', 'reason'} or type(value['reason']) is not str or value['reason'] not in PAUSE_REASONS:
                     raise RuntimeError('Invalid evaluation response.')
                 retries += 1
-                if retries > 128:
-                    raise RuntimeError('Too many failed capture attempts.')
                 if on_notice:
                     on_notice(value['reason'])
                 print('Capture interrupted: ' + PAUSE_REASONS[value['reason']], flush=True)
@@ -546,7 +536,7 @@ def exchange(process, action, timeout, on_notice=None, on_metrics=None):
                     last_hint = hint
             elif (set(value) == {'kind', 'status', 'matched', 'seconds'} and value['kind'] == 'evaluation' and
                   value['status'] in ('enrolled', 'measured', 'unavailable', 'cancelled') and type(value['matched']) is bool and
-                  type(value['seconds']) in (int, float) and math.isfinite(value['seconds']) and 0 <= value['seconds'] <= timeout):
+                  type(value['seconds']) in (int, float) and math.isfinite(value['seconds']) and 0 <= value['seconds'] and (timeout is None or value['seconds'] <= timeout)):
                 return {**value, **({'retry_count': retries} if retries else {})}
             else:
                 raise RuntimeError('Invalid evaluation response.')
@@ -594,14 +584,14 @@ def main():
                                env=worker_environment)
     try:
         print('Follow the preview instructions and choose Next for each pose.', flush=True)
-        enrolled = exchange(process, 'enroll', 7200, record_notice, record_metrics)
+        enrolled = exchange(process, 'enroll', None, record_notice, record_metrics)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         print('Temporary enrollment complete. No account was created.')
         results = []
         for instruction in PROBE_GUIDANCE:
             print(instruction + ' Choose Next in the preview when ready.', flush=True)
-            result = exchange(process, 'probe', 7200, record_notice, record_metrics)
+            result = exchange(process, 'probe', None, record_notice, record_metrics)
             if result['status'] == 'cancelled':
                 raise RuntimeError('Participant cancelled the preview.')
             results.append(result)

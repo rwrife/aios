@@ -406,3 +406,23 @@ driver-error interruption remains unresolved and is not hidden by this change.
 Camera-off native Qt checks in Ocean and Sage each accepted thirty synthetic
 samples, rejected one unusable sample, required three Next clicks, and passed
 Escape cancellation. Both progress layouts were inspected in screenshots.
+
+### Participant-controlled stopping
+
+The participant requested no automatic stop before cancellation. The manual
+wizard now has no positioning, enrollment collection, or parent interactive
+command deadline, and no retry-count cutoff. Individual camera reads retain
+their existing bounded waits and strict freshness checks. Failed streams close
+before reopening, with a one-second event-pumping delay between attempts; the
+current pose and its accepted frames survive read recovery. Other recoverable
+operation failures retry automatically rather than requiring a Retry click.
+Cancel, Escape, and window close remain cancellation actions. Completed batches
+still wait for Next to begin a different pose, and a completed session finishes
+normally. No invalid frame is accepted merely to keep the wizard moving.
+
+Twenty-three focused tests pass, including unlimited positioning, results beyond
+the former parent deadline, repeated stream recovery, and cancellation during
+reconnection and partial collection. Camera-off native Qt fault injection in
+Ocean and Sage each performed three automatic retries, then stopped on the
+actual Cancel button. This does not resolve the underlying driver fault or
+establish participant accuracy.

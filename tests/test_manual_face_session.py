@@ -92,36 +92,39 @@ class EvaluationSessionTests(unittest.TestCase):
         preview.advance.assert_not_called()
         preview.show.assert_called_once_with(frame)
 
-    def test_failed_stream_recovery_is_bounded(self):
+    def test_repeated_stream_errors_recover_without_advancing(self):
         capture = session.PreviewAcquisition('/unused', MagicMock())
+        frame = object()
+        with patch.object(session.Acquisition, 'read', side_effect=[RuntimeError('stale_frame')] * 3 + [frame]), \
+                patch.object(session.Acquisition, '__exit__') as close, \
+                patch.object(session.Acquisition, '__enter__') as reopen, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertIs(capture.read(), frame)
+        self.assertEqual(close.call_count, 3)
+        self.assertEqual(reopen.call_count, 3)
+        capture.preview.advance.assert_not_called()
+
+    def test_cancel_during_recovery_stops_reopening_camera(self):
+        capture = session.PreviewAcquisition('/unused', MagicMock())
+        capture.preview.recover.side_effect = RuntimeError('preview_cancelled')
         with patch.object(session.Acquisition, 'read', side_effect=RuntimeError('stale_frame')), \
                 patch.object(session.Acquisition, '__exit__') as close, \
                 patch.object(session.Acquisition, '__enter__') as reopen, \
                 contextlib.redirect_stdout(io.StringIO()):
-            for _ in range(2):
-                with self.assertRaisesRegex(RuntimeError, 'stale_frame'):
-                    capture.read()
-            self.assertEqual(close.call_count, 1)
-            self.assertEqual(reopen.call_count, 1)
-        capture.preview.show.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
+                capture.read()
+        close.assert_called_once()
+        reopen.assert_not_called()
 
-    def test_pause_clears_preview_and_waits_for_explicit_retry(self):
+    def test_recovery_clears_stale_preview_and_pumps_cancel(self):
         preview = session.FramingPreview.__new__(session.FramingPreview)
-        preview.app, preview.image, preview.heading = MagicMock(), MagicMock(), MagicMock()
-        preview.feedback, preview.next_button, preview.window = MagicMock(), MagicMock(), MagicMock()
+        preview.app, preview.image, preview.feedback = MagicMock(), MagicMock(), MagicMock()
+        preview.window = MagicMock()
         preview.cancelled = False
-        iterations = []
-        def event_loop():
-            iterations.append(True)
-            if len(iterations) == 4:
-                preview.advance()
-        preview.app.processEvents.side_effect = event_loop
-        with patch.object(session.time, 'sleep'):
-            preview.retry('camera_read_failed', 'enroll')
-        self.assertEqual(len(iterations), 4)
+        preview.app.processEvents.side_effect = preview.cancel
+        with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
+            preview.recover('Reconnecting')
         preview.image.clear.assert_called_once()
-        preview.heading.setText.assert_called_once_with('Capture paused - no step advanced')
-        self.assertFalse(preview.waiting)
 
     def test_arbitrary_failure_details_are_not_exposed(self):
         self.assertEqual(session.pause_reason(ValueError('private embedding data')), 'worker_error')
@@ -160,6 +163,23 @@ class EvaluationSessionTests(unittest.TestCase):
         preview.advance()
         self.assertTrue(preview.next_requested)
         preview.next_button.setEnabled.assert_called_once_with(False)
+
+    def test_positioning_has_no_default_deadline(self):
+        import itertools
+        preview = session.FramingPreview.__new__(session.FramingPreview)
+        preview.app, preview.heading, preview.feedback, preview.next_button = [MagicMock() for _ in range(4)]
+        preview.hint = 'Position yourself'
+        capture = MagicMock()
+        calls = []
+        def read():
+            calls.append(True)
+            if len(calls) == 4:
+                preview.advance()
+            return object()
+        capture.read.side_effect = read
+        with patch.object(session.time, 'monotonic', side_effect=itertools.count(step=10000)):
+            preview.ready(capture)
+        self.assertEqual(len(calls), 4)
 
     def test_each_enrollment_pose_requires_a_separate_next(self):
         events = []
@@ -200,15 +220,15 @@ class EvaluationSessionTests(unittest.TestCase):
             self.assertAlmostEqual(sum(value*value for value in vector), 1.)
             self.assertTrue(all(value > 0 for value in vector))
 
-    def test_partial_batch_times_out_without_returning_reference(self):
+    def test_collection_continues_beyond_old_timeout(self):
+        import itertools
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        encoder.encode.return_value = [(None, [1.] * 128, 0.)]
+        poses = iter([0.] * 10 + [.1] * 10 + [-.1] * 10)
+        encoder.encode.side_effect = lambda *args, **kwargs: [(None, [1.] * 128, next(poses))]
         with patch.object(session, 'frame_feedback', return_value=None), \
-                patch.object(session.time, 'monotonic', side_effect=[0., 1., 2., 121.]):
-            with self.assertRaisesRegex(RuntimeError, 'enrollment_timeout'):
-                session.guided_enrollment(capture, encoder, preview)
-        self.assertEqual(capture.read.call_count, 1)
-        self.assertEqual(preview.ready.call_count, 1)
+                patch.object(session.time, 'monotonic', side_effect=itertools.count(step=1000)):
+            self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 3)
+        self.assertEqual(capture.read.call_count, 30)
 
     def test_reference_uses_all_ten_vectors_with_equal_weight(self):
         first, second = [1.] + [0.] * 127, [0., 20.] + [0.] * 126
@@ -268,12 +288,12 @@ class EvaluationSessionTests(unittest.TestCase):
             self.assertEqual(session.main(), 1)
             start.assert_not_called()
 
-    def exchange(self, response):
+    def exchange(self, response, timeout=2):
         child = subprocess.Popen([sys.executable, '-c',
                                   'import sys; sys.stdin.readline(); print(sys.argv[1], flush=True)',
                                   json.dumps(response)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         try:
-            return session.exchange(child, 'probe', 2)
+            return session.exchange(child, 'probe', timeout)
         finally:
             child.wait(timeout=3)
             child.stdin.close()
@@ -282,6 +302,8 @@ class EvaluationSessionTests(unittest.TestCase):
     def test_only_aggregate_result_accepted(self):
         value = {'kind': 'evaluation', 'status': 'measured', 'matched': True, 'seconds': .1}
         self.assertEqual(self.exchange(value), value)
+        long_result = {**value, 'seconds': 100000.}
+        self.assertEqual(self.exchange(long_result, timeout=None), long_result)
         for addition in ({'embedding': [1.]}, {'image': 'data:image/png;base64,AAAA'}):
             with self.assertRaises(RuntimeError):
                 self.exchange({**value, **addition})
