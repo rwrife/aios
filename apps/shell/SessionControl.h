@@ -126,6 +126,10 @@ public:
         if (active) recognitionRoot()->cancelRecognition();
         else {
             photoCapture.cancel();
+            if (recognitionRoot()->recognitionRequester == this) {
+                recognitionRoot()->cancelRecognition();
+                recognitionRoot()->recognitionRequester = nullptr;
+            }
             recognitionRoot()->finishCameraOperation(this);
             recognitionRoot()->updateCameraGate();
         }

@@ -40,10 +40,11 @@ def main():
             request.update(extra)
             client.sendall(json.dumps(request).encode() + b'\n')
             return request['request']
-        def receive(wanted, identifier=None):
-            deadline = time.monotonic() + 7
+        def receive(wanted, identifier=None, timeout=7):
+            deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 if b'\n' not in buffer:
+                    client.settimeout(max(.1, deadline - time.monotonic()))
                     data = client.recv(262145)
                     if not data:
                         raise RuntimeError('service disconnected')
@@ -66,6 +67,24 @@ def main():
             client.connect(path)
             receive({'state'})
             send('configure', active=True, secure=False)
+            if '--removal' in sys.argv:
+                preview = send('capture', 'preview')
+                receive({'preview'}, preview).clear()
+                print(json.dumps({'ready_for_disconnect': True}), flush=True)
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    event = receive({'state', 'cancelled', 'error'}, timeout=60)
+                    if event['reason'] == 'device_changed':
+                        break
+                else:
+                    raise RuntimeError('device change was not observed')
+                photo = send('capture', 'photo')
+                event = receive({'error'}, photo)
+                if event['reason'] != 'unavailable':
+                    raise RuntimeError('missing device was not rejected')
+                print(json.dumps({'ok': True, 'device_change_observed': True,
+                                  'missing_device_rejected': True}), flush=True)
+                return
             for _ in range(3):
                 preview = send('capture', 'preview')
                 event = receive({'preview', 'error'}, preview)
