@@ -39,9 +39,10 @@ Physical reconnect, automatic discovery, actual capture deadline cleanup and
 scoped ACL restoration also passed. Stage 1 implementation and validation are
 complete in PR #133, ready for review. The issue closes when that PR lands.
 Stage 2 implementation is on `codex/recognition-capture-service`, based on the
-validated stage 1 branch. The private service, native timestamp adapter and
-migrated consumers pass deterministic and display tests; Alpine service lifecycle
-validation is next. Stages 3–5 follow it.
+validated stage 1 branch. PR #134 now passes deterministic, display, physical
+Brio service lifecycle, Alpine guest preemption/termination and USB/IP removal
+checks. Measured evidence is in `docs/qa/brio-camera.md`. Stage 3 follows it;
+successful calibrated enrollment and held-out accuracy remain later release gates.
 
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
