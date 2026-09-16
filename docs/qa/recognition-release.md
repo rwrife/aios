@@ -202,3 +202,19 @@ aggregate counts/times. Consent must be typed by the participant. This tool
 does not install a manifest, create an account, persist templates or approve
 calibration. Its five repeat probes cannot establish a false-match rate or
 replace separate calibration and held-out participants.
+
+Recovery source `22c2833`: 678 automated Python tests passed (13 environmental
+skips), plus three consent/protocol tests for the development session. Native
+validation passed strict camera protocol, both profile/PIN runs, 104 QML checks,
+the application host test and three private-display tests. A host stress run
+completed 100 preview/photo cycles and discarded 23 driver-error frames, but its
+final resource check failed. Follow-up runs observed transient `/proc/PID/fd`
+permission errors during worker transitions; ten further cycles completed with
+one observed camera owner, but sampling remained incomplete even with bounded
+retries. These host runs are not accepted resource-gate evidence.
+
+The locally rebuilt recovery image contains 786 packages and is 2,182,791,168
+bytes: `alpine-aios-recognition-stage5-recovery-x86_64.iso`, SHA-256
+`7490a9682c2d86032a21b14d91b6fd8a17590b2862c7d6677fcf6f7f424fbe90`.
+Guest validation and the consented development session are pending. No runtime
+approval or production calibration has been created.

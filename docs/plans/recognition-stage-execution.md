@@ -73,3 +73,13 @@ The final local image boots and passes installed-model compatibility and Brio
 service smoke checks. One initial extended-run photo handoff failed; a 20-cycle
 repeat passed, but reliability is not declared proven. Final hashes, timings and
 the remaining blockers are in `docs/qa/recognition-release.md`.
+
+The user requested full production validation and offered to participate; only
+one adult is available currently. Continue Stage 5 in this order: (1) resolve
+physical capture reliability, (2) validate the rebuilt Alpine image and resource
+sampler, (3) run the participant's explicit-consent development session, (4) run
+the 24-hour acquisition soak, and (5) complete independently calibrated,
+held-out multi-person and adversarial validation before approval. The handoff
+race and damaged-driver-frame failures have fixes in `22c2833`; host capture
+cycles completed but resource sampling remains incomplete. Keep #95 assigned
+and open and #137 draft until the actual release gates pass.

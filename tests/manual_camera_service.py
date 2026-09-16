@@ -187,6 +187,9 @@ def main():
             sampled = resources.finish()
             drain_diagnostics()
             if sampled['peak_camera_owners'] > 1 or sampled['sampling_errors']:
+                print(json.dumps({'ok': False, 'captures_completed': counts,
+                                  'worker_terminated': True, 'resources': sampled,
+                                  'diagnostics': dict(diagnostics)}), flush=True)
                 raise RuntimeError('resource sampling or exclusive ownership check failed')
             print(json.dumps({'ok': True, 'uid': os.getuid(), **counts,
                               'worker_terminated': True, 'elapsed': round(time.monotonic() - started, 3),
