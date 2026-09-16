@@ -265,3 +265,29 @@ Six consent/protocol/preview tests pass; camera-off synthetic layouts were
 visually checked in Ocean and Sage on the guest. The consent prompt has been
 reopened for this version; a fresh soak is gated on its completion and another
 passing guest smoke test. Previous aggregate results remain preserved.
+
+### Participant-controlled pose wizard
+
+Participant feedback identified that the original guided enrollment still
+advanced between straight/left/right poses automatically after the initial
+confirmation. The development harness now uses native Qt instructions and
+Next/Cancel buttons alongside the local preview. Every enrollment pose and
+every repeat check waits for a fresh Next action; the button is disabled during
+measurement. A failed enrollment pose stays on that step and requires Next to
+retry. Escape/window close cancels. Each enrollment step has a two-minute
+positioning/retry budget; it never advances merely because that time elapsed.
+
+This manual QA tool requires Alpine `py3-pyside6`, installed only in the disposable
+validation guest; it is not added to the production image. Raw frames and
+temporary vectors remain in the same worker. Eight focused tests cover consent,
+editing, strict aggregate replies, separate pose confirmations and retry gating.
+The previous preview-session attempt did not complete; its terminal reported
+incomplete enrollment, and no completed aggregate or replacement soak was
+produced. The original four-of-five development result remains the only completed
+participant session so far.
+
+Native Qt synthetic tests in the guest passed three distinct Next-button
+confirmations and Escape cancellation in both Ocean and Sage; screenshots of
+the camera-off layouts were inspected. The revised wizard is reopened for
+participant validation. Synthetic UI actions are not participant consent or
+biometric evidence.

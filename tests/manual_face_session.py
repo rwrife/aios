@@ -37,55 +37,159 @@ PROBE_GUIDANCE = ('Look straight ahead.', 'Turn slightly left.', 'Turn slightly 
 
 
 class FramingPreview:
-    """Local display in the camera-owning worker; no preview IPC or media files."""
+    """Native Qt controls and local preview inside the camera-owning worker."""
     def __init__(self, cv, hint):
+        from PySide6 import QtCore, QtGui, QtWidgets
         from aios.core import load_config
         from aios.terminal_theme import palette
         self.cv, self.hint = cv, hint
-        self.name = 'Recognition framing preview'
+        self.QtCore, self.QtGui = QtCore, QtGui
+        self.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        self.app.setQuitOnLastWindowClosed(False)
         colors = palette(load_config().get('theme_color', 'blue'))
-        def bgr(value):
-            return tuple(int(value.lstrip('#')[index:index + 2], 16) for index in (4, 2, 0))
-        self.color, self.panel, self.ink = bgr(colors[5]), bgr(colors[2]), bgr('#f1f5f6')
-        self.key = -1
-        self.opened = False
+        _, _, panel, control, muted, accent, line = colors
+        self.color = tuple(int(accent.lstrip('#')[i:i + 2], 16) for i in (4, 2, 0))
+        self.cancelled = self.next_requested = self.waiting = False
+        self.window = QtWidgets.QWidget()
+        self.window.setWindowTitle('Recognition setup')
+        self.window.setFont(QtGui.QFont('DejaVu Sans', 11))
+        self.window.setStyleSheet(
+            f'QWidget {{ background: {panel}; color: #f1f5f6; }}'
+            f'QPushButton {{ background: {control}; border: 1px solid {line}; padding: 8px 24px; }}'
+            f'QPushButton:focus {{ border: 1px solid {accent}; }}'
+            f'QPushButton:disabled {{ color: {muted}; }}')
+        layout = QtWidgets.QVBoxLayout(self.window)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(8)
+        self.heading = QtWidgets.QLabel(hint)
+        self.heading.setWordWrap(True)
+        layout.addWidget(self.heading)
+        self.image = QtWidgets.QLabel()
+        self.image.setMinimumSize(1, 1)
+        self.image.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.image.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Ignored)
+        self.image.setAccessibleName('Mirrored camera preview with framing outline')
+        layout.addWidget(self.image, 1)
+        self.feedback = QtWidgets.QLabel('Position yourself, then choose Next. Nothing advances automatically.')
+        self.feedback.setWordWrap(True)
+        layout.addWidget(self.feedback)
+        buttons = QtWidgets.QHBoxLayout()
+        cancel = QtWidgets.QPushButton('&Cancel')
+        cancel.clicked.connect(self.cancel)
+        buttons.addWidget(cancel)
+        buttons.addStretch()
+        self.next_button = QtWidgets.QPushButton('&Next')
+        self.next_button.setAccessibleName('Next step')
+        self.next_button.setEnabled(False)
+        self.next_button.clicked.connect(self.advance)
+        buttons.addWidget(self.next_button)
+        layout.addLayout(buttons)
+        self.escape = QtGui.QShortcut(QtGui.QKeySequence('Esc'), self.window)
+        self.escape.activated.connect(self.cancel)
+        size = self.app.primaryScreen().availableGeometry()
+        self.window.resize(min(680, int(size.width() * .7)), min(480, int(size.height() * .7) - 64))
+        self.window.move(size.x() + 24, size.y() + 24)
+        self.window.show()
+        self.app.processEvents()
+
+    def advance(self):
+        if self.waiting:
+            self.next_requested = True
+            self.next_button.setEnabled(False)
+
+    def cancel(self):
+        self.cancelled = True
 
     def show(self, frame):
-        created = not self.opened
-        if not self.opened:
-            self.cv.namedWindow(self.name, self.cv.WINDOW_AUTOSIZE | self.cv.WINDOW_GUI_NORMAL)
-            self.opened = True
         display = self.cv.flip(frame, 1)
-        try:
-            self.cv.ellipse(display, (320, 216), (104, 160), 0, 0, 360, self.color, 1)
-            self.cv.rectangle(display, (0, 416), (639, 479), self.panel, -1)
-            lines = self.hint.split(' | ', 1)
-            for index, line in enumerate(lines):
-                self.cv.addText(display, line, (24, 440 + index * 24), 'DejaVu Sans', 12, self.ink)
-            self.cv.setWindowTitle(self.name, 'Recognition preview')
-            self.cv.imshow(self.name, display)
-            if created:
-                self.cv.moveWindow(self.name, 24, 24)
-            self.key = self.cv.waitKey(30) & 255
-            if self.key == 27 or self.cv.getWindowProperty(self.name, self.cv.WND_PROP_VISIBLE) < 1:
-                raise RuntimeError('preview_cancelled')
-        finally:
-            del display
+        self.cv.ellipse(display, (320, 240), (104, 160), 0, 0, 360, self.color, 1)
+        rgb = self.cv.cvtColor(display, self.cv.COLOR_BGR2RGB)
+        height, width, _ = rgb.shape
+        picture = self.QtGui.QImage(rgb.data, width, height, rgb.strides[0],
+                                    self.QtGui.QImage.Format.Format_RGB888).copy()
+        self.image.setPixmap(self.QtGui.QPixmap.fromImage(picture).scaled(
+            self.image.size(), self.QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+            self.QtCore.Qt.TransformationMode.SmoothTransformation))
+        self.app.processEvents()
+        if self.cancelled or not self.window.isVisible():
+            raise RuntimeError('preview_cancelled')
 
-    def ready(self, capture):
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            frame = capture.read()
-            del frame
-            if self.key in (32, 10, 13):
-                return
-        raise RuntimeError('framing_timeout')
+    def ready(self, capture, hint=None, timeout=120, notice=''):
+        self.waiting = False
+        self.next_button.setEnabled(False)
+        self.app.processEvents()  # Drain old clicks before arming a new step.
+        self.next_requested = False
+        if hint:
+            self.hint = hint
+        self.heading.setText(self.hint)
+        self.feedback.setText(notice or 'Position yourself, then choose Next. Nothing advances automatically.')
+        self.waiting = True
+        self.next_button.setEnabled(True)
+        self.next_button.setFocus()
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                frame = capture.read()
+                del frame
+                if self.next_requested:
+                    self.feedback.setText('Capturing this pose. Hold still...')
+                    return
+            raise RuntimeError('framing_timeout')
+        finally:
+            self.waiting = False
+            self.next_button.setEnabled(False)
 
     def close(self):
-        if self.opened:
-            self.cv.destroyWindow(self.name)
-            self.cv.waitKey(1)
-            self.opened = False
+        self.image.clear()
+        self.window.close()
+        self.app.processEvents()
+
+
+def guided_enrollment(capture, encoder, preview):
+    from aios.recognition import _quality
+    samples, poses = [], []
+    delta, maximum = CALIBRATION['enrollment_pose_delta'], CALIBRATION['maximum_pose_offset']
+    for index, instruction in enumerate(PROBE_GUIDANCE[:3]):
+        deadline = time.monotonic() + 120
+        accepted = False
+        notice = ''
+        while time.monotonic() < deadline:
+            preview.ready(capture, f'Enrollment {index + 1} of 3: {instruction}',
+                          timeout=max(.1, deadline - time.monotonic()), notice=notice)
+            attempt_end = min(deadline, time.monotonic() + 3)
+            while time.monotonic() < attempt_end:
+                frame = capture.read()
+                try:
+                    if not _quality(frame, capture.cv, CALIBRATION):
+                        continue
+                    try:
+                        faces = encoder.encode(frame, include_pose=True)
+                    except ValueError:
+                        continue
+                    if len(faces) != 1:
+                        continue
+                    pose = faces[0][2]
+                    valid = math.isfinite(pose) and abs(pose) <= maximum
+                    if not poses:
+                        valid = valid and abs(pose) <= delta
+                    elif len(poses) == 1:
+                        valid = valid and abs(pose - poses[0]) >= delta
+                    else:
+                        valid = valid and (pose - poses[0]) * (poses[1] - poses[0]) < 0 and abs(pose - poses[0]) >= delta
+                    if valid:
+                        samples.append(faces[0][1])
+                        poses.append(pose)
+                        accepted = True
+                        break
+                finally:
+                    del frame
+            if accepted:
+                break
+            # Retrying the same pose also requires another explicit Next click.
+            notice = 'Pose not captured. Adjust lighting/position, then choose Next to retry.'
+        if not accepted:
+            raise RuntimeError('enrollment_timeout')
+    return samples
 
 
 def read_consent():
@@ -106,7 +210,6 @@ def worker(directory):
     from aios.biometrics import FaceEncoder
     from aios.capture_service import inventory
     from aios.capture_worker import Acquisition
-    from aios import capture_worker
     from aios.recognition import _consistent, _samples
     from aios.identity import match
     parent = int(os.environ['AIOS_EVALUATION_PARENT'])
@@ -127,30 +230,23 @@ def worker(directory):
         started = time.monotonic()
         status, matched = 'unavailable', False
         preview = None
-        original_emit = capture_worker.emit
         try:
             devices = inventory()
             if len(devices) != 1:
                 raise RuntimeError('one_camera_required')
             device = next(iter(devices.values()))[0]
-            preview = FramingPreview(encoder.cv, ('Center your face' if command['action'] == 'enroll'
-                                     else PROBE_GUIDANCE[min(probe_index, 4)]) + ' | Space: start | Esc: cancel')
+            preview = FramingPreview(encoder.cv, 'Position your face')
             class PreviewAcquisition(Acquisition):
                 def read(self):
                     frame = super().read()
                     preview.show(frame)
                     return frame
-            def progress(event):
-                if event.get('kind') == 'progress':
-                    payload = event['payload']
-                    preview.hint = GUIDANCE[payload['reason']] + f" ({payload['samples']}/3) | Esc: cancel"
-                original_emit(event)
-            capture_worker.emit = progress
             with PreviewAcquisition(device) as capture:
-                preview.ready(capture)
-                preview.hint = 'Hold still - measuring | Esc: cancel'
-                adapter = capture.enrollment_embeddings if command['action'] == 'enroll' else capture.embeddings
-                vectors = _samples([item['embedding'] for item in adapter(device, encoder, CALIBRATION)])
+                if command['action'] == 'enroll':
+                    vectors = _samples(guided_enrollment(capture, encoder, preview))
+                else:
+                    preview.ready(capture, f'Check {probe_index + 1} of 5: {PROBE_GUIDANCE[min(probe_index, 4)]}')
+                    vectors = _samples([item['embedding'] for item in capture.embeddings(device, encoder, CALIBRATION)])
             if command['action'] == 'enroll':
                 if not _consistent(vectors, CALIBRATION['enrollment_consistency']):
                     raise ValueError('inconsistent')
@@ -166,7 +262,6 @@ def worker(directory):
         except Exception as error:
             status = 'cancelled' if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled' else 'unavailable'
         finally:
-            capture_worker.emit = original_emit
             if preview is not None:
                 preview.close()
         if command['action'] == 'probe':
@@ -238,7 +333,7 @@ def main():
           'and are discarded when it exits. Only anonymous counts/times are saved.\n'
           'No accounts, PINs or approvals change.\n'
           'A mirrored local preview helps you frame your face inside the outline.\n'
-          'Click the preview and press Space when ready; Esc closes capture.\n'
+          'Each pose waits for the Next button. Cancel or Esc stops the test.\n'
           'Press Ctrl+C at any time to cancel and erase these temporary samples.\n')
     if not read_consent():
         print('Cancelled. The camera was not opened.')
@@ -249,15 +344,15 @@ def main():
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=worker_environment)
     try:
-        print('Center your face in the preview, then press Space and follow its instructions.', flush=True)
-        enrolled = exchange(process, 'enroll', 80)
+        print('Follow the preview instructions and choose Next for each pose.', flush=True)
+        enrolled = exchange(process, 'enroll', 380)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         print('Temporary enrollment complete. No account was created.')
         results = []
         for instruction in PROBE_GUIDANCE:
-            print(instruction + ' Click the preview and press Space when ready.', flush=True)
-            result = exchange(process, 'probe', 55)
+            print(instruction + ' Choose Next in the preview when ready.', flush=True)
+            result = exchange(process, 'probe', 130)
             if result['status'] == 'cancelled':
                 raise RuntimeError('Participant cancelled the preview.')
             results.append(result)
