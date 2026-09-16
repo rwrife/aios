@@ -467,3 +467,26 @@ A real-Brio preview check selected ten frames on the same handle, 2.004–2.152
 seconds apart, while draining 143 frames. It recorded zero frame rejections,
 maximum observed frame age 0.1005 seconds, and confirmed closure only at the end.
 This was a stream/pacing test without face inference or biometric enrollment.
+
+### Fixed twenty-second enrollment burst
+
+The participant replaced quality-gated collection with a fixed budget: preview,
+one Next click, ten snapshot slots at 2, 4, ..., 20 seconds. The preview drains
+the same stream continuously. Each slot can select only a fresh frame captured
+within its preceding half second; a missing/damaged slot remains missing and is
+never replaced. The capture window does not expand for quality or inference.
+A bounded native read may finish shortly after the window, but frames captured
+after its end are ineligible. Inference runs after the burst using only the
+selected snapshots, held temporarily in worker memory and then discarded.
+
+The usable subset forms the temporary reference. Zero usable images produces an
+incomplete enrollment, without automatically taking another burst. Reports
+distinguish scheduled shots, captured photos, usable photos, twenty-second
+duration and zero replacements. This remains a development reference, not model
+training or desktop enrollment. Twenty-five focused tests pass, including exact
+slot selection, missing slots without replacement, unusable shots excluded from
+the fixed batch, no reference from an empty batch, and participant cancellation.
+
+The real-Brio burst check captured all ten scheduled snapshots in 20.064 seconds
+on the same camera handle and verified cleanup at the end. No face inference or
+participant reference was created by this technical check.

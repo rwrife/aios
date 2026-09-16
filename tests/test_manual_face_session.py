@@ -202,44 +202,54 @@ class EvaluationSessionTests(unittest.TestCase):
             preview.ready(capture)
         self.assertEqual(len(calls), 4)
 
-    def test_forward_enrollment_requires_one_click_and_ten_frames(self):
+    def test_burst_uses_ten_fixed_slots_in_twenty_seconds(self):
+        capture, preview = MagicMock(), MagicMock()
+        frames = [object() for _ in range(40)]
+        ticks = iter([100.] + [100. + (i+1)*.5 for i in range(40)])
+        counter = iter(range(40))
+        def read():
+            i = next(counter)
+            capture.last_capture = 100. + (i+1)*.5
+            return frames[i]
+        capture.read_once.side_effect = read
+        result = session.capture_burst(capture, preview, clock=lambda: next(ticks))
+        self.assertEqual(result, frames[3::4])
+        self.assertEqual(len(result), 10)
+        self.assertEqual(capture.read_once.call_count, 40)
+
+    def test_missing_burst_slots_are_not_replaced(self):
+        capture, preview = MagicMock(), MagicMock()
+        capture.read_once.return_value = None
+        clock = MagicMock(side_effect=[0., 3., 9., 21.])
+        self.assertEqual(session.capture_burst(capture, preview, clock), [None] * 10)
+        self.assertEqual(capture.read_once.call_count, 3)
+
+    def test_enrollment_uses_only_supplied_burst_and_discards_bad_shots(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        encoder.encode.return_value = [(None, [1.] * 128)]
-        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None), \
-                patch.object(session, 'pose_feedback', side_effect=AssertionError('pose gate used')):
+        preview.cancelled = False
+        frames = [object() for _ in range(10)]
+        encoder.encode.side_effect = [[]] + [[(None, [1.] * 128)]] * 8
+        with patch.object(session, 'capture_burst', return_value=frames) as burst, \
+                patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 9):
             samples = session.guided_enrollment(capture, encoder, preview)
         self.assertEqual(len(samples), 1)
-        self.assertEqual(capture.read.call_count, 10)
-        preview.ready.assert_called_once_with(capture, 'Enrollment: Look straight at the camera lens.')
-        self.assertTrue(all(not call.kwargs for call in encoder.encode.call_args_list))
-        from aios.identity import match
-        self.assertEqual(match([1.] * 128, {'temporary-person': samples},
-                               session.CALIBRATION['match_threshold'], session.CALIBRATION['runner_up_margin']),
-                         'temporary-person')
+        burst.assert_called_once()
+        capture.read.assert_not_called()
+        self.assertEqual(encoder.encode.call_count, 9)
+        self.assertEqual(frames, [None] * 10)
 
     def test_mistyped_consent_can_be_retried_or_cancelled(self):
         with patch('builtins.input', side_effect=['I CONSET', '']), contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(session.read_consent())
 
-    def test_rejected_frames_do_not_count_or_require_more_clicks(self):
+    def test_no_usable_burst_fails_without_replacements(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        encoder.encode.side_effect = [[], [(None, [float('nan')] * 128)]] + [[(None, [1.] * 128)]] * 10
-        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 12):
-            samples = session.guided_enrollment(capture, encoder, preview)
-        self.assertEqual(len(samples), 1)
-        self.assertEqual(capture.read.call_count, 13)
-        self.assertEqual(preview.ready.call_count, 1)
-        self.assertAlmostEqual(sum(value*value for value in samples[0]), 1.)
-
-    def test_collection_continues_beyond_old_timeout(self):
-        import itertools
-        capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        poses = iter([0.] * 10 + [.1] * 10 + [-.1] * 10)
-        encoder.encode.side_effect = lambda *args, **kwargs: [(None, [1.] * 128, next(poses))]
-        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None), \
-                patch.object(session.time, 'monotonic', side_effect=itertools.count(step=1000)):
-            self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 1)
-        self.assertEqual(capture.read.call_count, 10)
+        preview.cancelled = False
+        with patch.object(session, 'capture_burst', return_value=[None] * 10) as burst:
+            with self.assertRaisesRegex(RuntimeError, 'no_usable_burst'):
+                session.guided_enrollment(capture, encoder, preview)
+        burst.assert_called_once()
+        encoder.encode.assert_not_called()
 
     def test_reference_uses_all_ten_vectors_with_equal_weight(self):
         first, second = [1.] + [0.] * 127, [0., 20.] + [0.] * 126
@@ -247,15 +257,12 @@ class EvaluationSessionTests(unittest.TestCase):
         self.assertAlmostEqual(vector[0], 2 ** -.5)
         self.assertAlmostEqual(vector[1], 2 ** -.5)
 
-    def test_cancel_during_collection_does_not_return_partial_reference(self):
+    def test_cancel_during_burst_does_not_process_partial_photos(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
-        capture.read.side_effect = [object(), RuntimeError('preview_cancelled')]
-        encoder.encode.return_value = [(None, [1.] * 128, 0.)]
-        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None):
-            with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
-                session.guided_enrollment(capture, encoder, preview)
-        self.assertEqual(encoder.encode.call_count, 1)
-        self.assertEqual(preview.ready.call_count, 1)
+        capture.read_once.side_effect = RuntimeError('preview_cancelled')
+        with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
+            session.guided_enrollment(capture, encoder, preview)
+        encoder.encode.assert_not_called()
 
     def test_both_backspace_encodings_edit_the_local_prompt(self):
         import pty

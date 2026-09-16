@@ -34,6 +34,7 @@ GUIDANCE = {
 }
 PROBE_GUIDANCE = ('Look straight at the camera lens.',) * 5
 PAUSE_REASONS = {
+    'no_usable_burst': 'None of the ten photos was usable. Enrollment was not created.',
     'framing_timeout': 'Positioning time expired. The camera is off.',
     'enrollment_timeout': 'This pose could not be captured. The camera is off.',
     'one_camera_required': 'The camera is missing or more than one camera is connected.',
@@ -61,7 +62,7 @@ METRIC_COUNTS = ('reads', 'old_frames', 'future_frames', 'timestamp_order', 'seq
                  'driver_error_frames', 'empty_frames', 'other_read_errors', 'inference_calls',
                  'too_dark', 'too_bright', 'blurred', 'face_not_detected', 'multiple_faces',
                  'face_forward', 'turn_more', 'turn_other_side', 'turn_less', 'invalid_sample', 'inconsistent_sample',
-                 'accepted_enrollment_frames')
+                 'accepted_enrollment_frames', 'enrollment_captured_photos', 'enrollment_usable_photos')
 METRIC_TIMES = ('maximum_frame_age', 'maximum_read_seconds', 'maximum_inference_seconds')
 POSE_FEEDBACK = {
     'invalid_sample': 'This frame could not be used. Keep your face visible.',
@@ -159,6 +160,20 @@ class PreviewAcquisition(Acquisition):
         self.metrics = CaptureMetrics()
         self.observed_library = None
         self.next_sample_at = 0
+
+    def read_once(self):
+        """A bounded acquisition attempt for a fixed-duration burst."""
+        try:
+            frame = Acquisition.read(self)
+            self.preview.show(frame)
+            return frame
+        except RuntimeError as error:
+            if str(error) not in ERROR_CODES:
+                raise
+            self.preview.app.processEvents()
+            if self.preview.cancelled or not self.preview.window.isVisible():
+                raise RuntimeError('preview_cancelled')
+            return None
 
     def read(self):
         if self.camera and self.observed_library is not self.library:
@@ -369,12 +384,61 @@ def collect_good_frames(capture, encoder, preview, target):
     return vectors
 
 
+def capture_burst(capture, preview, clock=time.monotonic):
+    """Ten fixed slots at 2..20 seconds; missing slots never get replacements."""
+    from collections import deque
+    started = clock()
+    recent, snapshots = deque(), []
+    while len(snapshots) < 10:
+        frame = capture.read_once()
+        now = clock()
+        if frame is not None:
+            recent.append((capture.last_capture, frame))
+        while len(snapshots) < 10 and now >= started + 2 * (len(snapshots) + 1):
+            due = started + 2 * (len(snapshots) + 1)
+            candidates = [image for stamp, image in recent if due - .5 <= stamp <= due]
+            snapshots.append(candidates[-1] if candidates else None)
+        # Keep only recent frames for the next fixed slot, plus selected shots.
+        while recent and recent[0][0] < now - 2:
+            recent.popleft()
+        preview.feedback.setText(f'Photos: {len(snapshots)} of 10. {max(0, 20 - int(now - started))} seconds remaining.')
+    recent.clear()
+    return snapshots
+
+
 def guided_enrollment(capture, encoder, preview):
-    preview.ready(capture, 'Enrollment: Look straight at the camera lens.')
-    vectors = collect_good_frames(capture, encoder, preview, ENROLLMENT_FRAMES_PER_POSE)
+    from aios.recognition import _samples
+    preview.ready(capture, 'Look forward. Next starts 10 photos over 20 seconds.')
+    snapshots = capture_burst(capture, preview)
+    encoder.metrics.values['enrollment_captured_photos'] = sum(frame is not None for frame in snapshots)
+    vectors = []
+    for index in range(10):
+        preview.feedback.setText(f'Capture complete. Processing photo {index + 1} of 10...')
+        preview.app.processEvents()
+        if preview.cancelled or not preview.window.isVisible():
+            raise RuntimeError('preview_cancelled')
+        frame = snapshots[index]
+        try:
+            if frame is None or frame_feedback(frame, capture.cv):
+                continue
+            faces = encoder.encode(frame)
+            if len(faces) != 1:
+                continue
+            vector = faces[0][1]
+            _samples([vector] * 3)
+            vectors.append(vector)
+        except ValueError:
+            continue
+        finally:
+            snapshots[index] = None
+            frame = None
+    encoder.metrics.values['enrollment_usable_photos'] = len(vectors)
+    preview.feedback.setText(f'Finished: {len(vectors)} usable photos out of 10. No replacements taken.')
+    encoder.metrics.emit()
+    if not vectors:
+        raise RuntimeError('no_usable_burst')
     reference = reference_vector(vectors)
     vectors.clear()
-    preview.feedback.setText('10 good frames captured. Reference complete.')
     return [reference]
 
 
@@ -446,6 +510,10 @@ def worker(directory):
                     except Exception as error:
                         if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled':
                             raise
+                        if command['action'] == 'enroll' and capture is not None:
+                            print(json.dumps({'kind': 'notice', 'reason': pause_reason(error)}), flush=True)
+                            status = 'unavailable'
+                            break  # Never take another enrollment burst automatically.
                         reason = pause_reason(error)
                         print(json.dumps({'kind': 'notice', 'reason': reason}), flush=True)
                         preview.retry(reason, command['action'])
@@ -540,7 +608,7 @@ def main():
           'and are discarded when it exits. Only anonymous counts/times are saved.\n'
           'No accounts, PINs or approvals change.\n'
           'A mirrored local preview helps you frame your face inside the outline.\n'
-          'Look forward and choose Next once to collect 10 good frames automatically.\n'
+          'Look forward and choose Next once: 10 photos over 20 seconds, no replacements.\n'
           'Rejected frames are discarded. Cancel or Esc stops the test.\n'
           'Press Ctrl+C at any time to cancel and erase these temporary samples.\n')
     if not read_consent():
@@ -553,7 +621,9 @@ def main():
         if events:
             events.write(json.dumps({'event': 'capture_interrupted', 'reason': reason}) + '\n')
             events.flush()
+    latest_metrics = {}
     def record_metrics(payload):
+        latest_metrics.update(payload)
         if events:
             events.write(json.dumps({'event': 'capture_metrics', 'payload': payload}) + '\n')
             events.flush()
@@ -565,7 +635,8 @@ def main():
         enrolled = exchange(process, 'enroll', None, record_notice, record_metrics)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
-        print('Temporary enrollment complete. No account was created.')
+        enrollment_counts = {key: latest_metrics.get(key, 0) for key in ('enrollment_captured_photos', 'enrollment_usable_photos')}
+        print(f"Enrollment complete: {enrollment_counts['enrollment_usable_photos']} usable photos from the 10 scheduled shots. No account was created.")
         results = []
         for instruction in PROBE_GUIDANCE:
             print(instruction + ' Choose Next in the preview when ready.', flush=True)
@@ -574,12 +645,14 @@ def main():
                 raise RuntimeError('Participant cancelled the preview.')
             results.append(result)
             print('Candidate matched.' if result['matched'] else 'No candidate; this counts as a failed genuine attempt.')
-        summary = {'development_only': True, 'production_approval_created': False,
+        summary = {**enrollment_counts, 'development_only': True, 'production_approval_created': False,
                    'consent_confirmed': True, 'participants': 1, 'genuine_attempts': len(results),
                    'correct_candidates': sum(value['matched'] for value in results),
                    'enrollment_frames': ENROLLMENT_FRAMES_PER_POSE,
                    'enrollment_views': 'forward_only',
                    'sampling_interval_seconds': 2,
+                   'enrollment_capture_seconds': 20,
+                   'enrollment_replacements': 0,
                    'enrollment_reference_method': 'mean_of_unit_embeddings',
                    'enrollment_retry_count': enrolled.get('retry_count', 0),
                    'probe_retry_counts': [value.get('retry_count', 0) for value in results],
