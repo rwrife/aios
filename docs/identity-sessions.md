@@ -175,6 +175,12 @@ validate DRM/input hardware, VT transitions, recovery consoles or device failure
 
 ### Chat profile bubble
 
+Local greeting templates use a separate UUID namespace and shell-readable local
+key; they grant no protected identity authority. Protected face enrollment is
+unavailable until a broker-owned storage and trusted verification path exists.
+See the [facial-data lifecycle](facial-data-lifecycle.md) for transactional
+replacement/purge, key rotation, consent and backup limitations.
+
 Chat windows now show a centered user bubble. The protected session panel uses
 the same component. A fresh, unambiguous identity candidate produces the greeting
 “Hello, [name]. How may I help you?” and its saved profile portrait. Stale,

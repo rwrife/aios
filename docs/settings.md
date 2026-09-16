@@ -16,9 +16,10 @@ disabled by default, requires a stable local `/dev/v4l/by-id/*-video-indexN`
 device plus an administrator-provided, checksum-verified and Brio-calibrated
 YuNet/SFace manifest, and never replaces the account PIN. Face samples are
 captured only during explicit enrollment or short background bursts; raw frames
-are discarded after local inference. OpenCV and encrypted-template support are
-included in the optional identity image; installed default systems must add
-those local runtime dependencies before enabling recognition.
+are discarded after local inference. OpenCV is included for service-owned previews
+and photos in the default image; encrypted-template support remains in the
+optional identity image. The [facial-data lifecycle](facial-data-lifecycle.md)
+describes consent, key ownership, crash recovery and deletion boundaries.
 The Qwen3 0.6B starter reuses the bundled copy or downloads 462 MiB when missing;
 the [local model catalog](local-models.md) also offers three stronger Qwen3
 sizes with RAM and free-disk checks. Optional local speech downloads 75 MiB. Nothing downloads merely by opening or
@@ -62,9 +63,10 @@ individual applications.
   completes separate PIN-verified face enrollment. Suggestions expire after five
   seconds, pause for profile-photo capture and secure input, and always open the
   normal PIN prompt. Disabling recognition stops camera capture while preserving
-  enrolled face templates. **Purge facial recognition data** permanently deletes
-  those templates without deleting accounts, profile photos, or PINs. No raw
-  recognition pictures are saved or sent to a model. Video chat and camera
+  enrolled face templates. **Purge facial recognition data** withdraws consent
+  and removes templates from the current local store without deleting accounts,
+  profile photos, or PINs. External backups and snapshots are outside that deletion
+  boundary. No raw recognition pictures are saved or sent to chat providers. Video chat and camera
   attachments remain future work.
 - **Network & Wi-Fi:** opens NetworkManager's nmtui. Activate a connection joins
   Wi-Fi or selects Ethernet; Edit a connection configures addresses and DNS.

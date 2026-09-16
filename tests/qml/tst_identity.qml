@@ -26,6 +26,7 @@ TestCase {
         property var profile: ({})
         property var profiles: [{id: "test-id", name: "Test profile"}]
         property string recognitionState: "ready"
+        property string recognitionGuidance: ""
         property var recognitionSuggestion: ({})
         function listProfiles() {}
         function requestRecognition() {}
@@ -261,6 +262,27 @@ TestCase {
         compare(pin.text, "")
         panel.destroy()
         control.greetingOnly = false
+    }
+    function test_face_enrollment_guidance_and_privacy_cancellation() {
+        control.greetingOnly = true
+        control.recognitionState = "ready"
+        var panel = accountsComponent.createObject(test.parent, {control: control, width: 620, height: 440})
+        waitForRendering(panel)
+        mouseClick(findChild(panel, "enrollRecognition"))
+        var prompt = findChild(panel, "faceEnrollmentDialog")
+        tryCompare(prompt, "opened", true)
+        var pin = findChild(prompt, "recognitionPin")
+        pin.text = "1234"
+        control.recognitionState = "enrolling"
+        control.recognitionGuidance = "1 of 3 samples. Turn slightly."
+        tryCompare(findChild(prompt, "recognitionGuidance"), "text", control.recognitionGuidance)
+        control.privacyLost()
+        tryCompare(prompt, "opened", false)
+        compare(pin.text, "")
+        compare(control.secureInput, false)
+        panel.destroy()
+        control.recognitionState = "ready"
+        control.recognitionGuidance = ""
     }
     function test_recovery_submits_and_clears_both_secrets() {
         var surface = enrollmentComponent.createObject(test, {control: control, recovering: true})
