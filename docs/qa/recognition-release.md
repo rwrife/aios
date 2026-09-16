@@ -521,3 +521,13 @@ action in Settings → Accounts; preview still requires explicit consent. The
 standalone development wizard was stopped. All 20 identity UI tests pass,
 including no automatic offer/capture after creation and no consent/preview before
 the account-screen action. The prior ISO predates this follow-up change.
+
+### Keep account management available after unlock
+
+Successful native PIN entry now leaves an account detail screen open, with an
+explicit face-setup action. The PIN is cleared and the secure-entry state ends;
+face setup still requires its own consent and PIN verification. Closing face
+setup returns to the account screen. Privacy loss closes both. Twenty-one
+identity tests pass, including this transition; native shell compilation and
+Ocean/Sage synthetic UI checks pass. This source change is not yet in the running
+QEMU image.

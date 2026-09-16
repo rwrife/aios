@@ -82,8 +82,9 @@ biometric result is inferred from the passing tests.
 ## Optional account enrollment
 
 Face setup opens only after the user chooses **Face recognition…** for an account
-in Settings → Accounts. Creating or signing in to an account does not show an
-enrollment offer, consent form or camera preview.
+in Settings → Accounts or the account screen left open after unlocking. Creating
+or signing in does not open consent or a camera preview. The account screen stays
+open until dismissed; choosing face setup there is a separate explicit action.
 The selected account UUID is fixed by the native UI. Setup requires that account's
 PIN and explicit local storage consent; account creation does not retain or reuse
 the creation PIN. PIN verification occurs before capture and again before commit.

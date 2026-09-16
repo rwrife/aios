@@ -299,6 +299,30 @@ TestCase {
         compare(control.recognitionEnrollments, before)
         form.destroy(); control.profile = {}; control.greetingOnly = false
     }
+    function test_unlock_keeps_account_management_open_until_dismissed() {
+        control.greetingOnly = true
+        control.cameraPreview = ""
+        var form = enrollmentComponent.createObject(test, {control: control, creating: false})
+        form.open(); tryCompare(form, "opened", true)
+        findChild(form, "enrollmentPin").text = "1234"
+        control.profile = {id: "test-id", name: "Saved account"}
+        control.unlocked()
+        var account = findChild(form, "unlockedAccountDetails")
+        tryCompare(account, "opened", true)
+        compare(account.accountName, "Saved account")
+        compare(findChild(form, "enrollmentPin").text, "")
+        compare(control.cameraPreview, "")
+        var face = findChild(form, "unlockedAccountFaceEnrollment")
+        compare(face.opened, false)
+        mouseClick(findChild(account, "accountFaceSetup"))
+        tryCompare(face, "opened", true)
+        compare(face.accountId, "test-id")
+        face.close()
+        compare(account.opened, true)
+        control.privacyLost()
+        tryCompare(account, "opened", false)
+        form.destroy(); control.profile = {}; control.greetingOnly = false
+    }
     function test_face_setup_is_hidden_until_account_screen_opt_in() {
         control.greetingOnly = true
         control.cameraPreview = ""

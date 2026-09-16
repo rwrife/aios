@@ -53,11 +53,52 @@ Dialog {
     Connections {
         target: control
         ignoreUnknownSignals: true
-        function onPrivacyLost() { pin.clear(); recovery.clear(); dialog.close(); }
+        function onPrivacyLost() { pin.clear(); recovery.clear(); dialog.close(); accountDetails.close(); accountFace.close(); }
         function onEnrollmentCompleted(secret) { pin.clear(); recoveryInput.clear(); recovery.text = secret; }
-        function onUnlocked() { dialog.close(); }
+        function onUnlocked() {
+            if (!dialog.opened) return
+            const profile = control.profile
+            const manage = dialog.greetingOnly && profile && profile.id
+            const id = manage ? profile.id : ""
+            const name = manage ? profile.name : ""
+            dialog.close()
+            if (manage) {
+                accountDetails.accountId = id
+                accountDetails.accountName = name
+                accountDetails.open()
+            }
+        }
         function onPhotoCaptured(preview, rgb) { if (dialog.opened && dialog.creating) { dialog.photoPreview = preview; dialog.photoRgb = rgb; } }
     }
+    Dialog {
+        id: accountDetails; objectName: "unlockedAccountDetails"
+        property string accountId: ""
+        property string accountName: ""
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(440, parent ? parent.width - 32 : 440)
+        title: "Account"; modal: true; standardButtons: Dialog.Close
+        padding: 16
+        font.family: "DejaVu Sans"; font.pixelSize: 14
+        palette.window: dialog.theme.panel
+        palette.base: dialog.theme.input
+        palette.windowText: dialog.theme.ink
+        palette.text: dialog.theme.ink
+        palette.buttonText: dialog.theme.ink
+        palette.button: dialog.theme.input
+        background: Rectangle { color: dialog.theme.panel; border.color: dialog.theme.line }
+        onClosed: { accountId = ""; accountName = ""; accountFace.close(); }
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label { text: accountDetails.accountName; textFormat: Text.PlainText; font.bold: true; Layout.fillWidth: true }
+            Label { text: "Your account is unlocked."; Layout.fillWidth: true }
+            Button {
+                objectName: "accountFaceSetup"; text: "Set up face recognition…"
+                enabled: !control.busy
+                onClicked: accountFace.openForProfile(accountDetails.accountId, accountDetails.accountName)
+            }
+        }
+    }
+    FaceEnrollmentDialog { id: accountFace; objectName: "unlockedAccountFaceEnrollment"; control: dialog.control; theme: dialog.theme }
     contentItem: ColumnLayout {
         spacing: 10
         Label {
