@@ -5,6 +5,13 @@ desktop is a Qt Quick application, with a separate chat window managed by
 Openbox. Qt's software renderer is the VM default; waves use Canvas rather than
 GPU-only shader effects. The wave animation pauses while chat is open.
 
+The full desktop uses Qt's Desktop window type so Openbox keeps wallpaper and
+system controls below application windows. A below-layer hint on a normal
+window alone does not prevent click-to-raise from covering applications.
+Windowed previews retain the normal window type. In the live QEMU guest,
+wallpaper and volume clicks preserve chat's normal state and keep it above the
+desktop; explicit minimize/restore behavior is covered by the launcher tests.
+
 The C++ shell launches a Python worker for each operation. Worker requests and
 responses are JSON, never shell commands. Each chat also owns a generic Python
 tool host on a private AF_UNIX socket. The host registers AIOS built-ins

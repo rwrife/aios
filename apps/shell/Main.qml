@@ -12,7 +12,9 @@ Window {
     title: "AIOS Desktop"
     width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
     height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
-    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    // A normal window can be raised over applications even with the below hint.
+    // The desktop role keeps wallpaper and its controls in the desktop layer.
+    flags: windowed ? Qt.Window : Qt.Desktop | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
