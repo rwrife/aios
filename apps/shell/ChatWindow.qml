@@ -154,7 +154,34 @@ Window {
                 objectName: "chatWindowControls"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                WindowControlButton { objectName: "chatDebugButton"; theme: chat.theme; symbol: "🐞"; tip: "Open raw model debug trace"; onClicked: chat.openDebugWindow() }
+                WindowControlButton {
+                    id: debugButton
+                    objectName: "chatDebugButton"; theme: chat.theme
+                    tip: "Open raw model debug trace"; onClicked: chat.openDebugWindow()
+                    contentItem: Canvas {
+                        property color stroke: debugButton.enabled ? chat.theme.ink : chat.theme.muted
+                        onStrokeChanged: requestPaint()
+                        opacity: debugButton.enabled ? 0.8 : 0.4
+                        onPaint: {
+                            const c = getContext("2d")
+                            c.reset(); c.translate(width / 2 - 12, height / 2 - 12)
+                            c.strokeStyle = stroke; c.lineWidth = 1.5; c.lineCap = "round"
+                            c.beginPath(); c.ellipse(7, 8, 10, 12); c.stroke()
+                            c.beginPath(); c.arc(12, 8, 3, Math.PI, 2 * Math.PI); c.stroke()
+                            c.beginPath()
+                            c.moveTo(10, 5); c.lineTo(8, 3)
+                            c.moveTo(14, 5); c.lineTo(16, 3)
+                            c.moveTo(12, 10); c.lineTo(12, 19)
+                            c.moveTo(7, 11); c.lineTo(4, 8)
+                            c.moveTo(7, 14); c.lineTo(3, 14)
+                            c.moveTo(7, 17); c.lineTo(4, 20)
+                            c.moveTo(17, 11); c.lineTo(20, 8)
+                            c.moveTo(17, 14); c.lineTo(21, 14)
+                            c.moveTo(17, 17); c.lineTo(20, 20)
+                            c.stroke()
+                        }
+                    }
+                }
                 WindowControlButton { objectName: "chatSettingsButton"; theme: chat.theme; symbol: "⋯"; tip: "Chat settings"; onClicked: options.open() }
                 WindowControlButton { theme: chat.theme; symbol: "−"; tip: "Minimize chat"; onClicked: chat.showMinimized() }
                 WindowControlButton { objectName: "chatCloseButton"; theme: chat.theme; symbol: "×"; tip: "Close this chat"; onClicked: chat.close() }
