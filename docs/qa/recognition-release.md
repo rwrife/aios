@@ -344,3 +344,27 @@ completed five transitions with exactly one stream restart. The wizard heading
 stayed on the same step and maximum observed returned-frame age was 0.115 seconds.
 This used no biometric enrollment and is recovery evidence only. The updated
 participant session is reopened; its completion and the full soak are pending.
+
+### Persistent participant failure: diagnostic run required
+
+The participant reported another failure after several Next clicks. That run
+recorded two `stale_frame` interruptions and produced no completed aggregate.
+The one-restart mitigation therefore has not resolved the participant failure.
+Do not treat the injected-error recovery check as evidence that it has.
+
+Two 15-second real-camera detector checks (without/with Qt preview) completed
+114/115 reads without rejection, but detected zero single-face frames. Separate
+15-second SFace load checks using an all-zero synthetic crop completed 114 reads
+each without rejection. These exercise model load, not participant recognition,
+and have not reproduced the reported failure.
+
+The manual harness now retains fixed numeric counters for old/future timestamps,
+timestamp/sequence ordering, damaged/empty frames, other native read errors, and
+maximum read/inference times. Metrics are emitted before capture errors and after
+successful operations, and validated by the parent before being written to the
+private event log. This changes diagnostics only; camera freshness limits and
+manual pose confirmation remain unchanged. Sixteen focused tests pass, including
+rejection classification, inference timing on failure, valid protocol delivery,
+and rejection of extra fields or invalid numeric values. No frames, embeddings,
+device identifiers, or arbitrary exception messages enter the diagnostic log.
+Root cause and participant completion remain pending a diagnostic attempt.

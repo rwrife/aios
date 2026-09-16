@@ -57,6 +57,59 @@ def pause_reason(error):
     return value if type(error) in (RuntimeError, ValueError) and value in PAUSE_REASONS else 'worker_error'
 
 
+METRIC_COUNTS = ('reads', 'old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
+                 'driver_error_frames', 'empty_frames', 'other_read_errors', 'inference_calls')
+METRIC_TIMES = ('maximum_frame_age', 'maximum_read_seconds', 'maximum_inference_seconds')
+
+
+class CaptureMetrics:
+    """Fixed numeric diagnostics only; never retain a frame, vector or device path."""
+    def __init__(self):
+        self.values = dict.fromkeys(METRIC_COUNTS + METRIC_TIMES, 0)
+
+    def observe(self, capture, native, *args):
+        started = time.monotonic()
+        count = native(*args)
+        values = self.values
+        values['reads'] += 1
+        values['maximum_read_seconds'] = max(values['maximum_read_seconds'], time.monotonic() - started)
+        if count > 0:
+            stamp, sequence = args[3]._obj.value, args[4]._obj.value
+            age = capture.clock() - stamp
+            values['maximum_frame_age'] = max(values['maximum_frame_age'], age)
+            if age < 0:
+                values['future_frames'] += 1
+            elif age > .5:
+                values['old_frames'] += 1
+            elif stamp <= max(capture.cutoff, capture.last_capture):
+                values['timestamp_order'] += 1
+            elif capture.driver_sequence is not None and not 0 < (sequence - capture.driver_sequence) % 2**32 < 2**31:
+                values['sequence_order'] += 1
+        else:
+            key = {-7: 'driver_error_frames', -8: 'empty_frames'}.get(count, 'other_read_errors')
+            values[key] += 1
+        return count
+
+    def emit(self):
+        print(json.dumps({'kind': 'capture_metrics', 'payload': {
+            key: round(value, 4) if key in METRIC_TIMES else value
+            for key, value in self.values.items()}}, allow_nan=False), flush=True)
+
+
+class TimedEncoder:
+    def __init__(self, encoder, metrics):
+        self.encoder, self.metrics = encoder, metrics
+
+    def encode(self, *args, **kwargs):
+        started = time.monotonic()
+        try:
+            return self.encoder.encode(*args, **kwargs)
+        finally:
+            values = self.metrics.values
+            values['inference_calls'] += 1
+            values['maximum_inference_seconds'] = max(values['maximum_inference_seconds'], time.monotonic() - started)
+
+
 class PreviewAcquisition(Acquisition):
     """One camera owner, with one bounded fresh-stream recovery per operation."""
     def __init__(self, device, preview):
@@ -64,11 +117,18 @@ class PreviewAcquisition(Acquisition):
         self.preview = preview
         self.stream_restarts = 0
         self.restarting = False
+        self.metrics = CaptureMetrics()
+        self.observed_library = None
 
     def read(self):
+        if self.camera and self.observed_library is not self.library:
+            native = self.library.aios_camera_read
+            self.library.aios_camera_read = lambda *args: self.metrics.observe(self, native, *args)
+            self.observed_library = self.library
         try:
             frame = super().read()
         except RuntimeError as error:
+            self.metrics.emit()
             if str(error) != 'stale_frame' or self.restarting or self.stream_restarts:
                 raise
             self.stream_restarts += 1
@@ -318,11 +378,13 @@ def worker(directory):
                         raise RuntimeError('one_camera_required')
                     device = next(iter(devices.values()))[0]
                     with PreviewAcquisition(device, preview) as capture:
+                        timed_encoder = TimedEncoder(encoder, capture.metrics)
                         if command['action'] == 'enroll':
-                            vectors = _samples(guided_enrollment(capture, encoder, preview))
+                            vectors = _samples(guided_enrollment(capture, timed_encoder, preview))
                         else:
                             preview.ready(capture, f'Check {probe_index + 1} of 5: {PROBE_GUIDANCE[min(probe_index, 4)]}')
-                            vectors = _samples([item['embedding'] for item in capture.embeddings(device, encoder, CALIBRATION)])
+                            vectors = _samples([item['embedding'] for item in capture.embeddings(device, timed_encoder, CALIBRATION)])
+                        capture.metrics.emit()
                     if command['action'] == 'enroll':
                         if not _consistent(vectors, CALIBRATION['enrollment_consistency']):
                             raise ValueError('inconsistent')
@@ -354,7 +416,7 @@ def worker(directory):
     return 0
 
 
-def exchange(process, action, timeout, on_notice=None):
+def exchange(process, action, timeout, on_notice=None, on_metrics=None):
     process.stdin.write(json.dumps({'action': action}).encode() + b'\n')
     process.stdin.flush()
     deadline = time.monotonic() + timeout
@@ -377,7 +439,17 @@ def exchange(process, action, timeout, on_notice=None):
             value = json.loads(raw)
             if type(value) is not dict:
                 raise RuntimeError('Invalid evaluation response.')
-            if value.get('kind') == 'notice':
+            if value.get('kind') == 'capture_metrics':
+                payload = value.get('payload')
+                if (set(value) != {'kind', 'payload'} or type(payload) is not dict or
+                        set(payload) != set(METRIC_COUNTS + METRIC_TIMES) or
+                        any(type(payload[key]) is not int or not 0 <= payload[key] <= 10**9 for key in METRIC_COUNTS) or
+                        any(type(payload[key]) not in (int, float) or not math.isfinite(payload[key]) or
+                            not 0 <= payload[key] <= 10**9 for key in METRIC_TIMES)):
+                    raise RuntimeError('Invalid evaluation response.')
+                if on_metrics:
+                    on_metrics(payload)
+            elif value.get('kind') == 'notice':
                 if set(value) != {'kind', 'reason'} or type(value['reason']) is not str or value['reason'] not in PAUSE_REASONS:
                     raise RuntimeError('Invalid evaluation response.')
                 retries += 1
@@ -437,19 +509,23 @@ def main():
         if events:
             events.write(json.dumps({'event': 'capture_interrupted', 'reason': reason}) + '\n')
             events.flush()
+    def record_metrics(payload):
+        if events:
+            events.write(json.dumps({'event': 'capture_metrics', 'payload': payload}) + '\n')
+            events.flush()
     process = subprocess.Popen([sys.executable, __file__, '--worker', '--directory', str(args.directory)],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=worker_environment)
     try:
         print('Follow the preview instructions and choose Next for each pose.', flush=True)
-        enrolled = exchange(process, 'enroll', 7200, record_notice)
+        enrolled = exchange(process, 'enroll', 7200, record_notice, record_metrics)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         print('Temporary enrollment complete. No account was created.')
         results = []
         for instruction in PROBE_GUIDANCE:
             print(instruction + ' Choose Next in the preview when ready.', flush=True)
-            result = exchange(process, 'probe', 7200, record_notice)
+            result = exchange(process, 'probe', 7200, record_notice, record_metrics)
             if result['status'] == 'cancelled':
                 raise RuntimeError('Participant cancelled the preview.')
             results.append(result)

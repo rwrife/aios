@@ -14,6 +14,50 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_metrics_distinguish_rejections_without_changing_native_result(self):
+        import ctypes
+        metrics = session.CaptureMetrics()
+        capture = MagicMock(cutoff=9., last_capture=9., driver_sequence=10)
+        capture.clock.return_value = 10.
+        def read(stamp, sequence, count=100):
+            return metrics.observe(capture, lambda *args: count, None, None, 1000,
+                                   ctypes.byref(ctypes.c_double(stamp)), ctypes.byref(ctypes.c_uint32(sequence)))
+        self.assertEqual(read(9.4, 11), 100)
+        read(10.1, 11)
+        capture.last_capture = 9.9
+        read(9.8, 11)
+        read(9.95, 10)
+        read(9.95, 11)
+        self.assertEqual(read(0., 0, -7), -7)
+        read(0., 0, -8)
+        read(0., 0, -2)
+        for key in ('old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
+                    'driver_error_frames', 'empty_frames', 'other_read_errors'):
+            self.assertEqual(metrics.values[key], 1, key)
+        self.assertEqual(metrics.values['reads'], 8)
+        self.assertAlmostEqual(metrics.values['maximum_frame_age'], .6)
+
+    def test_inference_timing_survives_failure_without_logging_exception(self):
+        metrics = session.CaptureMetrics()
+        encoder = MagicMock()
+        encoder.encode.side_effect = ValueError('private data')
+        with patch.object(session.time, 'monotonic', side_effect=[10., 12.]):
+            with self.assertRaises(ValueError):
+                session.TimedEncoder(encoder, metrics).encode(object())
+        self.assertEqual(metrics.values['inference_calls'], 1)
+        self.assertEqual(metrics.values['maximum_inference_seconds'], 2.)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            metrics.emit()
+        self.assertNotIn('private', output.getvalue())
+
+    def test_metrics_protocol_rejects_extra_data_and_invalid_numbers(self):
+        values = session.CaptureMetrics().values
+        for change in ({'image': 'private'}, {'reads': True}, {'old_frames': -1},
+                       {'maximum_frame_age': float('nan')}, {'maximum_read_seconds': 'private'}):
+            with self.assertRaises(RuntimeError):
+                self.exchange({'kind': 'capture_metrics', 'payload': {**values, **change}})
+
     def test_stale_stream_is_closed_and_reopened_once_without_advancing(self):
         preview = MagicMock()
         capture = session.PreviewAcquisition('/unused', preview)
@@ -68,16 +112,20 @@ class EvaluationSessionTests(unittest.TestCase):
             self.exchange({'kind': 'notice', 'reason': 'private embedding data'})
 
     def test_retry_notice_is_recorded_and_counted(self):
-        replies = [{'kind': 'notice', 'reason': 'camera_read_failed'},
+        metrics = session.CaptureMetrics().values
+        replies = [{'kind': 'capture_metrics', 'payload': metrics},
+                   {'kind': 'notice', 'reason': 'camera_read_failed'},
                    {'kind': 'evaluation', 'status': 'measured', 'matched': True, 'seconds': .1}]
         child = subprocess.Popen([sys.executable, '-c',
             'import sys; sys.stdin.readline(); print(sys.argv[1], flush=True)',
             '\n'.join(json.dumps(reply) for reply in replies)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         notices = []
+        diagnostics = []
         try:
             with contextlib.redirect_stdout(io.StringIO()):
-                result = session.exchange(child, 'probe', 2, notices.append)
+                result = session.exchange(child, 'probe', 2, notices.append, diagnostics.append)
             self.assertEqual(notices, ['camera_read_failed'])
+            self.assertEqual(diagnostics, [metrics])
             self.assertEqual(result['retry_count'], 1)
         finally:
             child.wait(timeout=3)
