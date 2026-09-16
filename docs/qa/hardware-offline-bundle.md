@@ -20,6 +20,7 @@ the index samples used to resolve them.
 
 | Role | Packages | Why |
 | --- | --- | --- |
+| Kernel | `linux-lts` | Makes the same release kernel installable from the ISO repository when `setup-disk` runs with no network |
 | Firmware | `linux-firmware-intel`, `linux-firmware-i915`, `linux-firmware-amdgpu`, `linux-firmware-nvidia`, `linux-firmware-ath10k`, `linux-firmware-ath11k`, `linux-firmware-ath12k`, `linux-firmware-mediatek`, `linux-firmware-rtl_nic` | The firmware every `firmware_package` value in the coverage matrix names |
 | Regulatory | `wireless-regdb` | `regulatory.db` is loaded by cfg80211 through the firmware loader |
 | Audio | `sof-firmware`, `alsa-ucm-conf` | SOF DSP images/topologies, plus the use-case configuration SOF/HDA machines need for a usable default device |

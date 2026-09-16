@@ -636,6 +636,16 @@ private:
             local.terminate(); if (!local.waitForFinished(1000)) { local.kill(); local.waitForFinished(1000); }
         }
         if (m_config.value("mode") == "local" && !m_config.value("model_path").toString().isEmpty()) {
+            // The backend preflights the CPU against the bundled build's
+            // instruction-set floor (aios.cpu_features) and reports it with the
+            // local model inventory. Starting llama-server anyway would abort
+            // with SIGILL and no explanation.
+            const auto inference = m_localModels.value("local_inference").toMap();
+            if (inference.contains("supported") && !inference.value("supported").toBool()) {
+                m_status = "This CPU cannot run the bundled local model. Choose a remote model provider in settings.";
+                emit changed();
+                return;
+            }
             local.start("llama-server", {"--model", m_config.value("model_path").toString(), "--alias", "local",
                 "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "8192", "--jinja", "--chat-template-kwargs", "{\"enable_thinking\":false}"});
             m_status = "Local model starting. You can chat when it is ready.";

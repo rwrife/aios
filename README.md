@@ -51,7 +51,9 @@ sudo dd if=alpine-aios-*-x86_64.iso of=/dev/sdX bs=4M status=progress conv=fsync
 
 Replace `/dev/sdX` with the whole USB device, not a partition. This erases that
 device. Boot the result on a 64-bit x86 machine in BIOS or UEFI mode. Secure Boot
-must currently be disabled; physical hardware compatibility is not yet certified.
+must currently be disabled, on the live medium and on an installed system;
+modloop signing is an image integrity check, not Secure Boot. Physical hardware
+compatibility is not yet certified.
 
 Launch with QEMU installed on the host:
 
@@ -170,7 +172,11 @@ is not a reliable tool agent; critical setup controls call deterministic backend
 actions instead of relying on the model. Settings and setup offer
 [three stronger Qwen3 models](docs/local-models.md) with tool capabilities,
 RAM guidance, and disk-space checks; custom GGUF models can also be imported.
-The current CPU inference build targets x86_64 with AVX2. The VM launchers
+The current CPU inference build targets x86_64 with AVX2 (specifically SSE4.2,
+AVX, AVX2, BMI2, F16C and FMA). CPUs below that floor still reach the desktop
+and remote providers: local inference is refused with an explicit limitation
+instead of an illegal-instruction crash. See
+[recovery and diagnostics](docs/hardware-recovery.md). The VM launchers
 default to 16 GiB RAM, four CPUs, and a 64 GiB disposable disk so every curated
 model can be tried from the RAM-backed live environment.
 Secure Boot and physical hardware have not yet been validated.
@@ -191,8 +197,21 @@ cmake --build hello/build
 ```
 
 Installer: `doas /usr/local/sbin/aios-install`. It requires selecting an unused
-whole disk and typing its exact erase confirmation. Use a disposable VM disk
-until the release QA matrix has been completed.
+whole disk and typing its exact erase confirmation, and it re-checks every
+guard and the disk's stable identity immediately before partitioning. It
+installs entirely from the booted medium's own package repository, restores the
+live remote repository configuration afterwards, regenerates module dependency
+data and the initramfs against the target's own `mkinitfs.conf`, adds a
+safe-graphics recovery GRUB entry, and verifies the mounted target before
+reporting success; a failed verification withholds success. An installed system
+also carries the root-only `aios-checkpoint` helper, which records an audit
+checkpoint of what the machine runs. It is **not** a rollback mechanism:
+coordinated update and rollback are not implemented. See
+[offline install parity and audit checkpoints](docs/qa/hardware-install-rollback.md).
+Use a disposable VM disk until the release QA matrix has been completed: no
+physical installation has been performed. Disposable SATA BIOS/UEFI and NVMe
+UEFI install-and-reboot checks pass; QEMU SeaBIOS cannot boot its NVMe
+controller. See the QA record for the exact matrix.
 
 Run backend and source validation with `bash scripts/test.sh`. On Windows,
 `.\scripts\test.ps1` runs those checks plus the isolated QML, native application,

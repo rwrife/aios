@@ -1,0 +1,6 @@
+#!/bin/sh
+# Bounded, sanitized network/graphics startup diagnostics. Fixed reads and a
+# fixed command allowlist only; see docs/hardware-recovery.md for the field
+# contract and redaction rules.
+export PYTHONPATH=/usr/local/share/aios${PYTHONPATH:+:$PYTHONPATH}
+exec python3 -m aios.hardware_diagnostics "$@"

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Root-only, fixed-operation audit checkpoints: status, verify and stage. It
+# takes no URLs, package names, file paths or commands, never changes what the
+# machine boots, and offers no activation or rollback: restoring a recorded
+# system coherently needs a full-system snapshot or a signed package bundle
+# that does not exist yet. It is deliberately not in /etc/doas.d/aios.conf, so
+# no desktop user, skill or MCP can reach it.
+# See docs/qa/hardware-install-rollback.md.
+export PYTHONPATH=/usr/local/share/aios${PYTHONPATH:+:$PYTHONPATH}
+exec python3 -m aios.checkpoint "$@"

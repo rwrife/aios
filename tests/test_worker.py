@@ -74,8 +74,7 @@ class WorkerTests(unittest.TestCase):
         }
         with mock.patch("aios.worker.load_config", return_value=config), \
                 mock.patch("aios.worker.load_history", return_value=[]), \
-                mock.patch("aios.worker.Path") as path:
-            path.return_value.exists.return_value = False
+                mock.patch("aios.worker.boot_mode.read_mode", return_value="unknown"):
             events = self.events({"action": "load"})
         loaded = events[0]["config"]
         self.assertNotIn("api_key", loaded)

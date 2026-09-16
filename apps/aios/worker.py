@@ -2,8 +2,7 @@
 import json
 import signal
 import sys
-from pathlib import Path
-from . import core
+from . import boot_mode, core
 from .core import chat, load_config, load_history, save_config, save_history
 
 
@@ -18,8 +17,7 @@ def handle(request):
         config["has_key"] = bool(config.pop("api_key"))
         config["has_voice_key"] = bool(config.pop("voice_key"))
         config["has_agent_key"] = bool(config.pop("agent_api_key"))
-        mode_file = Path("/etc/aios-mode")
-        config["live"] = mode_file.exists() and mode_file.read_text().strip() == "live"
+        config["live"] = boot_mode.read_mode() == "live"
         from .local_models import list_models
         emit("loaded", config=config, messages=load_history(), local_models=list_models())
     elif action == "configure":

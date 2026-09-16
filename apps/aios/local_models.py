@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
-from . import core
+from . import core, cpu_features
 
 GIB = 1024 ** 3
 DISK_RESERVE = 512 * 1024 ** 2
@@ -39,13 +39,19 @@ def free_disk():
     return shutil.disk_usage(path).free
 
 
-def availability(model_id, model, ram, disk):
+def availability(model_id, model, ram, disk, inference=None):
     installed = destination(model_id).is_file()
     required = 0 if installed else model["bytes"] + DISK_RESERVE
     reason = ""
+    # A CPU below the bundled build's instruction-set floor cannot run any
+    # local model, so no catalog entry is available on it.
+    if inference is None:
+        inference = cpu_features.inference_support()
+    if not inference["supported"]:
+        reason = cpu_features.limitation_message(inference)
     # Allow the small kernel reservation on a VM configured with exactly this RAM.
     if ram is not None and ram < model["ram_gib"] * GIB * 0.95:
-        reason = f"Needs about {model['ram_gib']} GiB total RAM."
+        reason += (" " if reason else "") + f"Needs about {model['ram_gib']} GiB total RAM."
     if disk < required:
         reason += (" " if reason else "") + "Not enough free disk space."
     return {**model, "id": model_id, "installed": installed,
@@ -73,9 +79,11 @@ def selected_model_id():
 def list_models():
     ram, disk = memory_bytes(), free_disk()
     selected = selected_model_id()
-    models = [dict(availability(key, model, ram, disk), selected=key == selected)
+    inference = cpu_features.inference_support()
+    models = [dict(availability(key, model, ram, disk, inference), selected=key == selected)
               for key, model in catalog().items()]
-    return {"models": models, "ram_bytes": ram, "free_disk_bytes": disk}
+    return {"models": models, "ram_bytes": ram, "free_disk_bytes": disk,
+            "local_inference": inference}
 
 
 def install(model_id=DEFAULT_MODEL, progress=lambda text: None):
@@ -83,7 +91,11 @@ def install(model_id=DEFAULT_MODEL, progress=lambda text: None):
     if not isinstance(model_id, str) or model_id not in models:
         raise ValueError("Choose a model from the local model catalog.")
     model = models[model_id]
-    state = availability(model_id, model, memory_bytes(), free_disk())
+    inference = cpu_features.inference_support()
+    if not inference["supported"]:
+        raise ValueError(cpu_features.limitation_message(inference) +
+                         " Use a remote model provider instead.")
+    state = availability(model_id, model, memory_bytes(), free_disk(), inference)
     if not state["available"]:
         raise ValueError(state["reason"] + " Close apps or increase VM resources, then refresh.")
     path = destination(model_id)

@@ -1,8 +1,8 @@
 ---
 name: os-control
-description: Changes AIOS volume, mute, theme, reduced motion and machine date/time, opens native settings, and starts native user authentication.
+description: Changes AIOS volume, mute, theme, reduced motion, machine date/time and Wi-Fi regulatory country, opens native settings, and starts native user authentication.
 metadata:
-  aios-triggers: volume, mute, unmute, theme, reduced motion, sound settings, display settings, network settings, date and time, date time, machine time, system clock, authenticate, sign in, log in
+  aios-triggers: volume, mute, unmute, theme, reduced motion, sound settings, display settings, network settings, date and time, date time, machine time, system clock, wifi country, wi-fi country, regulatory domain, authenticate, sign in, log in
   aios-model: current
 ---
 
@@ -46,6 +46,19 @@ For device selection, screen layout, or network connections, use `open` with
 `section` set to `sound`, `display`, or `network`. This opens the native panel;
 it does not complete a device or connection change. Additional local MCP tools
 may perform those changes directly when explicitly advertised.
+
+For the Wi-Fi regulatory country, first call
+`{"action":"read","setting":"wifi_country"}`, then
+`{"action":"set","setting":"wifi_country","value":"US"}` with an ISO 3166-1
+alpha-2 code in capitals, or `00` for the world domain. Never guess a country
+from a language, timezone or IP address; ask when it is not stated. The result
+reports the kernel's own readback in `state`, plus `saved_for_next_boot` and a
+persistence notice: an installed system keeps the country for the next boot, a
+live session applies it to the running kernel only. Report an unavailable
+Wi-Fi stack or a rejected code as the error it is; a country the regulatory
+database does not contain is not applied. This changes radio regulatory limits
+only. It does not join a network, edit a saved connection, or reveal
+credentials; use `open` with `section` `network` for connection changes.
 
 For sign-in, call `authenticate` without any credential fields. The chat's
 native profile picker and PIN flow handle user selection and verification.
