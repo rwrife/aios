@@ -69,6 +69,13 @@ def build_apkovl(path, world, services=None):
 def build_apk(path, files=(), symlinks=()):
     """Build an .apk-shaped gzip tar holding firmware members."""
     with tarfile.open(path, 'w:gz') as archive:
+        package, version = inspect_image.apk_atom(path.name)
+        record = package_manifest_fixture()['packages'].get(package, {})
+        metadata = (f'pkgname = {package}\npkgver = {version}\n'
+                    f'license = {record.get("license", "unknown")}\n').encode()
+        info = tarfile.TarInfo('.PKGINFO')
+        info.size = len(metadata)
+        archive.addfile(info, io.BytesIO(metadata))
         for name in files:
             info = tarfile.TarInfo(name)
             info.size = 4
@@ -467,6 +474,166 @@ class HardwareBundleValidationTests(unittest.TestCase):
         self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
         failures = self.checks(section)['offline_package_availability']['failures']
         self.assertEqual([item['package'] for item in failures], ['wireless-regdb'])
+
+    def rewrite_sof_metadata(self, records, signed=False):
+        """Keep payload bytes, replace only control entries, and rebind hashes."""
+        apk = self.apks / 'sof-firmware-2025.05-r0.apk'
+        with tarfile.open(apk, 'r:gz') as source:
+            payload = [(member, source.extractfile(member).read())
+                       for member in source if member.isfile() and member.name != '.PKGINFO']
+
+        def segment(entries):
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode='w:gz') as archive:
+                for member, data in entries:
+                    archive.addfile(member, io.BytesIO(data))
+            return stream.getvalue()
+
+        control = []
+        for content, kind in records:
+            member = tarfile.TarInfo('.PKGINFO')
+            member.type = kind
+            member.size = len(content) if kind == tarfile.REGTYPE else 0
+            member.linkname = '/nonexistent-metadata-target' if kind == tarfile.SYMTYPE else ''
+            control.append((member, content))
+        if signed:
+            signature = tarfile.TarInfo('.SIGN.RSA.fixture')
+            signature.size = 4
+            apk.write_bytes(segment([(signature, b'fake')]) + segment(control) + segment(payload))
+        else:
+            apk.write_bytes(segment(control + payload))
+        self.write_build_manifest()
+
+    def sof_metadata(self):
+        return (b'pkgname = sof-firmware\npkgver = 2025.05-r0\n'
+                b'license = BSD-3-Clause AND MIT AND ISC\n')
+
+    def test_signed_multistream_apk_metadata_and_firmware_are_scanned(self):
+        self.rewrite_sof_metadata([(self.sof_metadata(), tarfile.REGTYPE)], signed=True)
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(section['result'], 'passed')
+
+    def test_metadata_scan_is_required_for_provenance(self):
+        result, section = self.run_tool(validate=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.checks(section)['firmware_license_provenance']['status'], 'unavailable')
+
+    def test_ambiguous_or_invalid_embedded_metadata_is_rejected(self):
+        valid = self.sof_metadata()
+        cases = {
+            'missing': [],
+            'duplicate_record': [(valid, tarfile.REGTYPE), (valid, tarfile.REGTYPE)],
+            'symlink': [(b'', tarfile.SYMTYPE)],
+            'directory_plus_regular': [(b'', tarfile.DIRTYPE), (valid, tarfile.REGTYPE)],
+            'duplicate_license': [(valid + b'license = MIT\n', tarfile.REGTYPE)],
+            'empty_license': [(valid.replace(b'BSD-3-Clause AND MIT AND ISC', b''), tarfile.REGTYPE)],
+            'non_utf8': [(valid + b'\xff', tarfile.REGTYPE)],
+            'oversized': [(valid + b'#' * 65536, tarfile.REGTYPE)],
+            'wrong_name': [(valid.replace(b'sof-firmware', b'imposter'), tarfile.REGTYPE)],
+            'wrong_version': [(valid.replace(b'2025.05-r0', b'0.0-r999'), tarfile.REGTYPE)],
+        }
+        for name, records in cases.items():
+            with self.subTest(name=name):
+                self.rewrite_sof_metadata(records)
+                result, section = self.run_tool()
+                self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+                self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+                failures = self.checks(section)['firmware_license_provenance']['failures']
+                self.assertEqual([item['package'] for item in failures], ['sof-firmware'])
+
+    def test_repository_fallback_license_is_compared_to_metadata(self):
+        self.write_build_manifest(hardware_packages=False)
+        manifest = package_manifest_fixture()
+        manifest['packages']['sof-firmware']['license'] = 'invented-license'
+        self.packages_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        self.assertEqual(self.checks(section)['firmware_license_provenance']['status'], 'failed')
+
+    def test_firmware_license_must_match_shipped_metadata(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['hardware_packages']['packages']['sof-firmware']['license'] = 'invented-license'
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        failures = self.checks(section)['firmware_license_provenance']['failures']
+        self.assertEqual([item['package'] for item in failures], ['sof-firmware'])
+        self.assertIn('license', failures[0]['reason'])
+
+    def test_firmware_attribution_version_must_match_shipped_apk(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        failures = self.checks(section)['firmware_license_provenance']['failures']
+        self.assertEqual([item['package'] for item in failures], ['sof-firmware'])
+        self.assertIn('version', failures[0]['reason'])
+        self.assertEqual(failures[0]['recorded_version'], '0.0-r999')
+        self.assertEqual(failures[0]['shipped_versions'], ['2025.05-r0'])
+
+    def test_missing_attribution_version_is_rejected(self):
+        original = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        for value in (None, '', '   ', 2025, ['2025.05-r0']):
+            with self.subTest(value=value):
+                manifest = json.loads(json.dumps(original))
+                manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = value
+                self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+                result, section = self.run_tool()
+                self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+                self.assertIn('firmware_license_provenance', section['failed_checks'])
+                self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+
+    def test_multiple_shipped_versions_cannot_reuse_one_attribution(self):
+        apk = self.apks / 'sof-firmware-2025.05-r0.apk'
+        (self.apks / 'sof-firmware-2025.05-r1.apk').write_bytes(apk.read_bytes())
+        self.write_build_manifest()
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['failures'][0]['shipped_versions'], ['2025.05-r0', '2025.05-r1'])
+
+    def test_attribution_cannot_describe_an_absent_firmware_apk(self):
+        self.write_packages(skip=('sof-firmware',))
+        self.write_build_manifest()
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['status'], 'failed')
+        self.assertEqual(check['failures'][0]['shipped_versions'], [])
+
+    def test_repository_fallback_attribution_also_checks_version(self):
+        manifest = package_manifest_fixture()
+        manifest['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.packages_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        self.write_build_manifest(hardware_packages=False)
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['status'], 'failed')
+        self.assertTrue(check['source'].startswith('repository:'))
+
+    def test_missing_all_package_evidence_is_incomplete_not_inconsistent(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest.pop('output_closure')
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool(extra=('--apks-dir', str(self.base / 'missing-apks')))
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_INCOMPLETE)
+        self.assertEqual(section['failed_checks'], [])
+        self.assertIn('firmware_license_provenance', section['incomplete_checks'])
+
+    def test_inventory_mode_reports_stale_attribution_without_failing_cli(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool(validate=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('firmware_license_provenance', section['failed_checks'])
 
     def test_firmware_package_without_a_license_record_fails(self):
         manifest = package_manifest_fixture()

@@ -45,8 +45,10 @@ No automatic startup/reconnect service was installed. Keep WSL running during
 capture. After attach, wait up to five seconds for UVC enumeration before probing:
 the first immediate probe in this session ran before `/dev/video0` appeared.
 Probe starts the camera, discards frames, and has a 15-second process timeout.
-It currently requests MJPEG 640x480 at 15 fps; reported probe duration does not
-establish the negotiated frame rate. Inspect actual settings with `v4l2-ctl`.
+It requests MJPEG 640x480 at 15 fps. The diagnostic now reports V4L2/OpenCV
+negotiated properties separately from decoded dimensions and measured duration.
+A zero/null property means unavailable; requested settings are not evidence of
+negotiation. Buffer-request acceptance is reported separately from buffer size.
 
 If Windows reports busy, follow [the ownership TSG](../wsl-webcam.md), identifying
 the current interface holder. Do not repeatedly force-bind or stop unrelated
@@ -65,7 +67,9 @@ Use the single-window OS launcher, not a container chat preview. Close WSL
 capture consumers and pass the camera's current Windows USB/IP bus ID. The
 launcher attaches that exact device when needed, resolves its current Linux
 bus/device address, and grants the WSL user a temporary ACL on only that USB
-node:
+node. It restores the previous ACL when QEMU exits (including failed launch),
+provided the node identity has not changed during unplug/replug. Dry-run modes
+never attach a device or change its ACL:
 
 ```powershell
 .\scripts\run.ps1 -CameraBusId 2-2
@@ -81,6 +85,86 @@ it. Verify guest UVC enumeration, capture as the intended unprivileged service
 user, and ten decoded frames before claiming VM success. Keep apps inside the
 VM window. Launch with no attached stable camera and no camera selectors for a
 camera-free VM.
+
+### Stage 1 bounded guest command
+
+Build the optional image locally with
+`AIOS_IDENTITY_BUILD=1 bash scripts/build-iso-container.sh` in WSL, then launch
+that exact image using `scripts/run.ps1 -Name AIOS-recognition-stage1` and the
+current `-CameraBusId`. Record the ISO hash and its identity build-input flag.
+Do not substitute the normal desktop image for dependency validation.
+
+Inside the guest, close Settings camera preview and photo capture. Verify imports
+with `python3 -c 'import cv2, cryptography'` and the shell startup separately.
+The current local-greeting capture account is `aios` (a member of `video`), not
+root or the identity broker. Resolve the selected stable index0 node locally,
+then run from an administrator terminal:
+
+```sh
+su aios -s /bin/sh -c 'PYTHONPATH=/usr/local/share/aios python3 -m aios.camera --guest-probe /dev/video0 --expected-user aios'
+```
+
+Replace `/dev/video0` with the verified stable `/dev/v4l/by-id/...-video-index0`
+path when available; never copy its serial-bearing name into results. The
+command refuses root and any other account, runs three independent acquisitions
+with a 15-second child deadline each, drains three warmup frames per acquisition,
+and requires ten decoded 640x480 frames per acquisition. Every child releases
+the camera on success/failure and is killed and reaped on timeout. A successful
+report includes two reopen timings; warmup draining alone is not proof of
+driver timestamp freshness. No media is written.
+
+OpenCV can collapse busy, unsupported-node and driver errors into `open_failed`;
+do not infer a more specific cause from that result. Ordinary device-access
+failures preserve allowlisted `permission_denied`, `device_busy`, and
+`device_missing` reason codes. Driver stderr and arbitrary worker fields are
+never forwarded. Use `v4l2-ctl --all` locally to distinguish node capabilities;
+retain only aggregate format/capability findings.
+
+| Validation | Required evidence | Current result |
+| --- | --- | --- |
+| Three captures as `aios` | 10 decoded frames each, negotiated format/rate, timings | Not tested |
+| Close/reopen | Second/third open timings and successful frames | Not tested |
+| Permission denied | Unprivileged user outside video group fails within deadline | Not tested |
+| Busy / wrong node | Controlled competing owner or non-capture node, bounded failure | Not tested |
+| Blocked read | Killed child, responsive caller, subsequent device reuse | Unit coverage only |
+| Unplug/replug | Operator disconnect, bounded failure, newly resolved device succeeds | Not tested |
+| Explicit / automatic handoff | Same selected device, no WSL capture holder | Not tested |
+| Scoped USB ACL | Only selected node changes; restore prior ACL after run | Not tested |
+| Optional identity image | OpenCV/crypto imports, Qt shell startup, keyboard/PIN fallback | Headless imports/Qt/desktop passed; PIN interaction not tested |
+
+2026-09-15 inventory: the Brio is disconnected (persisted USB/IP binding only).
+No new physical capture evidence is claimed. Reconnect it before executing the
+matrix. The connected Dell camera is not a substitute. Keep serials, raw driver
+logs and frames out of committed results. Record aggregate JSON, image hash,
+runtime versions and reason counts only.
+
+### 2026-09-15 optional-image evidence
+
+- Local WSL/container build succeeded with `AIOS_IDENTITY_BUILD=1`, recorded
+  in the ISO build manifest; 786 packages. The unavailable FeatherPad dependency
+  was replaced with Alpine v3.23 Mousepad. Its fixed sandbox command disables
+  D-Bus instance forwarding; namespace and Wayland restrictions remain in force.
+- Artifact: `alpine-aios-recognition-stage1-x86_64.iso`, SHA-256
+  `649c73a3537fb0cd52d80a1ff2961f5589eba463d9384755e6a4b0048e16359d`.
+  Diagnostic source is commit `0050c28`; packaging and launcher fixes are in
+  `22b1f81` (the packaging changes were present during this development build).
+- Launched through `scripts/run.ps1` with WSL QEMU/KVM, 16 GiB RAM, four vCPUs,
+  a disposable disk, audio disabled, and unique name
+  `AIOS-recognition-stage1-dependency-check`.
+- WSLg reported COPY MODE, so this run used the supported headless path. It
+  **does not establish windowed WSLg or physical camera success**.
+- Guest checks passed: imports of `cv2`, `cryptography`, and `aios.camera` as
+  `aios`; Mousepad executable present; no missing `aios-shell` dynamic libraries;
+  ordinary-user shell process running. QEMU framebuffer inspection showed the
+  Ocean desktop and Welcome wizard, not a black/blank surface. VM powered off.
+- Focused tests: camera 12 passed; identity sessions 32 passed; Windows launcher
+  11 passed/3 platform skips; Linux launcher 3 passed/11 platform skips.
+  Broad Python run: 615 tests, two pre-existing failures and nine skips. Both
+  failures (`test_skills` builder tools and `test_terminal_theme` launcher-count
+  expectations) reproduce in a clean worktree of `main` at `f43c9f1`.
+- No camera frames were captured or retained. Physical Brio, permission/busy/
+  wrong-node/reconnect matrix, interactive PIN fallback, and protected-session
+  compositor behavior remain unverified. Recognition stays disabled.
 
 To deliberately return the dedicated camera to Windows later, detach and unbind
 using the current bus ID; unbind requires Administrator. This is not the normal
@@ -107,3 +191,88 @@ until the full-VM capture and held-out calibration gates in the implementation
 plan are complete. Development can point `AIOS_FACE_MODEL_MANIFEST` at a local
 manifest. The shell exchanges only account metadata with the worker; it never
 receives frames or embeddings, and every suggestion still requires the PIN.
+
+## 2026-09-16 physical Brio guest measurements
+
+The dedicated Brio 101 (`046d:094d`) was connected, explicitly attached with
+`-CameraBusId 2-2`, and passed into the optional identity ISO recorded above.
+After an approved WSLg display-service restart, readback changed from COPY MODE
+to healthy (`use_gfxredir=1`). Neither WSL nor Docker was restarted.
+
+Both a headless run and a normal windowed `scripts/run.ps1` run completed three
+independent ten-frame captures as **`aios`, UID 1000**, using OpenCV **4.12.0** on
+Alpine kernel **6.18.52-0-lts**, QEMU **8.2.2** (Ubuntu package
+`1:8.2.2+ds-0ubuntu1.16`) and usbipd-win **5.3.0**. Every capture decoded **640x480**, negotiated
+**MJPG/15 fps**, accepted a one-buffer request and reported buffer size one.
+Each discarded three warmup frames before measuring ten frames; no frames,
+crops, embeddings or camera serials were retained. Negotiated 15 fps is a driver
+property, not a claim that the virtualized capture loop sustained 15 fps.
+
+Windowed VM: `AIOS-recognition-stage1-Brio-windowed`, WSL QEMU/KVM, four vCPUs,
+16 GiB, disposable disk, audio disabled. The guest desktop and chat rendered
+normally in a framebuffer screenshot; the camera image was never displayed or
+saved by these diagnostics.
+
+| Capture | Open (s) | Warmup (s) | Ten frames (s) | Total before close (s) | Close (s) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.203377 | 1.071249 | 1.332283 | 2.606909 | 0.031060 |
+| 2 (reopen) | 0.235056 | 1.142548 | 1.283369 | 2.660974 | 0.021489 |
+| 3 (reopen) | 0.196605 | 1.076897 | 1.342822 | 2.616324 | 0.014065 |
+
+Failure and recovery evidence so far:
+
+- Guest device permissions were `0660 root:video`. Capture as `nobody` returned
+  `permission_denied` without forwarding driver details.
+- The non-capture `/dev/video1` returned bounded `open_failed`; nonexistent
+  `/dev/video99` returned `Video device is not attached`.
+- A controlled unprivileged OpenCV process held the capture device. A second
+  probe returned `open_failed` in **0.410 s**. After terminating/reaping the
+  holder, another ten-frame capture succeeded (open **0.191708 s**, warmup
+  **1.139483 s**, capture **1.342337 s**, close **0.013822 s**).
+- The operator physically unplugged the Brio. A probe during removal returned
+  `open_failed`, both guest video nodes disappeared, and the ordinary-user shell
+  remained alive. Reconnect validation is recorded below.
+
+The initial long-command contention harness exceeded the serial console's
+reliable interactive input handling. Retrying with short, paced heredoc lines
+completed the test. That harness timeout is not counted as a driver timeout.
+Recognition remains disabled; these measurements prove camera acquisition,
+not face matching, liveness, authorization, or production readiness.
+
+The complete `scripts/test-identity-display.sh` run also passed in its disposable
+Alpine container: both installed-layout profile-control runs, **94 QML tests**,
+the compiled application-host protocol test, and the display-isolation tests.
+This includes native PIN-overlay key routing and account creation/selection
+without a camera. These automated UI/security results are recorded separately
+from the physical camera measurements; they are not biometric evidence.
+
+### Reconnect, deadline and ACL completion
+
+The operator reconnected the Brio. USB/IP reattachment changed its Linux address
+from `001/002` to `001/003`. The running QEMU process remained bound to the old
+address, correctly leaving its guest without a camera. Only that disposable
+test VM was restarted; WSL, Docker and other VMs were not restarted. A normal
+`scripts/run.ps1` launch **without `-CameraBusId`** automatically discovered the
+single stable index0 camera and passed through `001/003`.
+
+Three fresh ten-frame 640x480 MJPG/15-fps captures then passed as `aios`, with
+open times **0.202490, 0.209747, 0.224050 s** and total pre-close times
+**2.591456, 2.796007, 2.649451 s**. The stable by-id path also passed three
+independent captures; no serial-bearing path was retained in evidence.
+
+An actual capture interrupted with a one-second child deadline returned
+`timeout` after **1.552 s** including process startup/cleanup. The worker count
+after return was **zero**. Three subsequent stable-path ten-frame captures
+passed (pre-close times **2.557276, 2.622820, 2.561642 s**). This validates forced
+termination and release during live acquisition; no persistent hardware-driver
+hang was induced.
+
+Host ACL hashes were recorded before launch, during QEMU and after its confirmed
+exit. The only changed node during the run was the selected
+`/dev/bus/usb/001/003`; **all USB-node ACL hashes matched the original snapshot
+after exit**. The camera remains attached to WSL and no test capture is active.
+
+Stage 1 acquisition validation is complete. USB address changes currently
+require relaunching the selected QEMU VM; transparent QEMU hotplug recovery is
+not claimed. The next service layer must preserve this measured format,
+unprivileged boundary, deadlines and cleanup behavior. Recognition remains off.

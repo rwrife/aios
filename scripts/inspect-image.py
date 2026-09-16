@@ -1001,22 +1001,48 @@ def firmware_requirement_groups(entry: dict) -> list[dict]:
 def scan_apk_members(apk: Path) -> tuple[list[dict], str | None]:
     """List an .apk's members without extracting anything.
 
-    An APKv2 file is concatenated gzip streams holding tar segments, which
-    tarfile reads in order. Only member metadata is read; no file content is
-    written anywhere.
+    An APKv2 file is concatenated gzip streams holding tar segments. Continue
+    past tar end markers so signature, control and data segments are all read.
+    Only the bounded .PKGINFO payload is read; no file is extracted to disk.
     """
     members = []
     try:
-        with tarfile.open(apk, "r:gz") as archive:
+        with tarfile.open(apk, "r:gz", ignore_zeros=True) as archive:
             for member in archive:
-                if member.isdir():
+                if member.isdir() and member.name not in (".PKGINFO", "./.PKGINFO"):
                     continue
-                members.append({
+                item = {
                     "path": member.name.lstrip("./"),
                     "is_symlink": member.issym() or member.islnk(),
                     "linkname": member.linkname or None,
                     "size": member.size,
-                })
+                }
+                if member.name in (".PKGINFO", "./.PKGINFO"):
+                    fields = {}
+                    error = None
+                    if not member.isfile() or not 0 < member.size <= 65536:
+                        error = ".PKGINFO must be a regular file of 1..65536 bytes"
+                    else:
+                        try:
+                            source = archive.extractfile(member)
+                            if source is None:
+                                raise tarfile.ExtractError("cannot read regular .PKGINFO")
+                            with source:
+                                text = source.read(65537).decode("utf-8")
+                            for line in text.splitlines():
+                                key, separator, value = line.partition("=")
+                                key = key.strip()
+                                if separator and key in ("pkgname", "pkgver", "license"):
+                                    if key in fields or not value.strip():
+                                        error = f".PKGINFO has duplicate or empty {key}"
+                                    fields[key] = value.strip()
+                            if set(fields) != {"pkgname", "pkgver", "license"}:
+                                error = ".PKGINFO requires pkgname, pkgver and license"
+                        except UnicodeError:
+                            error = ".PKGINFO is not valid UTF-8"
+                    item["package_info"] = fields
+                    item["package_info_error"] = error
+                members.append(item)
     except (tarfile.TarError, OSError, EOFError) as error:
         return members, f"{type(error).__name__}: {error}"
     return members, None
@@ -1060,7 +1086,17 @@ def collect_package_firmware(apks_dir: Path | None, wanted: set[str]) -> dict:
                     }
                     count += 1
                     break
-        scanned[name] = {"version": version, "firmware_file_count": count}
+        metadata = [member for member in members if "package_info" in member]
+        metadata_error = error
+        if len(metadata) != 1:
+            metadata_error = "expected exactly one regular .PKGINFO record"
+        elif metadata[0]["package_info_error"]:
+            metadata_error = metadata[0]["package_info_error"]
+        scanned[name] = {
+            "version": version, "firmware_file_count": count,
+            "package_info": metadata[0]["package_info"] if len(metadata) == 1 else {},
+            "package_info_error": metadata_error,
+        }
     return {
         "status": "recorded",
         "scanned_packages": scanned,
@@ -1277,6 +1313,11 @@ def section_hardware_bundle(
             note="Resolved versions come from the shipped filenames, so no repository is contacted.",
         ))
 
+    # Scan once for both firmware coverage and embedded attribution metadata.
+    package_firmware = (
+        collect_package_firmware(apks_dir, set(world))
+        if scan_packages else {"status": "unavailable", "reason": "package contents were not scanned"}
+    )
     # 3. Coverage-selected firmware packages are present, licensed and attributed.
     selected_packages = {}
     for entry in coverage.get("entries", []):
@@ -1305,12 +1346,52 @@ def section_hardware_bundle(
                 "missing_fields": missing_fields,
                 "coverage_entries": sorted(entry_ids),
             })
+            continue
+        # A static attribution for a different package revision cannot describe
+        # this image. Require one unambiguous shipped revision; do not silently
+        # accept any-of when two versions of the same atom are embedded.
+        if closure_names is None or world_error:
+            # No evidence is different from an observed empty/mismatched set.
+            continue
+        shipped_versions = sorted(item['version'] for item in resolved.get(package, []))
+        recorded_version = record.get("version_resolved")
+        if not recorded_version or shipped_versions != [recorded_version]:
+            license_failures.append({
+                "package": package,
+                "reason": "recorded attribution version must match exactly one shipped APK version",
+                "recorded_version": recorded_version,
+                "shipped_versions": shipped_versions,
+                "coverage_entries": sorted(entry_ids),
+            })
+            continue
+        if package_firmware.get("status") == "recorded":
+            scanned = package_firmware["scanned_packages"].get(package, {})
+            info = scanned.get("package_info", {})
+            reason = scanned.get("package_info_error")
+            if not reason and (info.get("pkgname") != package
+                               or info.get("pkgver") != recorded_version):
+                reason = "embedded .PKGINFO identity must match the attributed APK name and version"
+            if not reason and info.get("license") != record.get("license"):
+                reason = "recorded license must match the embedded .PKGINFO license"
+            if reason:
+                license_failures.append({
+                    "package": package, "reason": reason,
+                    "coverage_entries": sorted(entry_ids),
+                })
     if package_manifest_source is None:
         checks.append(_unavailable_check(
             "firmware_license_provenance",
             "every redistributed firmware package has a recorded license and repository",
             "no hardware package manifest available (pass --hardware-package-manifest "
             "or a --build-manifest that embedded one)",
+        ))
+    elif not license_failures and (
+        closure_names is None or world_error or package_firmware.get("status") != "recorded"
+    ):
+        checks.append(_unavailable_check(
+            "firmware_license_provenance",
+            "every redistributed firmware package has a recorded license and repository",
+            world_error or "embedded APK contents must be scanned to compare attribution metadata",
         ))
     else:
         checks.append(_check(
@@ -1325,10 +1406,6 @@ def section_hardware_bundle(
         ))
 
     # 4. Firmware files, compression and symlink targets.
-    package_firmware = (
-        collect_package_firmware(apks_dir, set(world))
-        if scan_packages else {"status": "unavailable", "reason": "package contents were not scanned"}
-    )
     modloop_firmware_root = find_firmware_root(modloop_root)
     modloop_paths = []
     modloop_symlinks = {}
