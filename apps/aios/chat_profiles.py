@@ -16,6 +16,27 @@ from .portraits import portrait
 from .secure_store import atomic_bytes
 
 
+def verified_operation(owner, pin, root, operation):
+    """Native-only transaction: exact UUID/PIN check immediately before writing.
+
+    The callback runs under the account lock so deletion cannot race its commit.
+    It is not an IPC action and confers no broker authority.
+    """
+    from .face_store import account_uuid
+    account_uuid(owner)
+    with (root / 'lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        path = root / 'profiles.json'
+        records = json.loads(path.read_text()) if path.exists() else {}
+        if owner not in records:
+            raise ValueError('Profile or PIN was not recognized')
+        valid = verify_pin(records[owner]['pin'], pin, time.time())
+        atomic_bytes(path, json.dumps(records).encode())
+        if not valid:
+            raise ValueError('Profile or PIN was not recognized, or attempts are temporarily locked')
+        return operation({'id': owner, 'name': records[owner]['name']})
+
+
 def dispatch(request, directory=None):
     root = directory or data_dir() / 'chat-profiles'
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -36,7 +57,9 @@ def dispatch(request, directory=None):
             raise ValueError('Enter a name of up to 80 characters')
         name = name.strip()
         owner = name if name in records else next(
-            (key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
+              (key for key, value in records.items() if value['name'].casefold() == name.casefold()), None)
+        if action == 'verify_profile':
+            owner = name if name in records else None
         if action == 'delete_profile':
             owner = name if name in records else None
             if request.get('confirmed') is not True:
@@ -59,10 +82,10 @@ def dispatch(request, directory=None):
             if not valid:
                 raise ValueError('Profile or PIN was not recognized, or attempts are temporarily locked')
             if action == 'delete_profile':
-                del records[owner]
-                atomic_bytes(path, json.dumps(records).encode())
                 from .recognition import revoke
                 revoke(owner, root)
+                del records[owner]
+                atomic_bytes(path, json.dumps(records).encode())
                 return {'deleted': owner}
             if action == 'verify_profile':
                 return {'profile': {'id': owner, 'name': records[owner]['name']}}

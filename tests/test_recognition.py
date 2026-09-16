@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from aios.chat_profiles import dispatch as profile_dispatch
+from aios.face_store import FaceStore
 from aios.recognition import CaptureSchedule, dispatch, enroll, recognize, revoke
 
 
@@ -20,7 +21,7 @@ class Clock:
 
 
 CALIBRATION = {
-    'hardware': 'brio-101',
+    'hardware': 'brio-101', 'id': 'test-calibration-v1',
     'match_threshold': .8,
     'runner_up_margin': .1,
     'enrollment_consistency': .8,
@@ -29,7 +30,8 @@ CALIBRATION = {
     'minimum_sharpness': 10,
 }
 MANIFEST = {
-    'sface': {'revision': 'test-model'},
+    'sface': {'revision': 'test-model', 'sha256': 'a' * 64},
+    'yunet': {'revision': 'test-detector', 'sha256': 'b' * 64},
     'calibration': CALIBRATION,
 }
 
@@ -84,20 +86,19 @@ class RecognitionStorageTests(unittest.TestCase):
         except ImportError:
             self.skipTest('Optional cryptography package is not installed')
         capture = lambda *_: [
-            {'embedding': [1.0, 0.0]}, {'embedding': [.99, .01]}, {'embedding': [.98, .02]}
+            {'embedding': [1.0, 0.0] + [0.] * 126}, {'embedding': [.99, .01] + [0.] * 126}, {'embedding': [.98, .02] + [0.] * 126}
         ]
         with patch('aios.recognition._manifest', return_value=(MANIFEST, CALIBRATION)), \
                 patch('aios.recognition.FaceEncoder'), \
                 patch('aios.recognition.load_config', return_value={
                     'camera_recognition': True,
                     'camera_device': '/dev/v4l/by-id/test-video-index0'
-                }), patch('aios.chat_profiles.time.time', side_effect=[100, 103]):
+                }), patch('aios.chat_profiles.time.time', side_effect=iter(range(100, 200, 3))):
             with self.assertRaisesRegex(ValueError, 'PIN'):
-                enroll(self.profile['id'], '9999', self.root, capture=capture)
-            result = enroll(self.profile['id'], '1234', self.root, capture=capture)
+                enroll(self.profile['id'], '9999', self.root, capture=capture, consent=True)
+            result = enroll(self.profile['id'], '1234', self.root, capture=capture, consent=True)
         self.assertEqual(result, {'enrolled': self.profile['id']})
-        payload = (self.root / 'recognition-records' /
-                   ('face-template-' + self.profile['id'] + '.enc')).read_bytes()
+        payload = next((self.root / 'biometrics').rglob('templates.enc')).read_bytes()
         self.assertNotIn(b'test-model', payload)
         self.assertNotIn(b'1.0', payload)
 
@@ -107,7 +108,7 @@ class RecognitionStorageTests(unittest.TestCase):
         except ImportError:
             self.skipTest('Optional cryptography package is not installed')
         samples = lambda *_: [
-            {'embedding': [1.0, 0.0]}, {'embedding': [.99, .01]}, {'embedding': [.98, .02]}
+            {'embedding': [1.0, 0.0] + [0.] * 126}, {'embedding': [.99, .01] + [0.] * 126}, {'embedding': [.98, .02] + [0.] * 126}
         ]
         config = {'camera_recognition': True,
                   'camera_device': '/dev/v4l/by-id/test-video-index0'}
@@ -115,7 +116,7 @@ class RecognitionStorageTests(unittest.TestCase):
                 patch('aios.recognition.FaceEncoder'), \
                 patch('aios.recognition.load_config', return_value=config), \
                 patch('aios.recognition.video_device', return_value=config['camera_device']):
-            enroll(self.profile['id'], '1234', self.root, capture=samples)
+            enroll(self.profile['id'], '1234', self.root, capture=samples, consent=True)
             result = recognize(self.root, capture=samples)
         self.assertEqual(result['suggestion']['id'], self.profile['id'])
         self.assertEqual(set(result['suggestion']),
@@ -125,10 +126,9 @@ class RecognitionStorageTests(unittest.TestCase):
             'action': 'delete_profile', 'owner': self.profile['id'],
             'pin': '1234', 'confirmed': True,
         }, self.root)
-        self.assertFalse((self.root / 'recognition-records' /
-                          ('face-template-' + self.profile['id'] + '.enc')).exists())
+        self.assertEqual(FaceStore(self.root).snapshot()[1], {})
 
-    def test_global_opt_out_removes_orphaned_template_files_without_a_key(self):
+    def test_global_purge_removes_orphaned_legacy_templates_without_a_key(self):
         records = self.root / 'recognition-records'
         records.mkdir()
         orphan = records / 'face-template-orphan.enc'

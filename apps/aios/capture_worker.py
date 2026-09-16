@@ -137,6 +137,51 @@ class Acquisition:
         finally:
             del frame
 
+    def enrollment_embeddings(self, _device, encoder, calibration):
+        from .recognition import _quality
+        import math
+        delta, maximum = calibration.get('enrollment_pose_delta'), calibration.get('maximum_pose_offset')
+        if (type(delta) not in (float, int) or type(maximum) not in (float, int) or
+                not math.isfinite(delta) or not math.isfinite(maximum) or not 0 < delta < maximum < 1):
+            raise ValueError('pose_calibration_required')
+        samples, poses = [], []
+        deadline = self.clock() + 25
+        while len(samples) < 3 and self.clock() < deadline:
+            frame = self.read()
+            reason = 'look_straight' if not samples else 'turn_slightly' if len(samples) == 1 else 'turn_other_way'
+            try:
+                if not _quality(frame, self.cv, calibration):
+                    reason = 'improve_light_or_hold_still'
+                else:
+                    try:
+                        faces = encoder.encode(frame, include_pose=True)
+                    except ValueError:
+                        faces = []
+                        reason = 'one_person_only'
+                    if len(faces) == 1:
+                        pose = faces[0][2]
+                        accepted = math.isfinite(pose) and abs(pose) <= maximum
+                        if not samples:
+                            accepted = accepted and abs(pose) <= delta
+                        elif len(samples) == 1:
+                            accepted = accepted and abs(pose - poses[0]) >= delta
+                        else:
+                            accepted = accepted and (pose - poses[0]) * (poses[1] - poses[0]) < 0 and abs(pose - poses[0]) >= delta
+                        if accepted and self.clock() < deadline:
+                            poses.append(pose)
+                            samples.append({'sequence': self.sequence, 'captured_at': self.last_capture,
+                                            'embedding': faces[0][1]})
+                            reason = 'sample_accepted'
+                    elif reason != 'one_person_only':
+                        reason = 'face_camera'
+                emit({'kind': 'progress', 'sequence': self.sequence, 'captured_at': self.last_capture,
+                      'payload': {'samples': len(samples), 'target': 3, 'reason': reason}})
+            finally:
+                del frame
+        if len(samples) != 3:
+            raise RuntimeError('enrollment_timeout')
+        return samples
+
 
 def run(request):
     from . import recognition
@@ -149,7 +194,8 @@ def run(request):
         metadata = {'sequence': 0, 'captured_at': 0}
         def embeddings(device, encoder, calibration):
             with Acquisition(request['device']) as capture:
-                result = capture.embeddings(device, encoder, calibration)
+                adapter = capture.enrollment_embeddings if mode == 'enroll' else capture.embeddings
+                result = adapter(device, encoder, calibration)
                 metadata.update(sequence=capture.sequence, captured_at=capture.last_capture)
                 return result
         if mode == 'recognize':
@@ -157,7 +203,7 @@ def run(request):
         else:
             if request.get('consent') is not True:
                 raise ValueError('consent_required')
-            result = recognition.enroll(request['owner'], request['pin'], capture=embeddings)
+            result = recognition.enroll(request['owner'], request['pin'], capture=embeddings, consent=True)
         emit({'kind': 'result', **metadata, 'payload': result})
         return
     with Acquisition(request['device']) as capture:

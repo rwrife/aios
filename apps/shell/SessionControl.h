@@ -10,6 +10,7 @@
 #include <QMediaDevices>
 #include <QPointer>
 #include "ProfilePhoto.h"
+#include <QMap>
 #include "CameraDevice.h"
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -38,6 +39,7 @@ class SessionControl : public QObject {
     Q_PROPERTY(QString cameraPreview READ cameraPreview NOTIFY changed)
     Q_PROPERTY(bool cameraPreviewActive READ cameraPreviewActive NOTIFY changed)
     Q_PROPERTY(QString recognitionState READ recognitionState NOTIFY changed)
+    Q_PROPERTY(QString recognitionGuidance READ recognitionGuidance NOTIFY changed)
     Q_PROPERTY(QVariantMap recognitionSuggestion READ recognitionSuggestion NOTIFY changed)
 public:
     explicit SessionControl(QObject *parent = nullptr) : QObject(parent) {
@@ -108,10 +110,17 @@ public:
     QString cameraPreview() const { return recognitionRoot()->m_cameraPreview; }
     bool cameraPreviewActive() const { return recognitionRoot()->m_previewActive; }
     QString recognitionState() const { return recognitionRoot()->m_recognitionState; }
+    QString recognitionGuidance() const { return recognitionRoot()->m_recognitionGuidance; }
     QVariantMap recognitionSuggestion() const { return recognitionRoot()->m_recognitionSuggestion; }
     Q_INVOKABLE void listProfiles() { call({{"action", "profiles"}}); }
     Q_INVOKABLE void deleteAccount(const QString &id, const QString &pin) {
-        if (greetingOnly()) call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
+        if (pendingEnrollment) return;
+        if (greetingOnly()) {
+            auto root = recognitionRoot();
+            root->cancelRecognition(); root->clearRecognitionSuggestion();
+            CameraClient::instance()->configure(false, true);
+            call({{"action", "delete_profile"}, {"owner", id}, {"pin", pin}, {"confirmed", true}});
+        }
     }
     Q_INVOKABLE void takeProfilePhoto() {
         if (m_secureInput && personalAvailable()) {
@@ -278,6 +287,7 @@ private:
     QPointer<SessionControl> cameraOperationOwner;
     bool recognitionSuppressed = false;
     QString m_recognitionState = "disabled";
+    QString m_recognitionGuidance;
     QVariantMap m_recognitionSuggestion;
     bool pendingStatus = false;
     bool pendingEnrollment = false;
@@ -338,6 +348,7 @@ private:
     void runRecognition(const QJsonObject &request, int) {
         if (!recognitionRequest.isEmpty()) return;
         recognitionAction = request.value("action").toString();
+        m_recognitionGuidance.clear();
         recognitionRequest = CameraClient::instance()->capture(recognitionConsumer, recognitionAction, {},
             request.value("owner").toString(), request.value("pin").toString(), request.value("consent").toBool());
         if (recognitionRequest.isEmpty()) {
@@ -370,6 +381,17 @@ private:
         if ((!background && (recognitionRequest.isEmpty() || request != recognitionRequest))) return;
         if (kind == "state") {
             m_recognitionState = payload.value("state").toString("unavailable");
+        } else if (kind == "progress" && recognitionAction == "enroll" && !background) {
+            const auto hint = payload.value("reason").toString();
+            const QMap<QString, QString> guidance{
+                {"look_straight", "Look straight at the camera."},
+                {"turn_slightly", "Turn your face slightly to one side."},
+                {"turn_other_way", "Now turn slightly to the other side."},
+                {"improve_light_or_hold_still", "Use even lighting and hold still."},
+                {"one_person_only", "Only one person should be in view."},
+                {"face_camera", "Move closer and keep your whole face in view."},
+                {"sample_accepted", "Sample accepted. Turn slightly for the next sample."}};
+            m_recognitionGuidance = QString("%1 of 3 samples. %2").arg(payload.value("samples").toInt()).arg(guidance.value(hint));
         } else if (kind == "result") {
             const auto action = background ? QString("recognize") : recognitionAction;
             if (action != "recognize") CameraClient::instance()->release(recognitionConsumer);
@@ -536,7 +558,8 @@ private:
         });
         connect(process, &QProcess::readyReadStandardError, process, [process] { process->readAllStandardError(); });
         connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError) {
-            m_error = "Could not open local profiles"; pendingEnrollment = false; emit changed(); process->deleteLater();
+            m_error = "Could not open local profiles"; pendingEnrollment = false;
+            recognitionRoot()->updateCameraGate(); emit changed(); process->deleteLater();
         });
         connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
                 [this, process, epoch, action](int code, QProcess::ExitStatus) {
@@ -570,6 +593,7 @@ private:
             }
             emit changed();
             process->deleteLater();
+            recognitionRoot()->updateCameraGate();
         });
         QTimer::singleShot(5000, process, [process] { if (process->state() != QProcess::NotRunning) process->kill(); });
         process->start("python3", {"-m", "aios.chat_profiles"});

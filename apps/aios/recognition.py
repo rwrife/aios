@@ -1,5 +1,6 @@
 """Opt-in, bounded local face suggestions. A match never verifies a PIN."""
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -9,13 +10,12 @@ import time
 
 from .biometrics import FaceEncoder
 from .camera import video_device
-from .chat_profiles import dispatch as profile_dispatch
+from .chat_profiles import dispatch as profile_dispatch, verified_operation
 from .core import data_dir, load_config
 from .identity import match
-from .secure_store import EncryptedStore, atomic_bytes
+from .face_store import FaceStore, NAMESPACE, SCHEMA, account_uuid
 
 
-SCHEMA = 1
 CONSENT_VERSION = 1
 TARGET_FRAMES = 3
 BURST_SECONDS = 2.0
@@ -107,50 +107,48 @@ def _paths(root=None):
     return root, root / 'recognition-key', root / 'recognition-records'
 
 
-def _store(root=None):
-    root, key_path, records = _paths(root)
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not key_path.exists():
-        atomic_bytes(key_path, os.urandom(32))
-        key_path.chmod(0o600)
-    key = key_path.read_bytes()
-    if len(key) != 32:
-        raise ValueError('Recognition key is invalid')
-    return EncryptedStore(records, key)
-
-
-def _record_name(owner):
-    return 'face-template-' + owner
+def _binding(manifest, calibration):
+    import re
+    models = {}
+    for name in ('yunet', 'sface'):
+        model = manifest[name]
+        if (type(model.get('revision')) is not str or not 1 <= len(model['revision']) <= 128 or
+                type(model.get('sha256')) is not str or not re.fullmatch(r'[a-f0-9]{64}', model['sha256'])):
+            raise ValueError('Model binding is incomplete')
+        models[name] = {key: model[key] for key in ('revision', 'sha256')}
+    if type(calibration.get('id')) is not str or not 1 <= len(calibration['id']) <= 128:
+        raise ValueError('A versioned calibration profile is required')
+    digest = hashlib.sha256(json.dumps(calibration, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    return {'schema': SCHEMA, 'consent': CONSENT_VERSION, 'models': models,
+            'calibration': {'id': calibration['id'], 'sha256': digest}}
 
 
 def revoke(owner=None, root=None):
-    root, key_path, records = _paths(root)
-    if owner is not None:
-        if not key_path.exists():
-            return
-        store = EncryptedStore(records, key_path.read_bytes())
-        store.delete(_record_name(owner))
-        return
-    if records.exists():
-        for path in records.glob('face-template-*.enc'):
-            if path.is_file():
-                path.unlink()
+    root, _, _ = _paths(root)
+    FaceStore(root).revoke(owner)
 
 
-def _templates(profiles, model_revision, root=None):
-    store = _store(root)
+def _templates(profiles, binding, root=None):
+    root, _, _ = _paths(root)
+    records = FaceStore(root).compatible({p['id'] for p in profiles}, binding)
     result = {}
-    for profile in profiles:
-        record = store.get(_record_name(profile['id']))
-        if not record:
-            continue
-        if (record.get('schema') != SCHEMA or record.get('consent') != CONSENT_VERSION or
-                record.get('owner') != profile['id'] or record.get('model') != model_revision):
-            continue
-        samples = record.get('samples')
-        if isinstance(samples, list) and samples:
-            result[profile['id']] = samples
+    for owner, record in records.items():
+        try:
+            result[owner] = _samples(record['samples'])
+        except (ValueError, KeyError):
+            FaceStore(root).revoke(owner)
     return result
+
+
+def _samples(samples):
+    if type(samples) is not list or len(samples) != TARGET_FRAMES:
+        raise ValueError('Three valid face samples are required')
+    for vector in samples:
+        if (type(vector) is not list or len(vector) != 128 or
+                any(type(x) not in (int, float) or not math.isfinite(x) for x in vector) or
+                not 0 < sum(x*x for x in vector) < float('inf')):
+            raise ValueError('Invalid face samples')
+    return samples
 
 
 def _quality(frame, cv, calibration):
@@ -167,9 +165,9 @@ def capture_embeddings(*_args, **_kwargs):
 
 def _consistent(samples, threshold):
     for index, left in enumerate(samples):
-        if index + 1 < len(samples) and match(
-                left, {'same': samples[index + 1:]}, threshold, 0) != 'same':
-            return False
+        for right in samples[index + 1:]:
+            if match(left, {'same': [right]}, threshold, 0) != 'same':
+                return False
     return True
 
 
@@ -185,24 +183,37 @@ def _locked(root):
     return lock
 
 
-def enroll(owner, pin, root=None, manifest_path=None, capture=None):
+def enroll(owner, pin, root=None, manifest_path=None, capture=None, *, consent=False, namespace=NAMESPACE):
+    if consent is not True:
+        raise ValueError('Confirm local face recognition enrollment')
+    account_uuid(owner)
     config = load_config()
     if config.get('camera_recognition') is not True:
         raise ValueError('Enable camera recognition before enrollment')
     root, _, _ = _paths(root)
-    profile = profile_dispatch({'action': 'verify_profile', 'owner': owner, 'pin': pin}, root)['profile']
+    store = FaceStore(root, namespace)
+    profile_dispatch({'action': 'verify_profile', 'owner': owner, 'pin': pin}, root)
+    epoch, previous = store.snapshot()
     manifest, calibration = _manifest(manifest_path)
+    binding = _binding(manifest, calibration)
     encoder = FaceEncoder(manifest, calibration=calibration)
+    started = time.monotonic()
     with _locked(root):
-        samples = [item['embedding'] for item in
-                   (capture or capture_embeddings)(config['camera_device'], encoder, calibration)]
+        samples = _samples([item['embedding'] for item in
+                   (capture or capture_embeddings)(config['camera_device'], encoder, calibration)])
+    if time.monotonic() - started > 28:
+        raise ValueError('Enrollment timed out')
     if not _consistent(samples, calibration['enrollment_consistency']):
         raise ValueError('Face samples were inconsistent; try enrollment again')
-    _store(root).put(_record_name(profile['id']), {
-        'schema': SCHEMA, 'consent': CONSENT_VERSION, 'owner': profile['id'],
-        'model': manifest['sface']['revision'], 'samples': samples,
-    })
-    return {'enrolled': profile['id']}
+    def commit(profile):
+        if time.monotonic() - started > 28:
+            raise ValueError('Enrollment timed out')
+        now = time.time()
+        created = previous.get(owner, {}).get('created', now)
+        store.replace(profile['id'], {'binding': binding, 'namespace': NAMESPACE, 'owner': profile['id'],
+                      'created': created, 'updated': now, 'samples': samples}, epoch)
+        return {'enrolled': profile['id']}
+    return verified_operation(owner, pin, root, commit)
 
 
 def recognize(root=None, manifest_path=None, capture=None):
@@ -215,12 +226,12 @@ def recognize(root=None, manifest_path=None, capture=None):
     encoder = FaceEncoder(manifest, calibration=calibration)
     root, _, _ = _paths(root)
     profiles = profile_dispatch({'action': 'profiles'}, root)['profiles']
-    templates = _templates(profiles, manifest['sface']['revision'], root)
+    templates = _templates(profiles, _binding(manifest, calibration), root)
     if not templates:
         return {'state': 'manual-only', 'reason': 'no-enrollment'}
     with _locked(root):
-        samples = [item['embedding'] for item in
-                   (capture or capture_embeddings)(device, encoder, calibration)]
+        samples = _samples([item['embedding'] for item in
+                   (capture or capture_embeddings)(device, encoder, calibration)])
     owners = [match(sample, templates, calibration['match_threshold'],
                     calibration['runner_up_margin']) for sample in samples]
     if not owners or any(owner is None or owner != owners[0] for owner in owners):
@@ -243,8 +254,10 @@ def dispatch(request):
     if action == 'enroll':
         if request.get('consent') is not True:
             raise ValueError('Confirm local face recognition enrollment')
-        return enroll(request.get('owner'), request.get('pin'))
-    if action in ('disable', 'purge'):
+        return enroll(request.get('owner'), request.get('pin'), consent=True)
+    if action == 'disable':
+        return {'state': 'disabled'}
+    if action == 'purge':
         revoke()
         return {'state': 'purged'}
     raise ValueError('Unsupported recognition action')

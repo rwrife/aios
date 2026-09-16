@@ -95,7 +95,9 @@ ColumnLayout {
             }
             Label {
                 visible: accounts.control && accounts.control.recognitionState === "enrolling"
-                text: "Capturing a short local burst…"; wrapMode: Text.Wrap; Layout.fillWidth: true
+                text: accounts.control && accounts.control.recognitionGuidance
+                      ? accounts.control.recognitionGuidance : "Look straight at the camera, then turn slightly to each side. Capture ends within 30 seconds."
+                wrapMode: Text.Wrap; Layout.fillWidth: true
             }
             Label { text: accounts.control ? accounts.control.error : ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
         }

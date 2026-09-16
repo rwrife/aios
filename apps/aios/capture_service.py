@@ -256,12 +256,12 @@ class Service:
             if set(event) != {'kind', 'sequence', 'captured_at', 'payload'}:
                 raise ValueError()
             kind, sequence, captured = event['kind'], event['sequence'], event['captured_at']
-            if kind not in ('preview', 'photo', 'result', 'error') or type(event['payload']) is not dict:
+            if kind not in ('preview', 'photo', 'progress', 'result', 'error') or type(event['payload']) is not dict:
                 raise ValueError()
             if kind == 'error':
                 self.fail('unavailable')
                 return False
-            if type(sequence) is not int or sequence < self.sequence or (kind == 'preview' and sequence == self.sequence):
+            if type(sequence) is not int or sequence < self.sequence or (kind in ('preview', 'progress') and sequence == self.sequence):
                 raise ValueError()
             if type(captured) not in (float, int) or not math.isfinite(captured) or captured < 0:
                 raise ValueError()
@@ -276,6 +276,12 @@ class Service:
             if kind == 'result' and set(event['payload']) - {'state', 'suggestion', 'reason', 'enrolled'}:
                 raise ValueError()
             payload = event['payload']
+            if kind == 'progress':
+                if (self.job['mode'] != 'enroll' or set(payload) != {'samples', 'target', 'reason'} or
+                        type(payload['samples']) is not int or not 0 <= payload['samples'] <= 3 or
+                        payload['target'] != 3 or payload['reason'] not in ('look_straight', 'turn_slightly',
+                        'turn_other_way', 'improve_light_or_hold_still', 'one_person_only', 'face_camera', 'sample_accepted')):
+                    raise ValueError()
             if kind == 'result':
                 mode = self.job['mode']
                 if mode == 'enroll' and set(payload) != {'enrolled'}:
@@ -309,7 +315,7 @@ class Service:
                     raise ValueError()
             self.sequence = sequence
             self.event(kind, event['payload'], sequence=sequence, captured_at=captured)
-            if kind != 'preview':
+            if kind not in ('preview', 'progress'):
                 mode = self.job['mode']
                 self.cancel('completed')
                 if mode == 'recognize':
