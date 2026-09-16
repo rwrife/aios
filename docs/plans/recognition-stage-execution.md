@@ -52,6 +52,13 @@ next. The operator delegated model/setup selection; no held-out consented cohort
 was supplied, so biometric accuracy gates remain unmeasured and cannot be closed
 by synthetic tests.
 
+Stage 4 is implemented in PR #136: strict native reply validation, absolute expiry,
+approval-bound model/calibration loading, invalidation and UUID-only PIN selection.
+Protocol, matching-state and display/PIN tests pass. Stage 5 will pin/package the
+selected OpenCV-compatible model artifacts, add reproducible evaluation gates,
+and perform the final batched image/runtime checks. Human cohort accuracy remains
+an explicitly unmeasured gate.
+
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
 remain unverified. Retain only aggregate camera evidence, never media or serials.

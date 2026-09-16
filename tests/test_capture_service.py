@@ -233,6 +233,23 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(self.service.worker)
         self.assertEqual(self.events[-1]['reason'], 'device_changed')
 
+    def test_model_change_invalidates_capture_but_enrollment_commit_is_not_self_cancelled(self):
+        self.service.command(request(mode='preview'))
+        current = self.service.policy
+        changed = (current[0], current[1], ('changed-model',), current[3])
+        with patch('aios.capture_service.policy_signature', return_value=changed):
+            self.service.tick()
+        self.assertIsNone(self.service.worker)
+        self.assertEqual(self.events[-1]['reason'], 'configuration_changed')
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.command(request(mode='enroll', consent=True))
+        self.clock.advance(.5)
+        updated = (*changed[:3], ('enrollment-commit',))
+        with patch('aios.capture_service.policy_signature', return_value=updated):
+            self.service.tick()
+        self.assertIsNotNone(self.service.worker)
+
     def test_deadline_quarantines_unreaped_worker_instead_of_opening_again(self):
         self.service.command(request())
         worker = self.workers[-1]

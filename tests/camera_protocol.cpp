@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
     event = result(); event["request"] = QString(32, '3'); malformed(event, "unsolicited result accepted");
     event = result(); event["embedding"] = QJsonArray{1, 2}; malformed(event, "private envelope field accepted");
     event = result(); event["reason"] = "private driver text"; malformed(event, "unbounded reason accepted");
-    for (const auto &field : {"embedding", "landmarks", "candidates", "score"}) {
+    for (const auto &field : {"embedding", "landmarks", "candidates", "score", "live", "capability", "session", "owner"}) {
         event = result(); auto payload = event["payload"].toObject(); payload[field] = QJsonArray{1, 2}; event["payload"] = payload;
         malformed(event, "private result field accepted");
     }

@@ -384,8 +384,12 @@ private:
         }
         const bool background = event.value("consumer").toString() == QString(32, '0');
         if ((!background && (recognitionRequest.isEmpty() || request != recognitionRequest))) return;
+        if (!background && kind == "error" && reason == "cooldown" && recognitionAction == "recognize") {
+            recognitionRequest.clear();
+            return; // Opening the picker does not extend or erase a fresh result.
+        }
         if (kind == "state") {
-            m_recognitionState = payload.value("state").toString("unavailable");
+            m_recognitionState = background && recognitionSuppressed ? "disabled" : payload.value("state").toString("unavailable");
         } else if (kind == "progress" && recognitionAction == "enroll" && !background) {
             const auto hint = payload.value("reason").toString();
             const QMap<QString, QString> guidance{
@@ -401,7 +405,7 @@ private:
             const auto action = background ? QString("recognize") : recognitionAction;
             if (action != "recognize") CameraClient::instance()->release(recognitionConsumer);
             if (action == "recognize") {
-                m_recognitionState = payload.value("state").toString("unavailable");
+                m_recognitionState = recognitionSuppressed ? "disabled" : payload.value("state").toString("unavailable");
                 m_recognitionSuggestion = recognitionSuppressed ? QVariantMap() : payload.value("suggestion").toObject().toVariantMap();
                 suggestionTimer.stop();
                 if (!m_recognitionSuggestion.isEmpty()) {

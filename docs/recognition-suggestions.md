@@ -61,3 +61,19 @@ The current tests establish protocol and state separation using synthetic data.
 Consented real-user accuracy, printed-photo/replay behavior and calibrated full-VM
 suggestions remain release-evaluation gates. No liveness or spoof-resistance claim
 follows from this channel.
+
+## Validation record (2026-09-16)
+
+PR #136 passes the display-independent native protocol executable (fresh/replayed,
+unsolicited, stale/future, wrong consumer, invalid sequence/generation/types,
+duplicate/escaped keys, nesting bounds, remote portraits, private data and forged
+authority fields). Twenty-six service/worker tests and seventeen recognition
+tests cover completion generations, file-change invalidation, data changes during
+inference, unknown/ambiguous/conflicting samples, approval expiry/mismatch and UUID
+name-reuse refusal. The full native/profile/display suite passes, including 97 QML
+checks and three private display/PIN-routing checks. A cooldown rejection preserves
+an already-fresh candidate without restarting its expiry.
+
+These are synthetic protocol/lifecycle checks. The final batched image and actual
+consented multi-person/presentation-attack evaluations belong to stage 5; no such
+biometric result is inferred from the passing tests.
