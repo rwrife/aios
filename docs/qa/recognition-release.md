@@ -291,3 +291,28 @@ confirmations and Escape cancellation in both Ocean and Sage; screenshots of
 the camera-off layouts were inspected. The revised wizard is reopened for
 participant validation. Synthetic UI actions are not participant consent or
 biometric evidence.
+
+### Visible failures instead of disappearing preview
+
+The participant reported the native wizard closing before Next. That run had no
+completed aggregate; the previous generic exception handling did not preserve
+the exact cause. A fresh 30-second acquisition-only check read 221 frames without
+a capture exception; a real Qt preview check displayed 139 frames over 20 seconds
+without failing. The latter emitted two decoder warnings, so these checks do not
+establish the original cause or prove camera reliability.
+
+Capture exceptions and positioning/pose timeouts now leave a visible paused
+window after the camera context exits. The stale image is cleared; a fixed,
+allowlisted reason appears with Retry/Cancel. Retrying restarts incomplete
+enrollment or repeats the current probe; errors cannot silently skip a probe.
+The two-minute camera/positioning budget is unchanged, but waiting for Retry is
+UI-only. The parent bounds each interactive command to two hours. Fixed pause
+codes are retained in a private `.events.jsonl` companion to the aggregate, and
+successful reports include enrollment/probe retry counts instead of hiding
+failed attempts. No images, vectors or arbitrary exception text enter this log.
+
+Eleven focused tests pass. Synthetic fault injection in the guest, in Ocean and
+Sage, verified that a read failure before Next leaves the window visible and
+clears its image, performs no additional reads while paused, and resumes only
+after an explicit Retry click. The revised consent session is open; completed
+biometric validation and the replacement soak remain pending.

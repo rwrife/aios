@@ -34,6 +34,27 @@ GUIDANCE = {
 }
 PROBE_GUIDANCE = ('Look straight ahead.', 'Turn slightly left.', 'Turn slightly right.',
                   'Move a little farther away.', 'Return to your usual position.')
+PAUSE_REASONS = {
+    'framing_timeout': 'Positioning time expired. The camera is off.',
+    'enrollment_timeout': 'This pose could not be captured. The camera is off.',
+    'one_camera_required': 'The camera is missing or more than one camera is connected.',
+    'inconsistent': 'The enrollment poses were not consistent enough.',
+    'worker_error': 'The capture could not finish.',
+}
+from aios.capture_worker import ERROR_CODES
+PAUSE_REASONS.update({code: 'Camera capture stopped (' + code + ').' for code in ERROR_CODES})
+PAUSE_REASONS.update({
+    'camera_read_failed': 'The camera stopped providing usable frames.',
+    'camera_open_failed': 'The camera could not be opened. Check its connection.',
+    'camera_decode_failed': 'The camera returned a damaged image.',
+    'camera_poll_timeout': 'The camera did not respond in time.',
+    'stale_frame': 'The camera did not provide a fresh frame in time.',
+})
+
+
+def pause_reason(error):
+    value = str(error)
+    return value if type(error) in (RuntimeError, ValueError) and value in PAUSE_REASONS else 'worker_error'
 
 
 class FramingPreview:
@@ -119,6 +140,7 @@ class FramingPreview:
         self.next_button.setEnabled(False)
         self.app.processEvents()  # Drain old clicks before arming a new step.
         self.next_requested = False
+        self.next_button.setText('&Next')
         if hint:
             self.hint = hint
         self.heading.setText(self.hint)
@@ -135,6 +157,30 @@ class FramingPreview:
                     self.feedback.setText('Capturing this pose. Hold still...')
                     return
             raise RuntimeError('framing_timeout')
+        finally:
+            self.waiting = False
+            self.next_button.setEnabled(False)
+
+    def retry(self, reason, action):
+        """Camera context has exited before this UI-only wait; never advance."""
+        self.waiting = False
+        self.next_button.setEnabled(False)
+        self.image.clear()
+        self.heading.setText('Capture paused - no step advanced')
+        self.feedback.setText(PAUSE_REASONS[reason] + (' Retry restarts enrollment.' if action == 'enroll'
+                                                    else ' Retry repeats this check.'))
+        self.app.processEvents()
+        self.next_requested = False
+        self.next_button.setText('&Retry enrollment' if action == 'enroll' else '&Retry check')
+        self.waiting = True
+        self.next_button.setEnabled(True)
+        self.next_button.setFocus()
+        try:
+            while not self.next_requested:
+                self.app.processEvents()
+                if self.cancelled or not self.window.isVisible():
+                    raise RuntimeError('preview_cancelled')
+                time.sleep(.03)
         finally:
             self.waiting = False
             self.next_button.setEnabled(False)
@@ -229,41 +275,48 @@ def worker(directory):
             return 1
         started = time.monotonic()
         status, matched = 'unavailable', False
-        preview = None
+        preview = FramingPreview(encoder.cv, 'Position your face')
         try:
-            devices = inventory()
-            if len(devices) != 1:
-                raise RuntimeError('one_camera_required')
-            device = next(iter(devices.values()))[0]
-            preview = FramingPreview(encoder.cv, 'Position your face')
-            class PreviewAcquisition(Acquisition):
-                def read(self):
-                    frame = super().read()
-                    preview.show(frame)
-                    return frame
-            with PreviewAcquisition(device) as capture:
-                if command['action'] == 'enroll':
-                    vectors = _samples(guided_enrollment(capture, encoder, preview))
-                else:
-                    preview.ready(capture, f'Check {probe_index + 1} of 5: {PROBE_GUIDANCE[min(probe_index, 4)]}')
-                    vectors = _samples([item['embedding'] for item in capture.embeddings(device, encoder, CALIBRATION)])
-            if command['action'] == 'enroll':
-                if not _consistent(vectors, CALIBRATION['enrollment_consistency']):
-                    raise ValueError('inconsistent')
-                gallery = {'temporary-person': vectors}
-                status = 'enrolled'
-            elif gallery:
-                matches = [match(vector, gallery, CALIBRATION['match_threshold'], CALIBRATION['runner_up_margin'])
-                           for vector in vectors]
-                matched = all(value == 'temporary-person' for value in matches)
-                status = 'measured'
-            else:
-                raise ValueError('enrollment_required')
-        except Exception as error:
-            status = 'cancelled' if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled' else 'unavailable'
+            while True:
+                try:
+                    devices = inventory()
+                    if len(devices) != 1:
+                        raise RuntimeError('one_camera_required')
+                    device = next(iter(devices.values()))[0]
+                    class PreviewAcquisition(Acquisition):
+                        def read(self):
+                            frame = super().read()
+                            preview.show(frame)
+                            return frame
+                    with PreviewAcquisition(device) as capture:
+                        if command['action'] == 'enroll':
+                            vectors = _samples(guided_enrollment(capture, encoder, preview))
+                        else:
+                            preview.ready(capture, f'Check {probe_index + 1} of 5: {PROBE_GUIDANCE[min(probe_index, 4)]}')
+                            vectors = _samples([item['embedding'] for item in capture.embeddings(device, encoder, CALIBRATION)])
+                    if command['action'] == 'enroll':
+                        if not _consistent(vectors, CALIBRATION['enrollment_consistency']):
+                            raise ValueError('inconsistent')
+                        gallery = {'temporary-person': vectors}
+                        status = 'enrolled'
+                    elif gallery:
+                        matches = [match(vector, gallery, CALIBRATION['match_threshold'], CALIBRATION['runner_up_margin'])
+                                   for vector in vectors]
+                        matched = all(value == 'temporary-person' for value in matches)
+                        status = 'measured'
+                    else:
+                        raise ValueError('enrollment_required')
+                    break
+                except Exception as error:
+                    if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled':
+                        raise
+                    reason = pause_reason(error)
+                    print(json.dumps({'kind': 'notice', 'reason': reason}), flush=True)
+                    preview.retry(reason, command['action'])
+        except RuntimeError as error:
+            status = 'cancelled' if str(error) == 'preview_cancelled' else 'unavailable'
         finally:
-            if preview is not None:
-                preview.close()
+            preview.close()
         if command['action'] == 'probe':
             probe_index += 1
         print(json.dumps({'kind': 'evaluation', 'status': status, 'matched': matched,
@@ -272,12 +325,13 @@ def worker(directory):
     return 0
 
 
-def exchange(process, action, timeout):
+def exchange(process, action, timeout, on_notice=None):
     process.stdin.write(json.dumps({'action': action}).encode() + b'\n')
     process.stdin.flush()
     deadline = time.monotonic() + timeout
     buffer = bytearray()
     last_hint = None
+    retries = 0
     while time.monotonic() < deadline:
         ready, _, _ = select.select([process.stdout], [], [], max(0, min(.2, deadline - time.monotonic())))
         if not ready:
@@ -294,7 +348,16 @@ def exchange(process, action, timeout):
             value = json.loads(raw)
             if type(value) is not dict:
                 raise RuntimeError('Invalid evaluation response.')
-            if value.get('kind') == 'progress':
+            if value.get('kind') == 'notice':
+                if set(value) != {'kind', 'reason'} or type(value['reason']) is not str or value['reason'] not in PAUSE_REASONS:
+                    raise RuntimeError('Invalid evaluation response.')
+                retries += 1
+                if retries > 128:
+                    raise RuntimeError('Too many failed capture attempts.')
+                if on_notice:
+                    on_notice(value['reason'])
+                print('Capture paused: ' + PAUSE_REASONS[value['reason']], flush=True)
+            elif value.get('kind') == 'progress':
                 payload = value.get('payload', {})
                 if (set(value) != {'kind', 'sequence', 'captured_at', 'payload'} or
                         type(payload) is not dict or set(payload) != {'reason', 'samples', 'target'} or
@@ -308,7 +371,7 @@ def exchange(process, action, timeout):
             elif (set(value) == {'kind', 'status', 'matched', 'seconds'} and value['kind'] == 'evaluation' and
                   value['status'] in ('enrolled', 'measured', 'unavailable', 'cancelled') and type(value['matched']) is bool and
                   type(value['seconds']) in (int, float) and math.isfinite(value['seconds']) and 0 <= value['seconds'] <= timeout):
-                return value
+                return {**value, **({'retry_count': retries} if retries else {})}
             else:
                 raise RuntimeError('Invalid evaluation response.')
     raise RuntimeError('Capture deadline reached. No samples were saved.')
@@ -340,19 +403,24 @@ def main():
         return 1
     worker_environment = {**os.environ, 'AIOS_EVALUATION_PARENT': str(os.getpid())}
     worker_environment.pop('AIOS_CAPTURE_DIAGNOSTICS', None)
+    events = args.output.with_suffix('.events.jsonl').open('x', encoding='utf-8') if args.output else None
+    def record_notice(reason):
+        if events:
+            events.write(json.dumps({'event': 'capture_paused', 'reason': reason}) + '\n')
+            events.flush()
     process = subprocess.Popen([sys.executable, __file__, '--worker', '--directory', str(args.directory)],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=worker_environment)
     try:
         print('Follow the preview instructions and choose Next for each pose.', flush=True)
-        enrolled = exchange(process, 'enroll', 380)
+        enrolled = exchange(process, 'enroll', 7200, record_notice)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         print('Temporary enrollment complete. No account was created.')
         results = []
         for instruction in PROBE_GUIDANCE:
             print(instruction + ' Choose Next in the preview when ready.', flush=True)
-            result = exchange(process, 'probe', 130)
+            result = exchange(process, 'probe', 7200, record_notice)
             if result['status'] == 'cancelled':
                 raise RuntimeError('Participant cancelled the preview.')
             results.append(result)
@@ -360,6 +428,8 @@ def main():
         summary = {'development_only': True, 'production_approval_created': False,
                    'consent_confirmed': True, 'participants': 1, 'genuine_attempts': len(results),
                    'correct_candidates': sum(value['matched'] for value in results),
+                   'enrollment_retry_count': enrolled.get('retry_count', 0),
+                   'probe_retry_counts': [value.get('retry_count', 0) for value in results],
                    'unavailable_attempts': sum(value['status'] == 'unavailable' for value in results),
                    'attempt_seconds': [value['seconds'] for value in results],
                    'framing_preview': True, 'timings_include_participant_framing': True,
@@ -376,6 +446,8 @@ def main():
         process.wait(timeout=3)
         process.stdin.close()
         process.stdout.close()
+        if events:
+            events.close()
     return 0
 
 

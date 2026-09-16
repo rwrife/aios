@@ -14,6 +14,46 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_pause_clears_preview_and_waits_for_explicit_retry(self):
+        preview = session.FramingPreview.__new__(session.FramingPreview)
+        preview.app, preview.image, preview.heading = MagicMock(), MagicMock(), MagicMock()
+        preview.feedback, preview.next_button, preview.window = MagicMock(), MagicMock(), MagicMock()
+        preview.cancelled = False
+        iterations = []
+        def event_loop():
+            iterations.append(True)
+            if len(iterations) == 4:
+                preview.advance()
+        preview.app.processEvents.side_effect = event_loop
+        with patch.object(session.time, 'sleep'):
+            preview.retry('camera_read_failed', 'enroll')
+        self.assertEqual(len(iterations), 4)
+        preview.image.clear.assert_called_once()
+        preview.heading.setText.assert_called_once_with('Capture paused - no step advanced')
+        self.assertFalse(preview.waiting)
+
+    def test_arbitrary_failure_details_are_not_exposed(self):
+        self.assertEqual(session.pause_reason(ValueError('private embedding data')), 'worker_error')
+        with self.assertRaises(RuntimeError):
+            self.exchange({'kind': 'notice', 'reason': 'private embedding data'})
+
+    def test_retry_notice_is_recorded_and_counted(self):
+        replies = [{'kind': 'notice', 'reason': 'camera_read_failed'},
+                   {'kind': 'evaluation', 'status': 'measured', 'matched': True, 'seconds': .1}]
+        child = subprocess.Popen([sys.executable, '-c',
+            'import sys; sys.stdin.readline(); print(sys.argv[1], flush=True)',
+            '\n'.join(json.dumps(reply) for reply in replies)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        notices = []
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = session.exchange(child, 'probe', 2, notices.append)
+            self.assertEqual(notices, ['camera_read_failed'])
+            self.assertEqual(result['retry_count'], 1)
+        finally:
+            child.wait(timeout=3)
+            child.stdin.close()
+            child.stdout.close()
+
     def test_next_is_only_accepted_while_waiting(self):
         preview = session.FramingPreview.__new__(session.FramingPreview)
         preview.next_button = MagicMock()
