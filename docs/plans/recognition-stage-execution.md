@@ -62,3 +62,10 @@ an explicitly unmeasured gate.
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
 remain unverified. Retain only aggregate camera evidence, never media or serials.
+
+Stage 5 is in draft PR #137. Pinned licensed artifacts, optional packaging,
+synthetic runtime validation and an offline aggregate review checker are present.
+The full Python suite passes (672 tests, 13 environmental skips), as do the native
+protocol/profile tests, 97 QML checks and three private-display/PIN tests.
+Real cohort calibration/accuracy, adversarial biometric trials, long soak and
+human UX acceptance remain open. No runtime approval or enrollment was created.

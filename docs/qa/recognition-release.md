@@ -105,3 +105,21 @@ Stages 1–4 evidence is in `brio-camera.md`, `facial-data-lifecycle.md` and
 `recognition-suggestions.md`. Stage 5 still requires calibrated real enrollment,
 held-out accuracy/adversarial measurements, a full long soak and human UX review.
 Unit, synthetic-runtime and capture checks are labeled separately below.
+
+### Automated and container checks, 2026-09-16
+
+- Python: 672 tests, 13 environmental skips, no failures. Two stale baseline
+  expectations were updated to the current application-builder contract and
+  two terminal launch paths; no production behavior was changed for those tests.
+- Native strict camera protocol, both installed-layout profile/PIN checks,
+  application-host protocol, 97 QML checks (Ocean/Sage) and all three private
+  display/input/teardown tests pass.
+- Model downloads match locked sizes and SHA-256. Default-build cleanup,
+  corrupted cache refusal and incomplete/changed/failed aggregate evidence
+  are covered by six release/artifact tests.
+- Alpine 3.23 container, OpenCV 4.12.0, actual pinned weights: synthetic runtime
+  check passed. Model loading 2.8204 s; cold detect+feature 0.3118 s; three warm
+  runs 0.1394/0.1220/0.1186 s; peak process RSS 244708 KiB. Concurrent compilation
+  was active, so this is compatibility evidence, not a controlled benchmark.
+- Ubuntu host OpenCV 4.6.0 failed YuNet inference (`getLayerData`); it is not
+  the validated runtime. The target remains Alpine's recorded 4.12 package.

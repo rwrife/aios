@@ -256,9 +256,10 @@ class SkillsTests(unittest.TestCase):
         self.assertNotIn("Compatibility:", skill.instructions)
         self.assertIn("Search first for an existing cached app", skill.instructions)
         self.assertIn("Inspect the advertised `application` tool schema", skill.instructions)
-        self.assertIn("trusted native `calculator` template", skill.instructions)
+        self.assertIn("Use a native runtime only when the user explicitly requests native", skill.instructions)
         self.assertIn("self-contained `index.html`", skill.instructions)
-        self.assertIn("Do not call `read` or `write`", skill.instructions)
+        self.assertIn("call `build_application` with exactly one complete", skill.instructions)
+        self.assertIn("Use no remote resources, external packages, CDN dependencies", skill.instructions)
         self.assertIn("Do not rebuild, re-publish, or retry", skill.instructions)
 
     def test_real_os_commands_matches_write_and_read_file_prompts(self):

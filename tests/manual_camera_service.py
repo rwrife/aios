@@ -4,6 +4,7 @@ Run as the ordinary guest account with PYTHONPATH pointing to installed AIOS.
 No model, enrollment, portrait file, or biometric record is created.
 """
 import json
+import argparse
 import os
 from pathlib import Path
 import select
@@ -17,6 +18,10 @@ import uuid
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--removal', action='store_true')
+    parser.add_argument('--cycles', type=int, choices=range(1, 101), default=3)
+    args = parser.parse_args()
     if os.geteuid() == 0:
         raise RuntimeError('run as the ordinary guest account')
     with tempfile.TemporaryDirectory(prefix='aios-camera-check-') as directory:
@@ -67,7 +72,7 @@ def main():
             client.connect(path)
             receive({'state'})
             send('configure', active=True, secure=False)
-            if '--removal' in sys.argv:
+            if args.removal:
                 preview = send('capture', 'preview')
                 receive({'preview'}, preview).clear()
                 print(json.dumps({'ready_for_disconnect': True}), flush=True)
@@ -85,17 +90,17 @@ def main():
                 print(json.dumps({'ok': True, 'device_change_observed': True,
                                   'missing_device_rejected': True}), flush=True)
                 return
-            for _ in range(3):
+            for _ in range(args.cycles):
                 preview = send('capture', 'preview')
                 event = receive({'preview', 'error'}, preview)
                 if event['event'] != 'preview':
-                    raise RuntimeError('preview unavailable')
+                    raise RuntimeError(f"preview unavailable after {counts['previews']} completions: {event.get('reason')}")
                 counts['previews'] += 1
                 ages.append(event['processed_at'] - event['captured_at'])
                 photo = send('capture', 'photo')
                 event = receive({'photo', 'error'}, photo)
                 if event['event'] != 'photo':
-                    raise RuntimeError('photo unavailable')
+                    raise RuntimeError(f"photo unavailable after {counts['photos']} completions: {event.get('reason')}")
                 counts['photos'] += 1
                 ages.append(event['processed_at'] - event['captured_at'])
                 # Deliberately discard image payloads before the next operation.
