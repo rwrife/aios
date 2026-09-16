@@ -2,6 +2,8 @@ import QtQuick
 
 QtObject {
     property string selected: "blue"
+    property bool reducedMotion: false
+    readonly property color success: "#92b59c"
     readonly property var choices: [
         {key: "blue", name: "Ocean", hue: 0.57, swatch: "#779bae"},
         {key: "teal", name: "Lagoon", hue: 0.48, swatch: "#78aaa5"},

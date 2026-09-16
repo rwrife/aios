@@ -6,6 +6,8 @@ import QtQuick.Window
 ColumnLayout {
     id: accounts
     property var control: null
+    property var theme: fallbackTheme
+    Theme { id: fallbackTheme }
     property color ink: "#e4edf1"
     property string result: ""
     spacing: 12
@@ -13,7 +15,7 @@ ColumnLayout {
     onVisibleChanged: { if (visible) refresh(); else { deletion.close(); faceEnrollment.close(); } }
     Component.onCompleted: if (visible) refresh()
     Label { text: "Accounts on this device"; color: accounts.ink; font.pixelSize: 20 }
-    Label { text: "Select an account to sign in or delete it. Deletion requires that account’s PIN or password."; color: accounts.ink; wrapMode: Text.Wrap; Layout.fillWidth: true }
+    Label { text: "Sign in, add optional face recognition, or delete an account. Face enrollment and deletion require that account’s PIN or password."; color: accounts.ink; wrapMode: Text.Wrap; Layout.fillWidth: true }
     ScrollView {
         Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 100
         ColumnLayout {
@@ -27,13 +29,10 @@ ColumnLayout {
                     Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.selectedProfileId = modelData.id; enrollment.open(); } }
                     Button {
                         objectName: "enrollRecognition"; text: "Face recognition…"
-                        enabled: accounts.control && accounts.control.greetingOnly &&
-                                 (accounts.control.recognitionState === "ready" ||
-                                  accounts.control.recognitionState === "manual-only")
+                        enabled: accounts.control && accounts.control.greetingOnly && !accounts.control.busy
                         onClicked: {
-                            faceEnrollment.accountId = modelData.id
-                            faceEnrollment.accountName = modelData.name
-                            faceEnrollment.open()
+                            accounts.result = ""
+                            faceEnrollment.openForProfile(modelData.id, modelData.name)
                         }
                     }
                     Button {
@@ -51,62 +50,13 @@ ColumnLayout {
     }
     Label { text: accounts.result; color: accounts.ink; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
     Label { visible: !accounts.control || !accounts.control.greetingOnly; text: "Protected workspace deletion is not available in this panel."; color: accounts.ink; wrapMode: Text.Wrap; Layout.fillWidth: true }
-    EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: accounts.control || unavailable }
+    EnrollmentFlow { id: enrollment; parent: Overlay.overlay; anchors.centerIn: parent; control: accounts.control || unavailable; theme: accounts.theme }
     QtObject { id: unavailable; property bool busy: false; property string error: ""; function setSecureInput(active) {} }
-    Dialog {
-        id: faceEnrollment; objectName: "faceEnrollmentDialog"
-        property string accountId: ""
-        property string accountName: ""
-        parent: Overlay.overlay; anchors.centerIn: parent; width: Math.min(440, parent ? parent.width - 32 : 440)
-        title: "Set up face recognition"; modal: true
-        standardButtons: Dialog.Cancel
-        closePolicy: accounts.control && accounts.control.recognitionState === "enrolling"
-            ? Popup.NoAutoClose : Popup.CloseOnEscape
-        onOpened: { accounts.result = ""; accounts.control.setSecureInput(true); recognitionPin.forceActiveFocus(); }
-        onClosed: {
-            recognitionPin.clear(); recognitionConsent.checked = false
-            accountId = ""; accountName = ""
-            if (accounts.control) accounts.control.setSecureInput(false)
-        }
-        contentItem: ColumnLayout {
-            Label {
-                text: "Verify “" + faceEnrollment.accountName + "” with its PIN, then look at the camera. Face matches only suggest this account and never replace the PIN."
-                textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true
-            }
-            TextField {
-                id: recognitionPin; objectName: "recognitionPin"
-                Accessible.name: "Account PIN or password"
-                placeholderText: "Account PIN or password"; echoMode: TextInput.Password
-                maximumLength: 128; Layout.fillWidth: true
-                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
-            }
-            CheckBox {
-                id: recognitionConsent; objectName: "recognitionConsent"
-                text: "Store encrypted face templates locally for account suggestions"
-            }
-            Button {
-                objectName: "confirmRecognitionEnrollment"; text: "Capture face samples"
-                enabled: accounts.control && accounts.control.recognitionState !== "enrolling" &&
-                         recognitionPin.text.length > 0 && recognitionConsent.checked
-                onClicked: {
-                    accounts.control.enrollRecognition(faceEnrollment.accountId,
-                        recognitionPin.text, recognitionConsent.checked)
-                    recognitionPin.clear()
-                }
-            }
-            Label {
-                objectName: "recognitionGuidance"
-                visible: accounts.control && accounts.control.recognitionState === "enrolling"
-                text: accounts.control && accounts.control.recognitionGuidance
-                      ? accounts.control.recognitionGuidance : "Look straight at the camera, then turn slightly to each side. Capture ends within 30 seconds."
-                wrapMode: Text.Wrap; Layout.fillWidth: true
-            }
-            Label { text: accounts.control ? accounts.control.error : ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
-        }
-        Connections {
-            target: faceEnrollment.contentItem.Window.window
-            function onActiveChanged() { if (!faceEnrollment.contentItem.Window.window.active) recognitionPin.clear(); }
-        }
+    FaceEnrollmentDialog {
+        id: faceEnrollment
+        control: accounts.control
+        theme: accounts.theme
+        onCompleted: accounts.result = "Face recognition was added. Account access still requires the PIN."
     }
     Dialog {
         id: deletion; objectName: "deleteAccountDialog"
@@ -140,10 +90,6 @@ ColumnLayout {
     Connections {
         target: accounts.control; ignoreUnknownSignals: true
         function onAccountDeleted(id) { deletion.close(); accounts.result = "Account deleted."; }
-        function onRecognitionEnrollmentCompleted(id) {
-            faceEnrollment.close()
-            accounts.result = "Face recognition was added. Account access still requires the PIN."
-        }
         function onPrivacyLost() { deletion.close(); faceEnrollment.close() }
         function onUnlocked() { accounts.refresh() }
     }

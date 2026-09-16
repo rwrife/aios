@@ -110,7 +110,7 @@ class TerminalThemeTests(unittest.TestCase):
         self.assertIn("window.active.button.hover.image.color: #b2c3cd", theme)
         self.assertIn("border.width: 1", theme)
         self.assertIn("<keepBorder>yes</keepBorder>", openbox)
-        self.assertIn("<titleLayout>LC</titleLayout>", openbox)
+        self.assertIn("<titleLayout>LMC</titleLayout>", openbox)
         self.assertIn('<application class="AIOS-Terminal">', openbox)
         self.assertIn("<decor>yes</decor>", openbox)
         terminal_rule = re.search(
@@ -160,7 +160,8 @@ class TerminalThemeTests(unittest.TestCase):
         main = (ROOT / "apps/shell/main.cpp").read_text()
         openbox = (ROOT / "distro/alpine/overlay/etc/xdg/openbox/rc.xml").read_text()
         session = (ROOT / "distro/alpine/overlay/usr/local/bin/aios-session").read_text()
-        self.assertEqual(main.count('program = "aios-terminal"'), 1)
+        # Both the desktop and protected-session network panel use the launcher.
+        self.assertEqual(main.count('program = "aios-terminal"'), 2)
         self.assertIn('startDetached("aios-terminal"', main)
         self.assertIn('<command>aios-terminal</command>', openbox)
         self.assertIn('aios-terminal -title "AIOS Recovery"', session)

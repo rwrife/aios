@@ -140,6 +140,7 @@ def _binding(manifest, calibration):
         raise ValueError('A versioned calibration profile is required')
     digest = hashlib.sha256(json.dumps(calibration, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
     return {'schema': SCHEMA, 'consent': CONSENT_VERSION, 'models': models,
+            'enrollment_protocol': 'forward-burst-10-v1',
             'calibration': {'id': calibration['id'], 'sha256': digest}}
 
 

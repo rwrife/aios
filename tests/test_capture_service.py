@@ -120,13 +120,25 @@ class ServiceTests(unittest.TestCase):
         self.configure()
         self.service.command(request(mode='enroll', consent=True))
         event = {'kind': 'progress', 'sequence': 1, 'captured_at': self.clock(),
-                 'payload': {'samples': 1, 'target': 3, 'reason': 'sample_accepted'}}
+                 'payload': {'samples': 1, 'target': 10, 'reason': 'burst_capture'}}
         self.assertTrue(self.service.result(json.dumps(event)))
         self.assertIsNotNone(self.service.worker)
         event['sequence'] = 2
         event['payload']['embedding'] = [1, 2]
         self.assertFalse(self.service.result(json.dumps(event)))
         self.assertNotIn('embedding', json.dumps(self.events))
+
+    def test_enrollment_preview_stays_in_correlated_job(self):
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.command(request(mode='enroll', consent=True))
+        event = {'kind': 'preview', 'sequence': 1, 'captured_at': self.clock(),
+                 'payload': {'image': 'data:image/jpeg;base64,AA=='}}
+        self.assertTrue(self.service.result(json.dumps(event)))
+        self.assertIsNotNone(self.service.worker)
+        event['sequence'] = 2
+        event['payload']['embedding'] = [1, 2]
+        self.assertFalse(self.service.result(json.dumps(event)))
 
     def test_opt_in_cadence_and_immediate_cooldown(self):
         self.config['camera_recognition'] = True
@@ -195,6 +207,22 @@ class ServiceTests(unittest.TestCase):
         self.service.tick()
         self.assertIsNone(self.service.worker)
 
+    def test_worker_diagnostics_are_bounded_private_aggregates(self):
+        self.service.command(request(mode='preview'))
+        event = {'kind': 'diagnostic', 'sequence': 0, 'captured_at': 0,
+                 'payload': {'driver_error_frames': 2, 'empty_frames': 1}}
+        native_before = len(self.events)
+        output = io.StringIO()
+        with patch.dict(os.environ, {'AIOS_CAPTURE_DIAGNOSTICS': '1'}), patch('sys.stderr', output):
+            self.assertTrue(self.service.result(json.dumps(event)))
+        self.assertEqual(json.loads(output.getvalue()), event['payload'])
+        self.assertEqual(len(self.events), native_before)
+        self.assertIsNotNone(self.service.worker)
+        event['payload']['embedding'] = [123]
+        self.assertFalse(self.service.result(json.dumps(event)))
+        self.assertEqual(self.events[-1]['reason'], 'invalid_result')
+        self.assertNotIn('embedding', json.dumps(self.events))
+
     def test_other_consumer_cannot_release_explicit_capture(self):
         self.service.command(request(mode='preview'))
         self.service.command(request('release', consumer='3' * 32))
@@ -260,10 +288,65 @@ class ServiceTests(unittest.TestCase):
         self.assertIs(self.service.worker, worker)
         self.service.command(request())
         self.assertEqual(len(self.workers), 1)
+        self.assertIsNotNone(self.service.pending)
+        self.clock.advance(1.01)
+        self.service.tick()
         self.assertEqual(self.events[-1]['reason'], 'busy')
         worker.code = -9
         self.service.tick()
         self.service.command(request())
+        self.assertEqual(len(self.workers), 2)
+
+    def test_delayed_preemption_queues_one_handoff_without_extending_capture_deadline(self):
+        self.service.command(request(mode='preview'))
+        worker = self.workers[-1]
+        worker.quarantined = True
+        self.service.command(request(consumer='3' * 32))
+        self.assertIsNotNone(self.service.pending)
+        self.assertEqual(len(self.workers), 1)
+        self.service.command(request(consumer='4' * 32))
+        self.assertEqual(self.events[-1]['reason'], 'busy')
+        self.clock.advance(.4)
+        worker.code = -9
+        self.service.tick()
+        self.assertEqual(len(self.workers), 2)
+        self.assertEqual(self.service.job['consumer'], '3' * 32)
+        self.assertEqual(self.service.deadline, 105)
+
+    def test_pending_handoff_is_cancelled_by_release_inactivity_and_device_loss(self):
+        for action in ('release', 'inactive', 'secure', 'removed'):
+            with self.subTest(action=action):
+                self.configure(active=True)
+                self.service.command(request(mode='preview'))
+                worker = self.workers[-1]
+                worker.quarantined = True
+                self.service.command(request(consumer='3' * 32))
+                if action == 'release':
+                    self.service.command(request('release', consumer='3' * 32))
+                elif action == 'inactive':
+                    self.configure(active=False)
+                elif action == 'secure':
+                    self.configure(secure=True)
+                else:
+                    self.devices.clear()
+                    self.service.refresh()
+                self.assertIsNone(self.service.pending)
+                before = len(self.workers)
+                worker.code = -9
+                self.service.tick()
+                self.assertEqual(len(self.workers), before)
+
+    def test_purge_supersedes_a_pending_photo_without_starting_another_owner(self):
+        self.service.command(request(mode='preview'))
+        worker = self.workers[-1]
+        worker.quarantined = True
+        self.service.command(request(consumer='3' * 32))
+        self.service.command(request(mode='purge', consumer='4' * 32))
+        self.assertEqual(self.service.pending['mode'], 'purge')
+        self.assertEqual(len(self.workers), 1)
+        worker.code = -9
+        self.service.tick()
+        self.assertEqual(self.service.job['mode'], 'purge')
         self.assertEqual(len(self.workers), 2)
 
     def test_exited_worker_pipe_is_drained_before_reporting_exit(self):

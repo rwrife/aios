@@ -247,6 +247,26 @@ TestCase {
                 "Facial recognition data was purged.")
         window.destroy()
     }
+    function test_recognition_status_is_specific_data() {
+        return [
+            {tag: "starting", state: "starting", text: "starting"},
+            {tag: "paused", state: "disabled", text: "paused"},
+            {tag: "capturing", state: "capturing", text: "Briefly checking"},
+            {tag: "ready", state: "ready", text: "occasionally"},
+            {tag: "manual", state: "manual-only", text: "no face data"},
+            {tag: "unavailable", state: "unavailable", text: "unavailable"},
+            {tag: "error", state: "error", text: "unavailable"}
+        ]
+    }
+    function test_recognition_status_is_specific(data) {
+        backend.config = ({theme_color: "sage", reduced_motion: true, camera_recognition: true})
+        var window = settingsComponent.createObject(test, {backend: backend, theme: palette, profileControl: profileControl})
+        profileControl.recognitionState = data.state
+        verify(window.recognitionStatusText().indexOf(data.text) >= 0)
+        backend.config = ({theme_color: "sage", reduced_motion: true, camera_recognition: false})
+        verify(window.recognitionStatusText().indexOf("Off.") === 0)
+        window.destroy()
+    }
     function test_unknown_theme_falls_back() {
         palette.selected = "unknown"
         compare(palette.paletteIndex, 0)

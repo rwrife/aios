@@ -321,3 +321,43 @@ suite after the ISO build; it awaits inclusion in the next batched image.
 Successful enrollment/inference transitions still require the calibrated model
 and consented evaluation inputs in later stages. These capture results do not
 establish biometric accuracy, liveness, or protected-session authorization.
+
+## Stage 5 installed artifact and extended lifecycle check (2026-09-16)
+
+The local identity image `alpine-aios-recognition-stage5-x86_64.iso` was built
+from production source `d4d3731`, with 786 resolved packages and 2,182,791,168
+bytes. SHA-256:
+`b8eb6dbc8458236f32110809afcaef6553bde9f98ce863a716aec712b02bad93`.
+The generated build manifest and package list accompany it in `distro/alpine/out`.
+No camera code was substituted into the guest for these checks.
+
+Reference environment: AMD Ryzen AI Max+ Pro 395 host, 51,298,828,288 bytes host
+RAM; WSL 2.7.10.0, WSLg 1.0.73.2, QEMU 8.2.2 with KVM/host CPU, four vCPUs and
+16 GiB guest RAM. Guest kernel 6.18.52-0-lts, OpenCV 4.12.0-r3, cryptography
+46.0.7-r0. Brio USB device revision reports `9915`; a separately verified firmware
+version was not obtained. No serial is retained in this report.
+
+As ordinary `aios` UID 1000, the installed checksum-pinned models passed the
+camera-free synthetic runtime check: load 0.1465 s, cold detect+feature 0.0972 s,
+warm 0.0504/0.0506/0.0553 s, peak process RSS 240304 KiB. This does not measure
+real-face alignment, recognition accuracy or service-plus-worker resource use.
+The production calibration/approval manifest was absent, as intended.
+
+The first extended preview/photo lifecycle run stopped with `photo unavailable`.
+Its original runner did not report the cycle or service reason, so the cause is
+unresolved. The runner now reports those metadata on failure. A fresh diagnostic
+repeat passed **20 previews, 20 photos and 20 preemptions**, inactive capture
+rejection and service-kill/worker cleanup in **54.348 s**, with maximum frame age
+**0.122 s**. Media stayed in memory and was discarded. This successful repeat
+does not erase the initial failure or establish a long-duration reliability gate.
+
+The installed Settings UI was visually checked in Ocean and Sage, including
+keyboard focus, off-state/purge text and reduced motion. Camera preview remained
+off during screenshots. `xdotool` was installed only into the disposable guest
+for UI input; it is not an added image dependency. The subsequent status-text
+refinement distinguishes active capture and paused suggestions; its final image
+and test evidence are recorded in `recognition-release.md`.
+
+No people were enrolled, no cohort measurements were made, and no recognition
+approval was created. Accuracy/adversarial, complete lifecycle/UX and long-soak
+gates remain open in #95; production recognition remains off.

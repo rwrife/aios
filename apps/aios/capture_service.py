@@ -19,7 +19,7 @@ import stat
 
 from .core import load_config, data_dir
 from .recognition import CaptureSchedule
-from .capture_worker import MAX_EVENT
+from .capture_worker import MAX_EVENT, ERROR_CODES
 
 MAX_REQUEST = 4096
 MODES = {'preview', 'photo', 'enroll', 'recognize', 'purge'}
@@ -149,6 +149,9 @@ class Service:
         self.generation = 1
         self.worker = None
         self.job = None
+        self.pending = None
+        self.pending_deadline = 0
+        self.pending_job_deadline = 0
         self.explicit_lease = None
         self.buffer = bytearray()
         self.deadline = 0
@@ -168,6 +171,9 @@ class Service:
         self.send(value)
 
     def cancel(self, reason='cancelled'):
+        if self.pending is not None:
+            self.event('cancelled', reason=reason, request=self.pending)
+            self.pending = None
         if reason != 'completed':
             self.generation += 1
         if self.worker:
@@ -214,13 +220,20 @@ class Service:
         elif action == 'release':
             if self.explicit_lease == request['consumer']:
                 self.explicit_lease = None
-            if self.job and self.job['consumer'] == request['consumer']:
+            if ((self.job and self.job['consumer'] == request['consumer']) or
+                    (self.pending and self.pending['consumer'] == request['consumer'])):
                 self.cancel()
         elif action == 'capture':
             self.start(request)
 
-    def start(self, request, background=False):
+    def start(self, request, background=False, deadline=None):
         mode = request['mode']
+        if self.pending is not None:
+            if mode == 'purge':
+                self.cancel('preempted')
+            else:
+                self.event('error', reason='busy', request=request)
+                return
         if (not self.active and mode != 'purge') or (mode == 'recognize' and (self.secure or not self.enabled)):
             self.event('error', reason='inactive', request=request)
             return
@@ -231,6 +244,17 @@ class Service:
             if self.job and (mode == 'purge' or (self.job['mode'] in ('preview', 'recognize') and mode in ('photo', 'enroll'))):
                 self.cancel('preempted')
             if self.worker:
+                if self.job is None:
+                    # A cancelled/completed worker can take longer than the
+                    # immediate reap budget. Queue one handoff, never overlap
+                    # device owners or turn delayed teardown into a retry storm.
+                    self.pending = request.copy()
+                    self.pending_deadline = self.clock() + 1
+                    self.pending_job_deadline = deadline or self.clock() + {
+                        'preview': 35, 'photo': 5, 'recognize': 5, 'enroll': 30, 'purge': 5}[mode]
+                    if mode != 'recognize':
+                        self.explicit_lease = request['consumer']
+                    return
                 self.event('error', reason='busy', request=request)
                 return
         if mode == 'recognize' and not self.schedule.due(immediate=not background):
@@ -256,7 +280,7 @@ class Service:
             self.explicit_lease = request['consumer']
         self.sequence = 0
         self.buffer.clear()
-        self.deadline = self.clock() + {'preview': 35, 'photo': 5, 'recognize': 5, 'enroll': 30, 'purge': 5}[mode]
+        self.deadline = deadline or self.clock() + {'preview': 35, 'photo': 5, 'recognize': 5, 'enroll': 30, 'purge': 5}[mode]
         payload = {'mode': mode, 'device': self.devices[chosen][0] if mode != 'purge' else '',
                    'owner': request['owner'], 'pin': request['pin'], 'consent': request['consent']}
         self.worker = self.spawn([sys.executable, '-m', 'aios.capture_worker'], stdin=subprocess.PIPE,
@@ -282,6 +306,18 @@ class Service:
             if (self.config().get('camera_recognition') is True) != self.enabled:
                 self.command({'action': 'configure', 'active': self.active, 'secure': self.secure})
             self.next_scan = now + .5
+        if self.pending is not None:
+            if self.worker and self.worker.poll() is not None:
+                self.worker.stdout.close()
+                self.worker = None
+            if now >= self.pending_deadline:
+                self.event('error', reason='busy', request=self.pending)
+                self.pending = None
+            elif self.worker is None:
+                request, deadline = self.pending, self.pending_job_deadline
+                self.pending = None
+                self.start(request, deadline=deadline)
+            return
         if self.worker:
             if not self.job:
                 if self.worker.poll() is not None:
@@ -318,11 +354,25 @@ class Service:
             if set(event) != {'kind', 'sequence', 'captured_at', 'payload'}:
                 raise ValueError()
             kind, sequence, captured = event['kind'], event['sequence'], event['captured_at']
-            if kind not in ('preview', 'photo', 'progress', 'result', 'error') or type(event['payload']) is not dict:
+            if kind not in ('preview', 'photo', 'progress', 'result', 'error', 'diagnostic') or type(event['payload']) is not dict:
                 raise ValueError()
-            if kind == 'error':
-                if event['payload'] or type(sequence) is not int or sequence != 0 or type(captured) not in (float, int) or captured != 0:
+            if kind == 'diagnostic':
+                payload = event['payload']
+                if (set(payload) != {'driver_error_frames', 'empty_frames'} or
+                        any(type(value) is not int or not 0 <= value <= 16 for value in payload.values()) or
+                        not 1 <= sum(payload.values()) <= 16 or type(sequence) is not int or sequence != 0 or
+                        type(captured) not in (int, float) or captured != 0):
                     raise ValueError()
+                if os.environ.get('AIOS_CAPTURE_DIAGNOSTICS') == '1':
+                    print(json.dumps(payload), file=sys.stderr, flush=True)
+                return True  # Private aggregate diagnostics never enter the native UI protocol.
+            if kind == 'error':
+                payload = event['payload']
+                if ((payload and (set(payload) != {'code'} or type(payload['code']) is not str or payload['code'] not in ERROR_CODES)) or
+                        type(sequence) is not int or sequence != 0 or type(captured) not in (float, int) or captured != 0):
+                    raise ValueError()
+                if os.environ.get('AIOS_CAPTURE_DIAGNOSTICS') == '1':
+                    print(json.dumps({'camera_failure_code': payload.get('code', 'worker_error')}), file=sys.stderr, flush=True)
                 self.fail('unavailable')
                 return False
             if type(sequence) is not int or sequence < self.sequence or (kind in ('preview', 'progress') and sequence == self.sequence):
@@ -331,7 +381,7 @@ class Service:
                 raise ValueError()
             if captured and not 0 <= self.clock() - captured <= 3:
                 raise ValueError()
-            if kind in ('preview', 'photo') and kind != self.job['mode']:
+            if kind in ('preview', 'photo') and kind != self.job['mode'] and not (kind == 'preview' and self.job['mode'] == 'enroll'):
                 raise ValueError()
             if kind == 'preview' and set(event['payload']) != {'image'}:
                 raise ValueError()
@@ -342,9 +392,8 @@ class Service:
             payload = event['payload']
             if kind == 'progress':
                 if (self.job['mode'] != 'enroll' or set(payload) != {'samples', 'target', 'reason'} or
-                        type(payload['samples']) is not int or not 0 <= payload['samples'] <= 3 or
-                        payload['target'] != 3 or payload['reason'] not in ('look_straight', 'turn_slightly',
-                        'turn_other_way', 'improve_light_or_hold_still', 'one_person_only', 'face_camera', 'sample_accepted')):
+                        type(payload['samples']) is not int or not 0 <= payload['samples'] <= 10 or
+                        payload['target'] != 10 or payload['reason'] != 'burst_capture'):
                     raise ValueError()
             if kind == 'result':
                 mode = self.job['mode']

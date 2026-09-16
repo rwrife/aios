@@ -62,3 +62,24 @@ an explicitly unmeasured gate.
 Later stages must use measured stage 1 formats/device behavior. Do not mark an
 issue complete or claim production readiness while its hardware or cohort gates
 remain unverified. Retain only aggregate camera evidence, never media or serials.
+
+Stage 5 is in draft PR #137. Pinned licensed artifacts, optional packaging,
+synthetic runtime validation and an offline aggregate review checker are present.
+The full Python suite passes (672 tests, 13 environmental skips), as do the native
+protocol/profile tests, 104 final QML checks and three private-display/PIN tests.
+Real cohort calibration/accuracy, adversarial biometric trials, long soak and
+human UX acceptance remain open. No runtime approval or enrollment was created.
+The final local image boots and passes installed-model compatibility and Brio
+service smoke checks. One initial extended-run photo handoff failed; a 20-cycle
+repeat passed, but reliability is not declared proven. Final hashes, timings and
+the remaining blockers are in `docs/qa/recognition-release.md`.
+
+The user requested full production validation and offered to participate; only
+one adult is available currently. Continue Stage 5 in this order: (1) resolve
+physical capture reliability, (2) validate the rebuilt Alpine image and resource
+sampler, (3) run the participant's explicit-consent development session, (4) run
+the 24-hour acquisition soak, and (5) complete independently calibrated,
+held-out multi-person and adversarial validation before approval. The handoff
+race and damaged-driver-frame failures have fixes in `22c2833`; host capture
+cycles completed but resource sampling remains incomplete. Keep #95 assigned
+and open and #137 draft until the actual release gates pass.

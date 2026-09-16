@@ -15,6 +15,13 @@ import ctypes
 from .camera import video_device
 
 MAX_EVENT = 262144
+ERROR_CODES = frozenset({'camera_open_failed', 'camera_read_failed', 'camera_decode_failed',
+                        'stale_frame', 'timeout', 'ambiguous', 'insufficient_frames',
+                        'multiple_faces', 'parent_unavailable', 'worker_error'})
+READ_ERRORS = {-2: 'camera_poll_timeout', -3: 'camera_poll_failed', -4: 'camera_dequeue_failed',
+               -5: 'camera_metadata_invalid', -6: 'camera_requeue_failed',
+               -7: 'camera_driver_frame_error', -8: 'camera_empty_frame'}
+ERROR_CODES = ERROR_CODES | frozenset(READ_ERRORS.values())
 
 
 def emit(value):
@@ -51,7 +58,7 @@ class Acquisition:
         self.camera = self.library.aios_camera_open(self.device.encode())
         try:
             if not self.camera:
-                raise RuntimeError('unavailable')
+                raise RuntimeError('camera_open_failed')
             for _ in range(3):
                 frame = self.read()
                 del frame
@@ -70,12 +77,18 @@ class Acquisition:
         import numpy as np
         # Drain old queued buffers without accepting them as new evidence.
         deadline = self.clock() + .75
-        while self.clock() < deadline:
+        discarded = {'driver_error_frames': 0, 'empty_frames': 0}
+        attempts = 0
+        while self.clock() < deadline and attempts < 16:
+            attempts += 1
             timestamp, sequence = ctypes.c_double(), ctypes.c_uint32()
             count = self.library.aios_camera_read(self.camera, self.storage, len(self.storage),
                                                   ctypes.byref(timestamp), ctypes.byref(sequence))
+            if count in (-7, -8):
+                discarded['driver_error_frames' if count == -7 else 'empty_frames'] += 1
+                continue
             if count <= 0 or count > len(self.storage):
-                raise RuntimeError('unusable_frame')
+                raise RuntimeError(READ_ERRORS.get(count, 'camera_read_failed'))
             now = self.clock()
             if not 0 <= now - timestamp.value <= .5:
                 continue
@@ -85,14 +98,21 @@ class Acquisition:
                 continue
             break
         else:
+            self.diagnostic(discarded)
             raise RuntimeError('stale_frame')
+        self.diagnostic(discarded)
         frame = self.cv.imdecode(np.frombuffer(self.storage, dtype=np.uint8, count=count), self.cv.IMREAD_COLOR)
         if frame is None or frame.shape != (480, 640, 3) or frame.dtype.name != 'uint8':
-            raise RuntimeError('unusable_frame')
+            raise RuntimeError('camera_decode_failed')
         self.sequence += 1
         self.last_capture = timestamp.value
         self.driver_sequence = sequence.value
         return frame
+
+    @staticmethod
+    def diagnostic(discarded):
+        if os.environ.get('AIOS_CAPTURE_DIAGNOSTICS') == '1' and any(discarded.values()):
+            emit({'kind': 'diagnostic', 'sequence': 0, 'captured_at': 0, 'payload': discarded})
 
     def embeddings(self, _device, encoder, calibration):
         from .recognition import _quality
@@ -138,49 +158,70 @@ class Acquisition:
             del frame
 
     def enrollment_embeddings(self, _device, encoder, calibration):
-        from .recognition import _quality
+        """Fixed forward-facing burst; never replace unusable scheduled photos."""
+        from collections import deque
+        from .recognition import _quality, _samples
         import math
-        delta, maximum = calibration.get('enrollment_pose_delta'), calibration.get('maximum_pose_offset')
-        if (type(delta) not in (float, int) or type(maximum) not in (float, int) or
-                not math.isfinite(delta) or not math.isfinite(maximum) or not 0 < delta < maximum < 1):
-            raise ValueError('pose_calibration_required')
-        samples, poses = [], []
-        deadline = self.clock() + 25
-        while len(samples) < 3 and self.clock() < deadline:
-            frame = self.read()
-            reason = 'look_straight' if not samples else 'turn_slightly' if len(samples) == 1 else 'turn_other_way'
+        started = self.clock()
+        recent, shots = deque(), []
+        while len(shots) < 10:
             try:
-                if not _quality(frame, self.cv, calibration):
-                    reason = 'improve_light_or_hold_still'
+                frame = self.read()
+            except RuntimeError as error:
+                if str(error) not in ERROR_CODES:
+                    raise
+                frame = None
+            now = self.clock()
+            if frame is not None:
+                recent.append((self.last_capture, self.sequence, frame))
+            progressed = False
+            while len(shots) < 10 and now >= started + 2 * (len(shots) + 1):
+                due = started + 2 * (len(shots) + 1)
+                eligible = [item for item in recent if due - .5 <= item[0] <= due]
+                shots.append(eligible[-1] if eligible else None)
+                progressed = True
+            while recent and recent[0][0] < now - 2:
+                recent.popleft()
+            if frame is not None:
+                if progressed:
+                    emit({'kind': 'progress', 'sequence': self.sequence, 'captured_at': self.last_capture,
+                          'payload': {'samples': len(shots), 'target': 10, 'reason': 'burst_capture'}})
                 else:
-                    try:
-                        faces = encoder.encode(frame, include_pose=True)
-                    except ValueError:
-                        faces = []
-                        reason = 'one_person_only'
-                    if len(faces) == 1:
-                        pose = faces[0][2]
-                        accepted = math.isfinite(pose) and abs(pose) <= maximum
-                        if not samples:
-                            accepted = accepted and abs(pose) <= delta
-                        elif len(samples) == 1:
-                            accepted = accepted and abs(pose - poses[0]) >= delta
-                        else:
-                            accepted = accepted and (pose - poses[0]) * (poses[1] - poses[0]) < 0 and abs(pose - poses[0]) >= delta
-                        if accepted and self.clock() < deadline:
-                            poses.append(pose)
-                            samples.append({'sequence': self.sequence, 'captured_at': self.last_capture,
-                                            'embedding': faces[0][1]})
-                            reason = 'sample_accepted'
-                    elif reason != 'one_person_only':
-                        reason = 'face_camera'
-                emit({'kind': 'progress', 'sequence': self.sequence, 'captured_at': self.last_capture,
-                      'payload': {'samples': len(samples), 'target': 3, 'reason': reason}})
+                    ok, encoded = self.cv.imencode('.jpg', frame, [self.cv.IMWRITE_JPEG_QUALITY, 70])
+                    if ok and encoded.nbytes <= 180000:
+                        emit({'kind': 'preview', 'sequence': self.sequence, 'captured_at': self.last_capture,
+                              'payload': {'image': 'data:image/jpeg;base64,' + base64.b64encode(encoded).decode()}})
+            frame = None
+        recent.clear()
+        accepted = []
+        for index, item in enumerate(shots):
+            try:
+                if item is None or not _quality(item[2], self.cv, calibration):
+                    continue
+                faces = encoder.encode(item[2])
+                if len(faces) != 1:
+                    continue
+                vector = _samples([faces[0][1]] * 3)[0]
+                norm = math.sqrt(sum(x*x for x in vector))
+                accepted.append({'sequence': item[1], 'captured_at': item[0],
+                                 'embedding': [x / norm for x in vector]})
+            except ValueError:
+                continue
             finally:
-                del frame
-        if len(samples) != 3:
-            raise RuntimeError('enrollment_timeout')
-        return samples
+                shots[index] = None
+        if len(accepted) < 3:
+            raise RuntimeError('insufficient_frames')
+        # Preserve the three-reference storage contract, using disjoint groups
+        # from this burst only. No sample is duplicated to fill a missing group.
+        references = []
+        for offset in range(3):
+            group = accepted[offset::3]
+            mean = [sum(item['embedding'][i] for item in group) / len(group) for i in range(128)]
+            norm = math.sqrt(sum(x*x for x in mean))
+            if not math.isfinite(norm) or norm <= 0:
+                raise ValueError('inconsistent')
+            references.append({**group[-1], 'embedding': [x / norm for x in mean]})
+        return references
 
 
 def run(request):
@@ -235,9 +276,12 @@ def main():
         if len(raw) > 4096:
             raise ValueError('oversized')
         run(json.loads(raw))
-    except Exception:
+    except Exception as error:
         # Never expose driver/model exceptions, paths, PINs or biometric values.
-        emit({'kind': 'error', 'sequence': 0, 'captured_at': 0, 'payload': {}})
+        code = str(error) if type(error) in (RuntimeError, ValueError) else 'worker_error'
+        if code not in ERROR_CODES:
+            code = 'worker_error'
+        emit({'kind': 'error', 'sequence': 0, 'captured_at': 0, 'payload': {'code': code}})
         raise SystemExit(1)
 
 

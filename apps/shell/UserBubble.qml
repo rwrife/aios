@@ -6,6 +6,8 @@ import QtQml.Models
 Item {
     id: root
     property var control: null
+    property var theme: fallbackTheme
+    Theme { id: fallbackTheme }
     property color ink: "#e4edf1"
     property color surface: "#263944"
     readonly property var profile: control && control.profile ? control.profile : ({})
@@ -48,7 +50,7 @@ Item {
         }
     }
     QtObject { id: unavailable; property bool busy: false; property string error: ""; function setSecureInput(active) {} }
-    EnrollmentFlow { id: enrollment; objectName: "bubbleEnrollment"; parent: Overlay.overlay; anchors.centerIn: parent; control: root.control || unavailable }
+    EnrollmentFlow { id: enrollment; objectName: "bubbleEnrollment"; parent: Overlay.overlay; anchors.centerIn: parent; control: root.control || unavailable; theme: root.theme }
     component ProfileMenuItem: MenuItem {
         id: item
         implicitHeight: 40
