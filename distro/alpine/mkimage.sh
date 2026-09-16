@@ -132,4 +132,14 @@ for iso in "$OUT_DIR"/*-"$RELEASE_TAG"-"$ARCH".iso; do
     --packages-txt "$iso.packages.txt" \
     --output "$iso.build-manifest.json"
 done
-(cd "$OUT_DIR" && sha256sum ./*.iso > SHA256SUMS)
+echo "[aios] checksumming current release: $RELEASE_TAG ($ARCH)"
+(
+  cd "$OUT_DIR"
+  # Old local images can total many gigabytes, especially on a Windows mount.
+  # Publish only this release's checksums, and keep the last complete file if
+  # hashing is interrupted.
+  trap 'rm -f SHA256SUMS.tmp' EXIT
+  sha256sum ./*-"$RELEASE_TAG"-"$ARCH".iso > SHA256SUMS.tmp
+  mv SHA256SUMS.tmp SHA256SUMS
+)
+echo "[aios] build complete: $OUT_DIR/SHA256SUMS"
