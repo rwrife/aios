@@ -14,6 +14,35 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_worker_owns_one_stream_across_enrollment_and_all_checks(self):
+        import tempfile
+        from pathlib import Path
+        capture = MagicMock()
+        capture.__enter__.return_value = capture
+        preview = MagicMock()
+        commands = [{'action': 'enroll'}] + [{'action': 'probe'}] * 5
+        terminal = MagicMock(buffer=io.BytesIO(b''.join(json.dumps(command).encode() + b'\n' for command in commands)))
+        vector = [1.] * 128
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'models.lock.json').write_text(json.dumps({'yunet': {'path': '/unused/a'}, 'sface': {'path': '/unused/b'}}))
+            library = MagicMock()
+            library.prctl.return_value = 0
+            with patch.dict(os.environ, {'AIOS_EVALUATION_PARENT': str(os.getppid())}), \
+                    patch.object(session.ctypes, 'CDLL', return_value=library), \
+                    patch('aios.biometrics.FaceEncoder'), \
+                    patch('aios.capture_service.inventory', return_value={'device': ['/unused']}), \
+                    patch.object(session, 'FramingPreview', return_value=preview), \
+                    patch.object(session, 'PreviewAcquisition', return_value=capture) as factory, \
+                    patch.object(session, 'guided_enrollment', return_value=[vector]), \
+                    patch.object(session, 'collect_good_frames', return_value=[vector] * 3), \
+                    patch.object(sys, 'stdin', terminal), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(session.worker(root), 0)
+        factory.assert_called_once()
+        capture.__enter__.assert_called_once()
+        capture.__exit__.assert_called_once()
+        preview.close.assert_called_once()
+
     def test_pose_feedback_distinguishes_direction_and_amount(self):
         self.assertIsNone(session.pose_feedback(0., []))
         self.assertEqual(session.pose_feedback(.1, []), 'face_forward')
@@ -75,24 +104,7 @@ class EvaluationSessionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.exchange({'kind': 'capture_metrics', 'payload': {**values, **change}})
 
-    def test_stale_stream_is_closed_and_reopened_once_without_advancing(self):
-        preview = MagicMock()
-        capture = session.PreviewAcquisition('/unused', preview)
-        capture.cutoff, capture.last_capture, capture.driver_sequence = 90., 99., 100
-        frame = object()
-        order = []
-        with patch.object(session.Acquisition, 'read', side_effect=[RuntimeError('stale_frame'), frame]), \
-                patch.object(session.Acquisition, '__exit__', side_effect=lambda: order.append('closed')), \
-                patch.object(session.Acquisition, '__enter__', side_effect=lambda: order.append('opened')), \
-                contextlib.redirect_stdout(io.StringIO()):
-            self.assertIs(capture.read(), frame)
-        self.assertEqual(order, ['closed', 'opened'])
-        self.assertEqual(capture.stream_restarts, 1)
-        self.assertIsNone(capture.driver_sequence)
-        preview.advance.assert_not_called()
-        preview.show.assert_called_once_with(frame)
-
-    def test_repeated_stream_errors_recover_without_advancing(self):
+    def test_repeated_read_errors_do_not_close_or_reopen_stream(self):
         capture = session.PreviewAcquisition('/unused', MagicMock())
         frame = object()
         with patch.object(session.Acquisition, 'read', side_effect=[RuntimeError('stale_frame')] * 3 + [frame]), \
@@ -100,21 +112,30 @@ class EvaluationSessionTests(unittest.TestCase):
                 patch.object(session.Acquisition, '__enter__') as reopen, \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertIs(capture.read(), frame)
-        self.assertEqual(close.call_count, 3)
-        self.assertEqual(reopen.call_count, 3)
+        close.assert_not_called()
+        reopen.assert_not_called()
+        self.assertEqual(capture.preview.recover.call_count, 3)
         capture.preview.advance.assert_not_called()
 
-    def test_cancel_during_recovery_stops_reopening_camera(self):
+    def test_cancel_during_bad_frames_stops_read_loop(self):
         capture = session.PreviewAcquisition('/unused', MagicMock())
         capture.preview.recover.side_effect = RuntimeError('preview_cancelled')
         with patch.object(session.Acquisition, 'read', side_effect=RuntimeError('stale_frame')), \
-                patch.object(session.Acquisition, '__exit__') as close, \
                 patch.object(session.Acquisition, '__enter__') as reopen, \
                 contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
                 capture.read()
-        close.assert_called_once()
         reopen.assert_not_called()
+
+    def test_sampling_drains_preview_between_two_second_selections(self):
+        capture = MagicMock(next_sample_at=0)
+        frames = [object() for _ in range(5)]
+        capture.read.side_effect = frames
+        clock = MagicMock(side_effect=[10., 10.2, 11., 11.9, 12.])
+        self.assertIs(session.sample_frame(capture, clock), frames[0])
+        self.assertIs(session.sample_frame(capture, clock), frames[4])
+        self.assertEqual(capture.read.call_count, 5)
+        self.assertEqual(capture.next_sample_at, 14.)
 
     def test_recovery_clears_stale_preview_and_pumps_cancel(self):
         preview = session.FramingPreview.__new__(session.FramingPreview)
@@ -184,7 +205,7 @@ class EvaluationSessionTests(unittest.TestCase):
     def test_forward_enrollment_requires_one_click_and_ten_frames(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
         encoder.encode.return_value = [(None, [1.] * 128)]
-        with patch.object(session, 'frame_feedback', return_value=None), \
+        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None), \
                 patch.object(session, 'pose_feedback', side_effect=AssertionError('pose gate used')):
             samples = session.guided_enrollment(capture, encoder, preview)
         self.assertEqual(len(samples), 1)
@@ -203,7 +224,7 @@ class EvaluationSessionTests(unittest.TestCase):
     def test_rejected_frames_do_not_count_or_require_more_clicks(self):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
         encoder.encode.side_effect = [[], [(None, [float('nan')] * 128)]] + [[(None, [1.] * 128)]] * 10
-        with patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 12):
+        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', side_effect=['too_dark'] + [None] * 12):
             samples = session.guided_enrollment(capture, encoder, preview)
         self.assertEqual(len(samples), 1)
         self.assertEqual(capture.read.call_count, 13)
@@ -215,7 +236,7 @@ class EvaluationSessionTests(unittest.TestCase):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
         poses = iter([0.] * 10 + [.1] * 10 + [-.1] * 10)
         encoder.encode.side_effect = lambda *args, **kwargs: [(None, [1.] * 128, next(poses))]
-        with patch.object(session, 'frame_feedback', return_value=None), \
+        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None), \
                 patch.object(session.time, 'monotonic', side_effect=itertools.count(step=1000)):
             self.assertEqual(len(session.guided_enrollment(capture, encoder, preview)), 1)
         self.assertEqual(capture.read.call_count, 10)
@@ -230,7 +251,7 @@ class EvaluationSessionTests(unittest.TestCase):
         capture, encoder, preview = MagicMock(), MagicMock(), MagicMock()
         capture.read.side_effect = [object(), RuntimeError('preview_cancelled')]
         encoder.encode.return_value = [(None, [1.] * 128, 0.)]
-        with patch.object(session, 'frame_feedback', return_value=None):
+        with patch.object(session, 'sample_frame', side_effect=lambda capture: capture.read()), patch.object(session, 'frame_feedback', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
                 session.guided_enrollment(capture, encoder, preview)
         self.assertEqual(encoder.encode.call_count, 1)

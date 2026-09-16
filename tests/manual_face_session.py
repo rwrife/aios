@@ -152,49 +152,41 @@ class TimedEncoder:
 
 
 class PreviewAcquisition(Acquisition):
-    """One camera owner; retry failed streams until participant cancellation."""
+    """Keep one stream open; discard failed reads without cycling the device."""
     def __init__(self, device, preview):
         super().__init__(device)
         self.preview = preview
-        self.stream_restarts = 0
-        self.restarting = False
         self.metrics = CaptureMetrics()
         self.observed_library = None
+        self.next_sample_at = 0
 
     def read(self):
+        if self.camera and self.observed_library is not self.library:
+            native = self.library.aios_camera_read
+            self.library.aios_camera_read = lambda *args: self.metrics.observe(self, native, *args)
+            self.observed_library = self.library
         while True:
-            if self.camera and self.observed_library is not self.library:
-                native = self.library.aios_camera_read
-                self.library.aios_camera_read = lambda *args: self.metrics.observe(self, native, *args)
-                self.observed_library = self.library
             try:
                 frame = super().read()
                 self.preview.show(frame)
                 return frame
             except RuntimeError as error:
-                if str(error) not in ERROR_CODES or self.restarting:
+                if str(error) not in ERROR_CODES:
                     raise
                 self.metrics.emit()
-                previous_feedback = self.preview.feedback.text()
-                while True:
-                    self.stream_restarts += 1
-                    print(json.dumps({'kind': 'notice', 'reason': pause_reason(error)}), flush=True)
-                    self.__exit__()
-                    # Every attempt closes the old handle first. Freshness and
-                    # sequence validation still apply to every new stream.
-                    self.preview.recover('Reconnecting the camera. Keeping this pose and its good frames.')
-                    Acquisition.__init__(self, self.device, clock=self.clock)
-                    self.restarting = True
-                    try:
-                        self.__enter__()
-                        break
-                    except RuntimeError as retry_error:
-                        if str(retry_error) not in ERROR_CODES:
-                            raise
-                        error = retry_error
-                    finally:
-                        self.restarting = False
-                self.preview.feedback.setText(previous_feedback)
+                print(json.dumps({'kind': 'notice', 'reason': pause_reason(error)}), flush=True)
+                self.preview.recover('Waiting for a usable camera frame. Keeping the stream open.')
+
+
+def sample_frame(capture, clock=time.monotonic):
+    """Drain/display continuously, but select at most one frame every two seconds."""
+    while True:
+        frame = capture.read()
+        now = clock()
+        if now >= capture.next_sample_at:
+            capture.next_sample_at = now + 2
+            return frame
+        del frame
 
 
 class FramingPreview:
@@ -337,16 +329,15 @@ def reference_vector(vectors):
     return [value / norm for value in mean]
 
 
-def guided_enrollment(capture, encoder, preview):
+def collect_good_frames(capture, encoder, preview, target):
     from aios.recognition import _samples
-    preview.ready(capture, 'Enrollment: Look straight at the camera lens.')
     vectors = []
     reason = None
-    while len(vectors) < ENROLLMENT_FRAMES_PER_POSE:
+    while len(vectors) < target:
         preview.feedback.setText(
-            f'Good frames: {len(vectors)} of {ENROLLMENT_FRAMES_PER_POSE}. ' +
+            f'Good frames: {len(vectors)} of {target}. ' +
             (POSE_FEEDBACK[reason] if reason else 'Hold this pose. Capturing automatically...'))
-        frame = capture.read()
+        frame = sample_frame(capture)
         faces = None
         try:
             reason = frame_feedback(frame, capture.cv)
@@ -375,6 +366,12 @@ def guided_enrollment(capture, encoder, preview):
             vector = None
             del frame
     encoder.metrics.emit()
+    return vectors
+
+
+def guided_enrollment(capture, encoder, preview):
+    preview.ready(capture, 'Enrollment: Look straight at the camera lens.')
+    vectors = collect_good_frames(capture, encoder, preview, ENROLLMENT_FRAMES_PER_POSE)
     reference = reference_vector(vectors)
     vectors.clear()
     preview.feedback.setText('10 good frames captured. Reference complete.')
@@ -407,64 +404,59 @@ def worker(directory):
     for name in ('yunet', 'sface'):
         lock[name]['path'] = str(directory / Path(lock[name]['path']).name)
     encoder = FaceEncoder(lock, calibration=CALIBRATION)
+    from contextlib import ExitStack
     gallery = None
     probe_index = 0
-    for raw in sys.stdin.buffer:
-        if len(raw) > 1024:
-            return 1
-        command = json.loads(raw)
-        if command not in ({'action': 'enroll'}, {'action': 'probe'}):
-            return 1
-        started = time.monotonic()
-        status, matched = 'unavailable', False
-        preview = FramingPreview(encoder.cv, 'Position your face')
-        try:
-            while True:
-                capture = None
-                try:
-                    devices = inventory()
-                    if len(devices) != 1:
-                        raise RuntimeError('one_camera_required')
-                    device = next(iter(devices.values()))[0]
-                    with PreviewAcquisition(device, preview) as capture:
+    preview = FramingPreview(encoder.cv, 'Position your face')
+    with ExitStack() as resources:
+        resources.callback(preview.close)
+        capture = None
+        for raw in sys.stdin.buffer:
+            if len(raw) > 1024:
+                return 1
+            command = json.loads(raw)
+            if command not in ({'action': 'enroll'}, {'action': 'probe'}):
+                return 1
+            started = time.monotonic()
+            status, matched = 'unavailable', False
+            try:
+                while True:
+                    try:
+                        if capture is None:
+                            devices = inventory()
+                            if len(devices) != 1:
+                                raise RuntimeError('one_camera_required')
+                            device = next(iter(devices.values()))[0]
+                            capture = resources.enter_context(PreviewAcquisition(device, preview))
                         timed_encoder = TimedEncoder(encoder, capture.metrics)
                         if command['action'] == 'enroll':
                             vectors = guided_enrollment(capture, timed_encoder, preview)
+                            gallery = {'temporary-person': vectors}
+                            status = 'enrolled'
                         else:
                             preview.ready(capture, f'Check {probe_index + 1} of 5: {PROBE_GUIDANCE[min(probe_index, 4)]}')
-                            vectors = _samples([item['embedding'] for item in capture.embeddings(device, timed_encoder, CALIBRATION)])
+                            vectors = _samples(collect_good_frames(capture, timed_encoder, preview, 3))
+                            if gallery is None:
+                                raise ValueError('enrollment_required')
+                            matched = all(match(vector, gallery, CALIBRATION['match_threshold'],
+                                                CALIBRATION['runner_up_margin']) == 'temporary-person' for vector in vectors)
+                            status = 'measured'
                         capture.metrics.emit()
-                    if command['action'] == 'enroll':
-                        gallery = {'temporary-person': vectors}
-                        status = 'enrolled'
-                    elif gallery:
-                        matches = [match(vector, gallery, CALIBRATION['match_threshold'], CALIBRATION['runner_up_margin'])
-                                   for vector in vectors]
-                        matched = all(value == 'temporary-person' for value in matches)
-                        status = 'measured'
-                    else:
-                        raise ValueError('enrollment_required')
-                    break
-                except Exception as error:
-                    if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled':
-                        raise
-                    reason = pause_reason(error)
-                    if (reason == 'stale_frame' and capture is not None and
-                            capture.metrics.values['driver_error_frames'] and
-                            not any(capture.metrics.values[key] for key in
-                                    ('old_frames', 'future_frames', 'timestamp_order', 'sequence_order',
-                                     'empty_frames', 'other_read_errors'))):
-                        reason = 'camera_driver_frame_error'
-                    print(json.dumps({'kind': 'notice', 'reason': reason}), flush=True)
-                    preview.retry(reason, command['action'])
-        except RuntimeError as error:
-            status = 'cancelled' if str(error) == 'preview_cancelled' else 'unavailable'
-        finally:
-            preview.close()
-        if command['action'] == 'probe':
-            probe_index += 1
-        print(json.dumps({'kind': 'evaluation', 'status': status, 'matched': matched,
-                          'seconds': round(time.monotonic() - started, 4)}, allow_nan=False), flush=True)
+                        break
+                    except Exception as error:
+                        if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled':
+                            raise
+                        reason = pause_reason(error)
+                        print(json.dumps({'kind': 'notice', 'reason': reason}), flush=True)
+                        preview.retry(reason, command['action'])
+            except RuntimeError as error:
+                status = 'cancelled' if str(error) == 'preview_cancelled' else 'unavailable'
+            if command['action'] == 'probe':
+                probe_index += 1
+            print(json.dumps({'kind': 'evaluation', 'status': status, 'matched': matched,
+                              'seconds': round(time.monotonic() - started, 4)}, allow_nan=False), flush=True)
+            if status == 'cancelled':
+                break
     gallery = None
     return 0
 
@@ -587,6 +579,7 @@ def main():
                    'correct_candidates': sum(value['matched'] for value in results),
                    'enrollment_frames': ENROLLMENT_FRAMES_PER_POSE,
                    'enrollment_views': 'forward_only',
+                   'sampling_interval_seconds': 2,
                    'enrollment_reference_method': 'mean_of_unit_embeddings',
                    'enrollment_retry_count': enrolled.get('retry_count', 0),
                    'probe_retry_counts': [value.get('retry_count', 0) for value in results],

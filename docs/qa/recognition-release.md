@@ -444,3 +444,26 @@ three-pose results or treated as production approval. Twenty-three focused tests
 pass, including one-click collection of exactly ten accepted frames, rejected
 frames excluded, and matching against a one-reference gallery. Continuous retry
 and participant cancellation remain in effect.
+
+### Continuous camera ownership and two-second sampling
+
+The participant reported the camera light cycling and requested a continuously
+open stream with a frame selected every couple of seconds. The manual worker now
+owns one preview and camera context across enrollment and all five checks. Read
+errors discard frames and retry on the same handle; they no longer close/reopen
+the camera. Preview frames are drained continuously, but face processing selects
+at most one fresh frame every two seconds. Probe collection uses the same pacing
+without the previous two-second three-frame deadline. Cancellation or completed
+session cleanup releases the camera. An opened stream that cannot recover stays
+visible and cancellable rather than being automatically power-cycled.
+
+Twenty-four focused tests pass, including exactly one camera enter/exit across
+enrollment and five checks, no reopen after repeated read failures, cancellation
+while waiting for usable frames, and discarding intermediate preview frames
+between two-second sample selections. This changes the manual development
+harness, not the production capture adapter or approval state.
+
+A real-Brio preview check selected ten frames on the same handle, 2.004–2.152
+seconds apart, while draining 143 frames. It recorded zero frame rejections,
+maximum observed frame age 0.1005 seconds, and confirmed closure only at the end.
+This was a stream/pacing test without face inference or biometric enrollment.
