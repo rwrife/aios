@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -207,6 +208,16 @@ def modloop_identity(modloop: Path) -> dict:
     return {"status": "recorded", "module_versions": sorted(versions)}
 
 
+def remove_extraction(root: Path) -> None:
+    """ISO directory modes are read-only; restore owner access before cleanup."""
+    if root.is_symlink():
+        raise ValueError('extraction root must not be a symlink')
+    for directory, _, _ in os.walk(root, followlinks=False):
+        path = Path(directory)
+        path.chmod(path.stat().st_mode | 0o700)
+    shutil.rmtree(root)
+
+
 def build_manifest(args: argparse.Namespace) -> dict:
     file_pins = {}
     build_env_sha = None
@@ -254,7 +265,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
         work.mkdir(parents=True, exist_ok=True)
         root = work / "iso"
         if root.exists():
-            shutil.rmtree(root)
+            remove_extraction(root)
         root.mkdir(parents=True)
         cleanup = None if args.keep_extraction else root
         error = run_xorriso_extract(args.iso, "/apks", root / "apks")
@@ -344,7 +355,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
     if extraction_errors:
         manifest["artifacts"]["extraction_errors"] = sorted(set(extraction_errors))
     if cleanup is not None and cleanup.is_dir():
-        shutil.rmtree(cleanup, ignore_errors=True)
+        remove_extraction(cleanup)
     return manifest
 
 

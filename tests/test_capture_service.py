@@ -201,6 +201,19 @@ class ServiceTests(unittest.TestCase):
         self.service.command(request())
         self.assertEqual(len(self.workers), 2)
 
+    def test_exited_worker_pipe_is_drained_before_reporting_exit(self):
+        self.service.command(request(mode='preview'))
+        worker = self.workers[-1]
+        worker.code = 0
+        raw = json.dumps({'kind': 'result', 'sequence': 1, 'captured_at': 100.,
+                          'payload': {'state': 'manual-only'}}).encode() + b'\n'
+        worker.stdout.read.side_effect = [raw[:20], raw[20:]]
+        self.service.tick()
+        self.assertIsNotNone(self.service.job)
+        self.service.tick()
+        self.assertTrue(any(event['event'] == 'result' for event in self.events))
+        self.assertFalse(any(event['reason'] == 'worker_exit' for event in self.events))
+
     def test_stale_duplicate_oversized_and_private_worker_events_are_rejected(self):
         for event in ({'kind': 'preview', 'sequence': 1, 'captured_at': 1, 'payload': {'image': 'data:image/jpeg;base64,AA=='}},
                       {'kind': 'result', 'sequence': 1, 'captured_at': 100, 'payload': {'embedding': [1, 2]}},

@@ -27,6 +27,17 @@ CANONICAL_COMMUNITY = 'https://dl-cdn.alpinelinux.org/alpine/v3.23/community'
 
 
 class ManifestRecorderTests(unittest.TestCase):
+    def test_cleanup_handles_read_only_iso_directories(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'iso'
+            nested = root / 'apks' / 'x86_64'
+            nested.mkdir(parents=True)
+            (nested / 'package.apk').write_bytes(b'package')
+            for directory in (nested, nested.parent, root):
+                directory.chmod(0o555)
+            recorder.remove_extraction(root)
+            self.assertFalse(root.exists())
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
