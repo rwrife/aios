@@ -14,6 +14,36 @@ import manual_face_session as session
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_stale_stream_is_closed_and_reopened_once_without_advancing(self):
+        preview = MagicMock()
+        capture = session.PreviewAcquisition('/unused', preview)
+        capture.cutoff, capture.last_capture, capture.driver_sequence = 90., 99., 100
+        frame = object()
+        order = []
+        with patch.object(session.Acquisition, 'read', side_effect=[RuntimeError('stale_frame'), frame]), \
+                patch.object(session.Acquisition, '__exit__', side_effect=lambda: order.append('closed')), \
+                patch.object(session.Acquisition, '__enter__', side_effect=lambda: order.append('opened')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertIs(capture.read(), frame)
+        self.assertEqual(order, ['closed', 'opened'])
+        self.assertEqual(capture.stream_restarts, 1)
+        self.assertIsNone(capture.driver_sequence)
+        preview.advance.assert_not_called()
+        preview.show.assert_called_once_with(frame)
+
+    def test_failed_stream_recovery_is_bounded(self):
+        capture = session.PreviewAcquisition('/unused', MagicMock())
+        with patch.object(session.Acquisition, 'read', side_effect=RuntimeError('stale_frame')), \
+                patch.object(session.Acquisition, '__exit__') as close, \
+                patch.object(session.Acquisition, '__enter__') as reopen, \
+                contextlib.redirect_stdout(io.StringIO()):
+            for _ in range(2):
+                with self.assertRaisesRegex(RuntimeError, 'stale_frame'):
+                    capture.read()
+            self.assertEqual(close.call_count, 1)
+            self.assertEqual(reopen.call_count, 1)
+        capture.preview.show.assert_not_called()
+
     def test_pause_clears_preview_and_waits_for_explicit_retry(self):
         preview = session.FramingPreview.__new__(session.FramingPreview)
         preview.app, preview.image, preview.heading = MagicMock(), MagicMock(), MagicMock()

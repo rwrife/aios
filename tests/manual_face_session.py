@@ -41,7 +41,7 @@ PAUSE_REASONS = {
     'inconsistent': 'The enrollment poses were not consistent enough.',
     'worker_error': 'The capture could not finish.',
 }
-from aios.capture_worker import ERROR_CODES
+from aios.capture_worker import ERROR_CODES, Acquisition
 PAUSE_REASONS.update({code: 'Camera capture stopped (' + code + ').' for code in ERROR_CODES})
 PAUSE_REASONS.update({
     'camera_read_failed': 'The camera stopped providing usable frames.',
@@ -55,6 +55,41 @@ PAUSE_REASONS.update({
 def pause_reason(error):
     value = str(error)
     return value if type(error) in (RuntimeError, ValueError) and value in PAUSE_REASONS else 'worker_error'
+
+
+class PreviewAcquisition(Acquisition):
+    """One camera owner, with one bounded fresh-stream recovery per operation."""
+    def __init__(self, device, preview):
+        super().__init__(device)
+        self.preview = preview
+        self.stream_restarts = 0
+        self.restarting = False
+
+    def read(self):
+        try:
+            frame = super().read()
+        except RuntimeError as error:
+            if str(error) != 'stale_frame' or self.restarting or self.stream_restarts:
+                raise
+            self.stream_restarts += 1
+            print(json.dumps({'kind': 'notice', 'reason': 'stale_frame'}), flush=True)
+            previous_feedback = self.preview.feedback.text()
+            self.preview.feedback.setText('Refreshing the camera stream. This step has not advanced.')
+            self.preview.app.processEvents()
+            # Fully release the old stream before opening another one. A new
+            # stream resets sequence history, but all timestamp/age checks and
+            # warmup still run normally; no old frame is relabelled as fresh.
+            self.__exit__()
+            Acquisition.__init__(self, self.device, clock=self.clock)
+            self.restarting = True
+            try:
+                self.__enter__()
+            finally:
+                self.restarting = False
+            frame = super().read()
+            self.preview.feedback.setText(previous_feedback)
+        self.preview.show(frame)
+        return frame
 
 
 class FramingPreview:
@@ -255,7 +290,6 @@ def read_consent():
 def worker(directory):
     from aios.biometrics import FaceEncoder
     from aios.capture_service import inventory
-    from aios.capture_worker import Acquisition
     from aios.recognition import _consistent, _samples
     from aios.identity import match
     parent = int(os.environ['AIOS_EVALUATION_PARENT'])
@@ -283,12 +317,7 @@ def worker(directory):
                     if len(devices) != 1:
                         raise RuntimeError('one_camera_required')
                     device = next(iter(devices.values()))[0]
-                    class PreviewAcquisition(Acquisition):
-                        def read(self):
-                            frame = super().read()
-                            preview.show(frame)
-                            return frame
-                    with PreviewAcquisition(device) as capture:
+                    with PreviewAcquisition(device, preview) as capture:
                         if command['action'] == 'enroll':
                             vectors = _samples(guided_enrollment(capture, encoder, preview))
                         else:
@@ -356,7 +385,7 @@ def exchange(process, action, timeout, on_notice=None):
                     raise RuntimeError('Too many failed capture attempts.')
                 if on_notice:
                     on_notice(value['reason'])
-                print('Capture paused: ' + PAUSE_REASONS[value['reason']], flush=True)
+                print('Capture interrupted: ' + PAUSE_REASONS[value['reason']], flush=True)
             elif value.get('kind') == 'progress':
                 payload = value.get('payload', {})
                 if (set(value) != {'kind', 'sequence', 'captured_at', 'payload'} or
@@ -406,7 +435,7 @@ def main():
     events = args.output.with_suffix('.events.jsonl').open('x', encoding='utf-8') if args.output else None
     def record_notice(reason):
         if events:
-            events.write(json.dumps({'event': 'capture_paused', 'reason': reason}) + '\n')
+            events.write(json.dumps({'event': 'capture_interrupted', 'reason': reason}) + '\n')
             events.flush()
     process = subprocess.Popen([sys.executable, __file__, '--worker', '--directory', str(args.directory)],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

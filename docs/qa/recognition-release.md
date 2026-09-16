@@ -316,3 +316,31 @@ Sage, verified that a read failure before Next leaves the window visible and
 clears its image, performs no additional reads while paused, and resumes only
 after an explicit Retry click. The revised consent session is open; completed
 biometric validation and the replacement soak remain pending.
+
+### Fresh-stream recovery after a confirmed interruption
+
+The participant's next run recorded `stale_frame` in its fixed-code event log.
+This identifies a freshness/drain failure, not a rejected identity or pose; it
+does not distinguish every possible timestamp, sequence or damaged-frame cause.
+Metadata-only reproduction tested ten reads each with 0, 0.5, 1 and 2 second
+consumer pauses. All completed; the 1/2-second cases each discarded ten old
+frames and recovered fresh frames. Synthetic model inference was
+0.0833/0.0690/0.0743/0.0796 seconds with four OpenCV threads. Ten real-preview
+Next transitions plus synthetic inference also completed without rejection.
+The participant's intermittent failure has therefore not been reproduced
+deterministically or attributed to inference latency.
+
+The manual preview adapter now permits one stream restart per capture operation
+after `stale_frame`: close the old handle first, open and warm up a new stream,
+then apply the same age, timestamp and sequence checks. It never retimestamps
+old evidence, weakens the 0.5-second age limit, or advances the wizard. A second
+failure still pauses for explicit Retry/Cancel. Interruptions, including an
+automatic restart, remain counted in the event log and aggregate retry counts.
+Thirteen focused tests pass, including close-before-open ordering and bounded
+recovery when freshness cannot be restored.
+
+A real-Brio technical test injected one stale-frame exception after Next, then
+completed five transitions with exactly one stream restart. The wizard heading
+stayed on the same step and maximum observed returned-frame age was 0.115 seconds.
+This used no biometric enrollment and is recovery evidence only. The updated
+participant session is reopened; its completion and the full soak are pending.
