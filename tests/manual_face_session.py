@@ -32,6 +32,60 @@ GUIDANCE = {
     'face_camera': 'Move closer with your whole face in view.',
     'sample_accepted': 'Sample accepted; follow the next instruction.',
 }
+PROBE_GUIDANCE = ('Look straight ahead.', 'Turn slightly left.', 'Turn slightly right.',
+                  'Move a little farther away.', 'Return to your usual position.')
+
+
+class FramingPreview:
+    """Local display in the camera-owning worker; no preview IPC or media files."""
+    def __init__(self, cv, hint):
+        from aios.core import load_config
+        from aios.terminal_theme import palette
+        self.cv, self.hint = cv, hint
+        self.name = 'Recognition framing preview'
+        colors = palette(load_config().get('theme_color', 'blue'))
+        def bgr(value):
+            return tuple(int(value.lstrip('#')[index:index + 2], 16) for index in (4, 2, 0))
+        self.color, self.panel, self.ink = bgr(colors[5]), bgr(colors[2]), bgr('#f1f5f6')
+        self.key = -1
+        self.opened = False
+
+    def show(self, frame):
+        created = not self.opened
+        if not self.opened:
+            self.cv.namedWindow(self.name, self.cv.WINDOW_AUTOSIZE | self.cv.WINDOW_GUI_NORMAL)
+            self.opened = True
+        display = self.cv.flip(frame, 1)
+        try:
+            self.cv.ellipse(display, (320, 216), (104, 160), 0, 0, 360, self.color, 1)
+            self.cv.rectangle(display, (0, 416), (639, 479), self.panel, -1)
+            lines = self.hint.split(' | ', 1)
+            for index, line in enumerate(lines):
+                self.cv.addText(display, line, (24, 440 + index * 24), 'DejaVu Sans', 12, self.ink)
+            self.cv.setWindowTitle(self.name, 'Recognition preview')
+            self.cv.imshow(self.name, display)
+            if created:
+                self.cv.moveWindow(self.name, 24, 24)
+            self.key = self.cv.waitKey(30) & 255
+            if self.key == 27 or self.cv.getWindowProperty(self.name, self.cv.WND_PROP_VISIBLE) < 1:
+                raise RuntimeError('preview_cancelled')
+        finally:
+            del display
+
+    def ready(self, capture):
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            frame = capture.read()
+            del frame
+            if self.key in (32, 10, 13):
+                return
+        raise RuntimeError('framing_timeout')
+
+    def close(self):
+        if self.opened:
+            self.cv.destroyWindow(self.name)
+            self.cv.waitKey(1)
+            self.opened = False
 
 
 def read_consent():
@@ -52,6 +106,7 @@ def worker(directory):
     from aios.biometrics import FaceEncoder
     from aios.capture_service import inventory
     from aios.capture_worker import Acquisition
+    from aios import capture_worker
     from aios.recognition import _consistent, _samples
     from aios.identity import match
     parent = int(os.environ['AIOS_EVALUATION_PARENT'])
@@ -62,6 +117,7 @@ def worker(directory):
         lock[name]['path'] = str(directory / Path(lock[name]['path']).name)
     encoder = FaceEncoder(lock, calibration=CALIBRATION)
     gallery = None
+    probe_index = 0
     for raw in sys.stdin.buffer:
         if len(raw) > 1024:
             return 1
@@ -70,12 +126,29 @@ def worker(directory):
             return 1
         started = time.monotonic()
         status, matched = 'unavailable', False
+        preview = None
+        original_emit = capture_worker.emit
         try:
             devices = inventory()
             if len(devices) != 1:
                 raise RuntimeError('one_camera_required')
             device = next(iter(devices.values()))[0]
-            with Acquisition(device) as capture:
+            preview = FramingPreview(encoder.cv, ('Center your face' if command['action'] == 'enroll'
+                                     else PROBE_GUIDANCE[min(probe_index, 4)]) + ' | Space: start | Esc: cancel')
+            class PreviewAcquisition(Acquisition):
+                def read(self):
+                    frame = super().read()
+                    preview.show(frame)
+                    return frame
+            def progress(event):
+                if event.get('kind') == 'progress':
+                    payload = event['payload']
+                    preview.hint = GUIDANCE[payload['reason']] + f" ({payload['samples']}/3) | Esc: cancel"
+                original_emit(event)
+            capture_worker.emit = progress
+            with PreviewAcquisition(device) as capture:
+                preview.ready(capture)
+                preview.hint = 'Hold still - measuring | Esc: cancel'
                 adapter = capture.enrollment_embeddings if command['action'] == 'enroll' else capture.embeddings
                 vectors = _samples([item['embedding'] for item in adapter(device, encoder, CALIBRATION)])
             if command['action'] == 'enroll':
@@ -90,8 +163,14 @@ def worker(directory):
                 status = 'measured'
             else:
                 raise ValueError('enrollment_required')
-        except Exception:
-            status = 'unavailable'
+        except Exception as error:
+            status = 'cancelled' if isinstance(error, RuntimeError) and str(error) == 'preview_cancelled' else 'unavailable'
+        finally:
+            capture_worker.emit = original_emit
+            if preview is not None:
+                preview.close()
+        if command['action'] == 'probe':
+            probe_index += 1
         print(json.dumps({'kind': 'evaluation', 'status': status, 'matched': matched,
                           'seconds': round(time.monotonic() - started, 4)}, allow_nan=False), flush=True)
     gallery = None
@@ -132,7 +211,7 @@ def exchange(process, action, timeout):
                     print(hint, flush=True)
                     last_hint = hint
             elif (set(value) == {'kind', 'status', 'matched', 'seconds'} and value['kind'] == 'evaluation' and
-                  value['status'] in ('enrolled', 'measured', 'unavailable') and type(value['matched']) is bool and
+                  value['status'] in ('enrolled', 'measured', 'unavailable', 'cancelled') and type(value['matched']) is bool and
                   type(value['seconds']) in (int, float) and math.isfinite(value['seconds']) and 0 <= value['seconds'] <= timeout):
                 return value
             else:
@@ -158,6 +237,8 @@ def main():
           'then five repeat checks. Images and face vectors stay in worker memory\n'
           'and are discarded when it exits. Only anonymous counts/times are saved.\n'
           'No accounts, PINs or approvals change.\n'
+          'A mirrored local preview helps you frame your face inside the outline.\n'
+          'Click the preview and press Space when ready; Esc closes capture.\n'
           'Press Ctrl+C at any time to cancel and erase these temporary samples.\n')
     if not read_consent():
         print('Cancelled. The camera was not opened.')
@@ -168,16 +249,17 @@ def main():
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=worker_environment)
     try:
-        print('Look straight ahead, then follow the turn instructions. Starting now.', flush=True)
-        enrolled = exchange(process, 'enroll', 35)
+        print('Center your face in the preview, then press Space and follow its instructions.', flush=True)
+        enrolled = exchange(process, 'enroll', 80)
         if enrolled['status'] != 'enrolled':
             raise RuntimeError('No usable enrollment. Samples will be discarded; the run is incomplete.')
         print('Temporary enrollment complete. No account was created.')
         results = []
-        for instruction in ('Look straight ahead.', 'Turn slightly left.', 'Turn slightly right.',
-                            'Move a little farther away.', 'Return to your usual position.'):
-            input(instruction + ' Press Enter when ready: ')
-            result = exchange(process, 'probe', 8)
+        for instruction in PROBE_GUIDANCE:
+            print(instruction + ' Click the preview and press Space when ready.', flush=True)
+            result = exchange(process, 'probe', 55)
+            if result['status'] == 'cancelled':
+                raise RuntimeError('Participant cancelled the preview.')
             results.append(result)
             print('Candidate matched.' if result['matched'] else 'No candidate; this counts as a failed genuine attempt.')
         summary = {'development_only': True, 'production_approval_created': False,
@@ -185,6 +267,7 @@ def main():
                    'correct_candidates': sum(value['matched'] for value in results),
                    'unavailable_attempts': sum(value['status'] == 'unavailable' for value in results),
                    'attempt_seconds': [value['seconds'] for value in results],
+                   'framing_preview': True, 'timings_include_participant_framing': True,
                    'calibration': CALIBRATION, 'unknown_person_tested': False, 'held_out_cohort_tested': False}
         if args.output:
             with args.output.open('x', encoding='utf-8') as output:

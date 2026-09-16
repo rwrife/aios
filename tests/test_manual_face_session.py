@@ -7,13 +7,28 @@ import os
 import select
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import manual_face_session as session
 
 
 @unittest.skipUnless(sys.platform == 'linux', 'local Linux evaluation terminal')
 class EvaluationSessionTests(unittest.TestCase):
+    def test_preview_is_local_mirrored_and_escape_cancels(self):
+        cv = MagicMock()
+        cv.WINDOW_AUTOSIZE, cv.WINDOW_GUI_NORMAL = 1, 0
+        cv.waitKey.return_value = 27
+        cv.getWindowProperty.return_value = 1
+        frame = object()
+        with patch('aios.core.load_config', return_value={'theme_color': 'sage'}):
+            preview = session.FramingPreview(cv, 'Position your face')
+        with self.assertRaisesRegex(RuntimeError, 'preview_cancelled'):
+            preview.show(frame)
+        cv.flip.assert_called_once_with(frame, 1)
+        cv.imshow.assert_called_once_with(preview.name, cv.flip.return_value)
+        preview.close()
+        cv.destroyWindow.assert_called_once_with(preview.name)
+
     def test_mistyped_consent_can_be_retried_or_cancelled(self):
         with patch('builtins.input', side_effect=['I CONSET', '']), contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(session.read_consent())

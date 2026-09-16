@@ -236,3 +236,32 @@ for the participant session to exit with five aggregate probe results, then
 runs a new three-cycle guest smoke check. Only if that passes will it start the
 24-hour acquisition soak with 15-second idle intervals. At this checkpoint its
 state is **waiting for participant**; no completed session or soak is claimed.
+
+### First participant session and framing preview
+
+The participant completed the first consented development session: five genuine
+attempts, four correct candidates and one unavailable attempt. Attempt times
+were 1.3713, 1.1828, 1.2689, 1.3855 and 1.3438 seconds. This is one development
+participant with provisional thresholds, not held-out accuracy evidence.
+
+The subsequent ordinary-user guest smoke test passed three preview/photo
+preemptions, inactive rejection and worker termination in 8.972 seconds. Maximum
+frame age was 0.114 seconds; first-frame/photo-handoff p95 was 1.345/1.251 seconds.
+Sampling reported zero errors, one peak camera owner, 153580 KiB peak combined
+RSS and 11 peak descriptors. Idle service RSS was 20924 KiB before/after. This
+continuous short capture test's duty/CPU measurements are not idle/active soak
+results. One driver-error frame was discarded. The soak started, then was
+deliberately stopped for the requested framing-preview improvement after at
+least nine cycles (last progress: 143.687 seconds). It is not a completed soak.
+
+The development tool now displays a mirrored local preview in the same worker
+that owns acquisition and temporary vectors. A framing outline and instructions
+use the shared theme palette and DejaVu Sans. Space begins measurement after
+positioning; Escape cancels. Preview positioning is bounded to 45 seconds per
+step and does not create another camera owner. No preview images enter parent
+IPC or files. New aggregate reports explicitly mark that timings include human
+framing time and must not be compared with inference/automatic latency gates.
+Six consent/protocol/preview tests pass; camera-off synthetic layouts were
+visually checked in Ocean and Sage on the guest. The consent prompt has been
+reopened for this version; a fresh soak is gated on its completion and another
+passing guest smoke test. Previous aggregate results remain preserved.
