@@ -10,6 +10,99 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@unittest.skipUnless(os.name == 'nt', 'Camera handoff wrapper requires Windows PowerShell')
+class WslCameraLeaseTests(unittest.TestCase):
+    def run_camera(self, scenario):
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith('AIOS_') and key != 'DRY_RUN'}
+        env.update(AIOS_TEST_LAUNCHER=str(ROOT / 'scripts/run.ps1'),
+                   AIOS_TEST_SCENARIO=scenario, AIOS_QEMU_HEADLESS='1')
+        if scenario in ('dry', 'explicit-dry'):
+            env['DRY_RUN'] = '1'
+        script = r'''
+$global:statCalls = 0
+function global:Get-Command {
+    if ($args[0] -eq 'usbipd.exe') { return [pscustomobject]@{Source='Mock-Usbipd'} }
+    Microsoft.PowerShell.Core\Get-Command @args
+}
+function global:Mock-Usbipd {
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'state') {
+        return '{"Devices":[{"BusId":"2-2","InstanceId":"USB\\VID_046D&PID_094D\\private","ClientIPAddress":null}]}'
+    }
+    if ($args -contains 'attach') { Write-Host 'ATTACH'; return }
+    throw 'Unexpected USB/IP command'
+}
+function global:Start-Sleep {}
+function global:wsl.exe {
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'wslpath') { return '/mnt/test/scripts/run.sh' }
+    if ($args -ccontains '-lc') { return '1 7' }
+    if ($args -contains 'lsusb') { return 'Bus 003 Device 019: ID 046d:094d Logitech Brio 101' }
+    if ($args -contains 'id') { return 'tester' }
+    if ($args -contains 'stat') {
+        $global:statCalls++
+        if ($args[-1] -ne '/dev/bus/usb/001/007') { throw 'Wrong stat target' }
+        if ($global:statCalls -gt 1 -and $env:AIOS_TEST_SCENARIO -eq 'replug') { return '1:99:bd:7' }
+        return '1:42:bd:7'
+    }
+    if ($args -contains 'getfacl') { return "user::rw-`nuser:tester:r--`ngroup::r--`nmask::r--`nother::---" }
+    if ($args -contains 'setfacl') {
+        if ($args[-1] -ne '/dev/bus/usb/001/007') { throw 'Wrong ACL target' }
+        if ($args -contains '--set-file=-') {
+            $saved = $input | Out-String
+            if ($saved -notmatch 'user:tester:r--') { throw 'Original ACL lost' }
+            Write-Host 'RESTORE'
+        } else { Write-Host 'GRANT' }
+        return
+    }
+    if ($args -contains 'bash') {
+        Write-Host ('LAUNCH ' + ($args -join ' '))
+        if ($env:AIOS_TEST_SCENARIO -eq 'failure') { $global:LASTEXITCODE = 9 }
+        return
+    }
+    throw "Unexpected WSL call: $args"
+}
+if ($env:AIOS_TEST_SCENARIO -eq 'explicit-dry') {
+    & $env:AIOS_TEST_LAUNCHER -Name AIOS-recognition-test -CameraBusId 2-2
+} else {
+    & $env:AIOS_TEST_LAUNCHER -Name AIOS-recognition-test
+}
+exit $LASTEXITCODE
+'''
+        return subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                               '-Command', script], env=env, capture_output=True, text=True, timeout=20)
+
+    def test_original_acl_restored_after_success_and_failure(self):
+        for scenario, code in [('success', 0), ('failure', 9)]:
+            result = self.run_camera(scenario)
+            self.assertEqual(result.returncode, code, result.stderr)
+            self.assertIn('GRANT', result.stdout)
+            self.assertIn('RESTORE', result.stdout)
+            self.assertIn('AIOS_VM_CAMERA_BUS=1 AIOS_VM_CAMERA_ADDR=7', result.stdout)
+            self.assertIn('AIOS_VM_NAME=AIOS-recognition-test', result.stdout)
+
+    def test_replug_does_not_apply_saved_acl_to_new_node(self):
+        result = self.run_camera('replug')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('GRANT', result.stdout)
+        self.assertNotIn('RESTORE', result.stdout)
+
+    def test_environment_dry_run_never_changes_acl(self):
+        result = self.run_camera('dry')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('GRANT', result.stdout)
+        self.assertNotIn('RESTORE', result.stdout)
+        self.assertIn('DRY_RUN=1', result.stdout)
+
+    def test_explicit_dry_run_resolves_current_usb_address_without_attaching(self):
+        result = self.run_camera('explicit-dry')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('AIOS_VM_CAMERA_BUS=3 AIOS_VM_CAMERA_ADDR=19', result.stdout)
+        self.assertNotIn('ATTACH', result.stdout)
+        self.assertNotIn('GRANT', result.stdout)
+
+
 @unittest.skipUnless(os.name == "nt", "WSL wrapper requires Windows PowerShell")
 class WslDisplayTests(unittest.TestCase):
     def run_launcher(self, scenario, answer="yes", options=()):

@@ -9,6 +9,10 @@ param(
     [switch]$Native
 )
 $ErrorActionPreference = 'Stop'
+$effectiveDryRun = $DryRun -or $env:DRY_RUN -eq '1'
+$cameraOriginalAcl = $null
+$cameraNodeIdentity = $null
+$cameraAclChanged = $false
 if ($Native) {
     if ($CameraBusId) {
         Write-Error '-CameraBusId is supported only by the WSL QEMU launcher.'
@@ -65,7 +69,7 @@ esac
             throw "Could not identify USB device $CameraBusId."
         }
         $cameraUsbId = ($idMatch.Groups[1].Value + ':' + $idMatch.Groups[2].Value).ToLowerInvariant()
-        if (-not $DryRun -and -not $selected[0].ClientIPAddress) {
+        if (-not $effectiveDryRun -and -not $selected[0].ClientIPAddress) {
             & $usbCommand.Source attach --wsl --busid $CameraBusId
             if ($LASTEXITCODE -ne 0) { throw "Could not attach USB device $CameraBusId to WSL." }
             Start-Sleep -Seconds 2
@@ -79,7 +83,7 @@ esac
     if (-not $cameraBus) {
         if ($cameraUsbId) {
             $usbLines = @()
-            $attempts = if ($DryRun) { 1 } else { 10 }
+            $attempts = if ($effectiveDryRun) { 1 } else { 10 }
             for ($attempt = 0; $attempt -lt $attempts; $attempt++) {
                 $usbLines = & wsl.exe -d $Distro --exec lsusb -d $cameraUsbId
                 if ($LASTEXITCODE -eq 0 -and $usbLines) { break }
@@ -112,10 +116,18 @@ done
             }
         }
     }
-    if ($cameraBus -and -not $DryRun) {
+    if ($cameraBus -and -not $effectiveDryRun) {
+        if ($cameraBus -notmatch '^[1-9][0-9]{0,2}$' -or $cameraAddr -notmatch '^[1-9][0-9]{0,2}$') {
+            throw 'Camera bus and address must identify one current Linux USB node.'
+        }
         $linuxUser = ((& wsl.exe -d $Distro --exec id -un) -join "`n").Trim()
         if ($LASTEXITCODE -ne 0 -or -not $linuxUser) { throw 'Could not determine the WSL user.' }
         $cameraDevice = '/dev/bus/usb/{0:D3}/{1:D3}' -f [int]$cameraBus, [int]$cameraAddr
+        $cameraNodeIdentity = ((& wsl.exe -d $Distro --exec stat -Lc '%d:%i:%t:%T' $cameraDevice) -join "`n").Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $cameraNodeIdentity) { throw 'Could not identify the selected camera node.' }
+        $cameraOriginalAcl = ((& wsl.exe -d $Distro -u root --exec getfacl -cp $cameraDevice) -join "`n")
+        if ($LASTEXITCODE -ne 0 -or -not $cameraOriginalAcl) { throw 'Could not preserve the selected camera ACL.' }
+        $cameraAclChanged = $true
         & wsl.exe -d $Distro -u root --exec setfacl -m "u:${linuxUser}:rw" $cameraDevice
         if ($LASTEXITCODE -ne 0) { throw "Could not grant QEMU access to $cameraDevice." }
         Write-Host "Passing WSL camera $cameraDevice through to AIOS."
@@ -181,4 +193,14 @@ kill -TERM $1
 } catch {
     Write-Error $_ -ErrorAction Continue
     exit 1
+} finally {
+    if ($cameraAclChanged) {
+        # USB addresses can be reused after unplug/replug. Never restore onto a
+        # different node, and never remove a pre-existing user ACL indiscriminately.
+        $currentIdentity = ((& wsl.exe -d $Distro --exec stat -Lc '%d:%i:%t:%T' $cameraDevice 2>$null) -join "`n").Trim()
+        if ($LASTEXITCODE -eq 0 -and $currentIdentity -eq $cameraNodeIdentity) {
+            $cameraOriginalAcl | & wsl.exe -d $Distro -u root --exec setfacl --set-file=- $cameraDevice
+            if ($LASTEXITCODE -ne 0) { Write-Warning 'Could not restore the selected camera ACL; inspect that node before reuse.' }
+        }
+    }
 }
