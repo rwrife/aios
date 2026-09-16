@@ -33,6 +33,7 @@ ID_SLUG_PATTERN = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 REQUIRED_FIELDS = {
     'id', 'family', 'vendor', 'device', 'bus', 'ids',
     'kernel_module', 'module_dependencies', 'firmware_files',
+    'firmware_requirements',
     'firmware_package', 'firmware_license', 'firmware_provenance',
     'minimum_kernel', 'minimum_mesa', 'representative_machine',
     'status', 'evidence_date', 'evidence_sources',
@@ -184,6 +185,14 @@ class ManifestStructureTests(unittest.TestCase):
         missing = required_modules - modules_present
         self.assertEqual(missing, set(), f'missing required module coverage: {missing}')
 
+    def test_virtio_net_records_the_pci_transport_driver(self):
+        entry = next(
+            item for item in self.manifest['entries']
+            if item['id'] == 'ethernet-virtio-net'
+        )
+        self.assertIn('virtio_pci', entry['kernel_module'])
+        self.assertIn('virtio_net', entry['kernel_module'])
+
 
 class IdentifierContractTests(unittest.TestCase):
     def setUp(self):
@@ -292,6 +301,59 @@ class EvidenceContractTests(unittest.TestCase):
 class FirmwareProvenanceTests(unittest.TestCase):
     def setUp(self):
         self.manifest = load_manifest()
+
+    def test_firmware_requirements_are_explicit_groups(self):
+        for entry in self.manifest['entries']:
+            for group in entry['firmware_requirements']:
+                self.assertEqual(set(group), {'id', 'any_of'}, msg=entry['id'])
+                self.assertRegex(group['id'], ID_SLUG_PATTERN, msg=entry['id'])
+                self.assertTrue(group['any_of'], msg=entry['id'])
+                for pattern in group['any_of']:
+                    self.assertTrue(pattern.strip(), msg=entry['id'])
+            ids = [group['id'] for group in entry['firmware_requirements']]
+            self.assertEqual(len(ids), len(set(ids)), msg=entry['id'])
+
+    def test_firmware_files_stays_the_flattened_view_of_the_requirements(self):
+        for entry in self.manifest['entries']:
+            flattened = [pattern for group in entry['firmware_requirements']
+                         for pattern in group['any_of']]
+            self.assertEqual(entry['firmware_files'], flattened, msg=entry['id'])
+
+    def test_co_required_firmware_is_split_into_separate_groups(self):
+        by_id = entries_by_id(self.manifest)
+        expected = {
+            # A firmware image and its board data are both needed.
+            'qualcomm-atheros-qca6174': ['qca6174-hw30-firmware', 'qca6174-hw30-board'],
+            'qualcomm-atheros-wcn6855': ['wcn6855-hw20-amss', 'wcn6855-hw20-board'],
+            # RAM code and the MCU patch are loaded together.
+            'mediatek-mt7921e': ['mt7961-ram-code', 'mt7961-patch'],
+            # GuC and HuC are separate images.
+            'intel-gpu-xe-meteorlake': ['mtl-guc', 'mtl-huc'],
+            # The DSP image is useless without its topology.
+            'audio-sof-intel': ['sof-cnl-firmware', 'sof-cnl-topology'],
+        }
+        for entry_id, groups in expected.items():
+            self.assertEqual([group['id'] for group in by_id[entry_id]['firmware_requirements']],
+                             groups, msg=entry_id)
+            for group in by_id[entry_id]['firmware_requirements']:
+                self.assertEqual(len(group['any_of']), 1, msg=f'{entry_id}:{group["id"]}')
+
+    def test_alternate_path_layouts_stay_inside_one_group(self):
+        by_id = entries_by_id(self.manifest)
+        for entry_id in ('intel-wifi-ax200', 'intel-wifi-ax210', 'intel-wifi-ax201-cnvi',
+                         'intel-wifi-legacy-iwldvm'):
+            groups = by_id[entry_id]['firmware_requirements']
+            self.assertEqual(len(groups), 1, msg=entry_id)
+            # The same microcode, packaged at the legacy root and under intel/.
+            self.assertEqual(len(groups[0]['any_of']), 2, msg=entry_id)
+            self.assertTrue(any(pattern.startswith('intel/iwlwifi/')
+                                for pattern in groups[0]['any_of']), msg=entry_id)
+
+    def test_entries_without_firmware_files_declare_no_requirements(self):
+        for entry in self.manifest['entries']:
+            if entry['firmware_files']:
+                continue
+            self.assertEqual(entry['firmware_requirements'], [], msg=entry['id'])
 
     def test_license_and_provenance_are_structured(self):
         for entry in self.manifest['entries']:

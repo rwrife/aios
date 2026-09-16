@@ -64,6 +64,15 @@
         "iwlwifi-cc-a0-*.ucode",
         "intel/iwlwifi/iwlwifi-cc-a0-*.ucode"
       ],
+      "firmware_requirements": [
+        {
+          "id": "iwlwifi-cc-a0-ucode",
+          "any_of": [
+            "iwlwifi-cc-a0-*.ucode",
+            "intel/iwlwifi/iwlwifi-cc-a0-*.ucode"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-intel"
       ],
@@ -164,6 +173,15 @@
       "firmware_files": [
         "iwlwifi-ty-a0-gf-a0-*.ucode",
         "intel/iwlwifi/iwlwifi-ty-a0-gf-a0-*.ucode"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "iwlwifi-ty-a0-gf-a0-ucode",
+          "any_of": [
+            "iwlwifi-ty-a0-gf-a0-*.ucode",
+            "intel/iwlwifi/iwlwifi-ty-a0-gf-a0-*.ucode"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-intel"
@@ -266,6 +284,15 @@
         "iwlwifi-QuZ-a0-hr-b0-*.ucode",
         "intel/iwlwifi/iwlwifi-QuZ-a0-hr-b0-*.ucode"
       ],
+      "firmware_requirements": [
+        {
+          "id": "iwlwifi-quz-a0-hr-b0-ucode",
+          "any_of": [
+            "iwlwifi-QuZ-a0-hr-b0-*.ucode",
+            "intel/iwlwifi/iwlwifi-QuZ-a0-hr-b0-*.ucode"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-intel"
       ],
@@ -361,6 +388,15 @@
         "iwlwifi-6000g2a-*.ucode",
         "intel/iwlwifi/iwlwifi-6000g2a-*.ucode"
       ],
+      "firmware_requirements": [
+        {
+          "id": "iwlwifi-6000g2a-ucode",
+          "any_of": [
+            "iwlwifi-6000g2a-*.ucode",
+            "intel/iwlwifi/iwlwifi-6000g2a-*.ucode"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-intel"
       ],
@@ -449,6 +485,20 @@
       "firmware_files": [
         "ath10k/QCA6174/hw3.0/firmware-*.bin",
         "ath10k/QCA6174/hw3.0/board-*.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "qca6174-hw30-firmware",
+          "any_of": [
+            "ath10k/QCA6174/hw3.0/firmware-*.bin"
+          ]
+        },
+        {
+          "id": "qca6174-hw30-board",
+          "any_of": [
+            "ath10k/QCA6174/hw3.0/board-*.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-ath10k"
@@ -545,6 +595,20 @@
         "ath11k/WCN6855/hw2.0/amss.bin",
         "ath11k/WCN6855/hw2.0/board-2.bin"
       ],
+      "firmware_requirements": [
+        {
+          "id": "wcn6855-hw20-amss",
+          "any_of": [
+            "ath11k/WCN6855/hw2.0/amss.bin"
+          ]
+        },
+        {
+          "id": "wcn6855-hw20-board",
+          "any_of": [
+            "ath11k/WCN6855/hw2.0/board-2.bin"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-ath11k"
       ],
@@ -638,6 +702,7 @@
         "ath9k_hw"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -715,6 +780,7 @@
         "mac80211"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [
         "linux-firmware-ath12k"
       ],
@@ -796,7 +862,7 @@
         "mt7921e",
         "mt7921_common",
         "mt76_connac_lib",
-        "mt76_core"
+        "mt76"
       ],
       "module_dependencies": [
         "cfg80211",
@@ -805,6 +871,20 @@
       "firmware_files": [
         "mediatek/WIFI_RAM_CODE_MT7961_1.bin",
         "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "mt7961-ram-code",
+          "any_of": [
+            "mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+          ]
+        },
+        {
+          "id": "mt7961-patch",
+          "any_of": [
+            "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-mediatek"
@@ -893,7 +973,7 @@
         "mt7921u",
         "mt7921_common",
         "mt76_connac_lib",
-        "mt76_core"
+        "mt76"
       ],
       "module_dependencies": [
         "cfg80211",
@@ -901,6 +981,14 @@
       ],
       "firmware_files": [
         "mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "mt7961-ram-code",
+          "any_of": [
+            "mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-mediatek"
@@ -983,7 +1071,7 @@
         "mt7925e",
         "mt7925_common",
         "mt76_connac_lib",
-        "mt76_core"
+        "mt76"
       ],
       "module_dependencies": [
         "cfg80211",
@@ -991,6 +1079,14 @@
       ],
       "firmware_files": [
         "mediatek/mt7925/WIFI_RAM_CODE_MT7925_1_1.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "mt7925-ram-code",
+          "any_of": [
+            "mediatek/mt7925/WIFI_RAM_CODE_MT7925_1_1.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-mediatek"
@@ -1078,6 +1174,14 @@
       ],
       "firmware_files": [
         "i915/kbl_dmc_ver1_04.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "kbl-dmc",
+          "any_of": [
+            "i915/kbl_dmc_ver1_04.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-i915"
@@ -1167,6 +1271,20 @@
         "i915/mtl_guc_*.bin",
         "i915/mtl_huc_*.bin"
       ],
+      "firmware_requirements": [
+        {
+          "id": "mtl-guc",
+          "any_of": [
+            "i915/mtl_guc_*.bin"
+          ]
+        },
+        {
+          "id": "mtl-huc",
+          "any_of": [
+            "i915/mtl_huc_*.bin"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-i915"
       ],
@@ -1253,6 +1371,14 @@
       ],
       "firmware_files": [
         "amdgpu/renoir_*.bin"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "renoir-firmware",
+          "any_of": [
+            "amdgpu/renoir_*.bin"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-amdgpu"
@@ -1341,6 +1467,14 @@
       "firmware_files": [
         "amdgpu/navy_flounder_*.bin"
       ],
+      "firmware_requirements": [
+        {
+          "id": "navy-flounder-firmware",
+          "any_of": [
+            "amdgpu/navy_flounder_*.bin"
+          ]
+        }
+      ],
       "firmware_package": [
         "linux-firmware-amdgpu"
       ],
@@ -1426,6 +1560,7 @@
         "drm_kms_helper"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [
         "linux-firmware-nvidia"
       ],
@@ -1511,6 +1646,7 @@
         "drm_kms_helper"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1586,6 +1722,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1658,6 +1795,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1732,6 +1870,7 @@
         "usbcore"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1807,6 +1946,7 @@
         "hid"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1881,6 +2021,7 @@
         "hid"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -1953,6 +2094,14 @@
       "module_dependencies": [],
       "firmware_files": [
         "rtl_nic/rtl8168h-2.fw"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "rtl8168h-2-firmware",
+          "any_of": [
+            "rtl_nic/rtl8168h-2.fw"
+          ]
+        }
       ],
       "firmware_package": [
         "linux-firmware-rtl_nic"
@@ -2033,6 +2182,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -2100,6 +2250,7 @@
         "subsystem_id_status": "not_applicable"
       },
       "kernel_module": [
+        "virtio_pci",
         "virtio_net"
       ],
       "module_dependencies": [
@@ -2107,6 +2258,7 @@
         "virtio_pci"
       ],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -2181,6 +2333,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -2254,8 +2407,22 @@
       ],
       "module_dependencies": [],
       "firmware_files": [
-        "intel/sof-cnl.ri",
+        "intel/sof/sof-cnl.ri",
         "intel/sof-tplg/sof-cnl-nocodec.tplg"
+      ],
+      "firmware_requirements": [
+        {
+          "id": "sof-cnl-firmware",
+          "any_of": [
+            "intel/sof/sof-cnl.ri"
+          ]
+        },
+        {
+          "id": "sof-cnl-topology",
+          "any_of": [
+            "intel/sof-tplg/sof-cnl-nocodec.tplg"
+          ]
+        }
       ],
       "firmware_package": [
         "sof-firmware"
@@ -2337,6 +2504,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",
@@ -2412,6 +2580,7 @@
       ],
       "module_dependencies": [],
       "firmware_files": [],
+      "firmware_requirements": [],
       "firmware_package": [],
       "firmware_license": {
         "status": "not_applicable",

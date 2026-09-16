@@ -1,0 +1,291 @@
+{
+  "alpine_branch": "v3.23",
+  "arch": "x86_64",
+  "coverage_manifest": "docs/qa/hardware-coverage.json",
+  "kind": "aios-hardware-package-manifest",
+  "notes": [
+    "Package presence is not a hardware support claim. Every device in docs/qa/hardware-coverage.json stays untested until physical evidence exists.",
+    "covers lists the coverage-manifest entry ids whose firmware or userspace this package supplies; an empty list means the package is a bounded diagnostic that is not tied to one device.",
+    "linux-firmware-nvidia is redistributable firmware for the in-tree nouveau driver. No proprietary NVIDIA driver is packaged; see docs/architecture/nvidia-decision.md."
+  ],
+  "packages": {
+    "alsa-ucm-conf": {
+      "covers": [
+        "audio-sof-intel"
+      ],
+      "download_size": 139228,
+      "installed_size": 556260,
+      "license": "BSD-3-Clause",
+      "rationale": "ALSA use-case configuration SOF/HDA machines need to expose a usable default playback device. Already pulled in transitively by alsa-lib; requested explicitly so the audio path does not depend on another package's dependency graph.",
+      "repository": "main",
+      "role": "userspace",
+      "verified_paths": [],
+      "version_resolved": "1.2.14-r0"
+    },
+    "iw": {
+      "covers": [
+        "atheros-ath9k-legacy",
+        "intel-wifi-ax200",
+        "intel-wifi-ax201-cnvi",
+        "intel-wifi-ax210",
+        "intel-wifi-legacy-iwldvm",
+        "mediatek-mt7921e",
+        "mediatek-mt7921u",
+        "mediatek-mt7925e",
+        "network-stack-cfg80211-mac80211",
+        "qualcomm-ath12k-conditional",
+        "qualcomm-atheros-qca6174",
+        "qualcomm-atheros-wcn6855"
+      ],
+      "download_size": 102983,
+      "installed_size": 245536,
+      "license": "ISC",
+      "rationale": "iw: reads the regulatory domain and wiphy capabilities of a loaded Wi-Fi driver. Already present transitively through networkmanager-wifi; requested explicitly so Wi-Fi diagnosis does not depend on that graph.",
+      "repository": "main",
+      "role": "diagnostics",
+      "verified_paths": [
+        "/usr/sbin/iw"
+      ],
+      "version_resolved": "6.17-r0"
+    },
+    "linux-firmware-amdgpu": {
+      "covers": [
+        "amd-gpu-amdgpu-navi22",
+        "amd-gpu-amdgpu-renoir"
+      ],
+      "download_size": 27346062,
+      "installed_size": 27290947,
+      "license": "custom",
+      "rationale": "AMD GPU microcode the in-tree amdgpu driver loads before it can bring up display or acceleration.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-ath10k": {
+      "covers": [
+        "qualcomm-atheros-qca6174"
+      ],
+      "download_size": 9191179,
+      "installed_size": 9178520,
+      "license": "custom",
+      "rationale": "QCA6174-class ath10k board and firmware blobs.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-ath11k": {
+      "covers": [
+        "qualcomm-atheros-wcn6855"
+      ],
+      "download_size": 25556789,
+      "installed_size": 25540887,
+      "license": "custom",
+      "rationale": "WCN6855-class ath11k amss/board blobs.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-ath12k": {
+      "covers": [
+        "qualcomm-ath12k-conditional"
+      ],
+      "download_size": 10007798,
+      "installed_size": 10002817,
+      "license": "custom",
+      "rationale": "ath12k blobs for the conditionally selected Qualcomm Wi-Fi 7 class.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-i915": {
+      "covers": [
+        "intel-gpu-i915-uhd630",
+        "intel-gpu-xe-meteorlake"
+      ],
+      "download_size": 9759256,
+      "installed_size": 9724822,
+      "license": "custom",
+      "rationale": "Intel GuC/HuC/DMC blobs shared by the i915 and xe drivers.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-intel": {
+      "covers": [
+        "intel-wifi-ax200",
+        "intel-wifi-ax201-cnvi",
+        "intel-wifi-ax210",
+        "intel-wifi-legacy-iwldvm"
+      ],
+      "download_size": 106749500,
+      "installed_size": 106729002,
+      "license": "custom",
+      "rationale": "iwlwifi microcode for the selected Intel Wi-Fi adapters.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-mediatek": {
+      "covers": [
+        "mediatek-mt7921e",
+        "mediatek-mt7921u",
+        "mediatek-mt7925e"
+      ],
+      "download_size": 26358469,
+      "installed_size": 26359287,
+      "license": "custom",
+      "rationale": "MT7921/MT7925 RAM code and patch blobs for the mt76 drivers.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-nvidia": {
+      "covers": [
+        "nvidia-nouveau-turing-tu117"
+      ],
+      "download_size": 108574338,
+      "installed_size": 108571319,
+      "license": "custom",
+      "rationale": "Redistributable NVIDIA firmware loaded by the in-tree nouveau driver. This is not the proprietary NVIDIA driver; see docs/architecture/nvidia-decision.md.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "linux-firmware-rtl_nic": {
+      "covers": [
+        "ethernet-realtek-r8168"
+      ],
+      "download_size": 73942,
+      "installed_size": 68883,
+      "license": "custom",
+      "rationale": "Realtek r8169 PHY firmware for the selected wired NIC.",
+      "repository": "main",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "20251125-r1"
+    },
+    "mesa-utils": {
+      "covers": [],
+      "download_size": 130289,
+      "installed_size": 432008,
+      "license": "custom",
+      "rationale": "Provides /usr/bin/glxinfo, the OpenGL renderer probe. Also requested by apks/world.x11; the overlay world is sorted and deduplicated.",
+      "repository": "community",
+      "role": "diagnostics",
+      "verified_paths": [
+        "/usr/bin/glxinfo"
+      ],
+      "version_resolved": "9.0.0-r6"
+    },
+    "pciutils": {
+      "covers": [],
+      "download_size": 69636,
+      "installed_size": 176408,
+      "license": "GPL-2.0-only",
+      "rationale": "lspci -nnk: reads the PCI IDs and bound driver for every pci-bus entry in the coverage matrix.",
+      "repository": "main",
+      "role": "diagnostics",
+      "verified_paths": [
+        "/usr/bin/lspci"
+      ],
+      "version_resolved": "3.14.0-r0"
+    },
+    "sof-firmware": {
+      "covers": [
+        "audio-sof-intel"
+      ],
+      "download_size": 11652242,
+      "installed_size": 39243196,
+      "license": "BSD-3-Clause AND MIT AND ISC",
+      "rationale": "Sound Open Firmware DSP images and topology files for the selected Intel SOF audio path.",
+      "repository": "community",
+      "role": "firmware",
+      "verified_paths": [],
+      "version_resolved": "2025.05-r0"
+    },
+    "usbutils": {
+      "covers": [],
+      "download_size": 72935,
+      "installed_size": 207913,
+      "license": "GPL-2.0-or-later",
+      "rationale": "lsusb: reads the USB IDs for the usb-bus entries in the coverage matrix.",
+      "repository": "main",
+      "role": "diagnostics",
+      "verified_paths": [
+        "/usr/bin/lsusb"
+      ],
+      "version_resolved": "019-r0"
+    },
+    "util-linux-misc": {
+      "covers": [],
+      "download_size": 687599,
+      "installed_size": 2287728,
+      "license": "GPL-3.0-or-later AND GPL-2.0-or-later AND GPL-2.0-only AND GPL-1.0-only AND LGPL-2.1-or-later AND BSD-1-Clause AND BSD-3-Clause AND BSD-4-Clause-UC AND MIT AND Public-Domain",
+      "rationale": "Provides /usr/sbin/rfkill, the only rfkill tooling in Alpine v3.23 (there is no standalone rfkill package). Already present transitively through the util-linux meta package.",
+      "repository": "main",
+      "role": "diagnostics",
+      "verified_paths": [
+        "/usr/sbin/rfkill"
+      ],
+      "version_resolved": "2.41.6-r1"
+    },
+    "wireless-regdb": {
+      "covers": [
+        "atheros-ath9k-legacy",
+        "intel-wifi-ax200",
+        "intel-wifi-ax201-cnvi",
+        "intel-wifi-ax210",
+        "intel-wifi-legacy-iwldvm",
+        "mediatek-mt7921e",
+        "mediatek-mt7921u",
+        "mediatek-mt7925e",
+        "network-stack-cfg80211-mac80211",
+        "qualcomm-ath12k-conditional",
+        "qualcomm-atheros-qca6174",
+        "qualcomm-atheros-wcn6855"
+      ],
+      "download_size": 8561,
+      "installed_size": 15537,
+      "license": "ISC",
+      "rationale": "regulatory.db/regulatory.db.p7s loaded by cfg80211 through the firmware loader. Without it every selected Wi-Fi adapter falls back to the world-roaming domain.",
+      "repository": "main",
+      "role": "regulatory",
+      "verified_paths": [
+        "/lib/firmware/regulatory.db"
+      ],
+      "version_resolved": "2025.07.10-r0"
+    }
+  },
+  "resolution": {
+    "indexes": [
+      {
+        "apkindex_sha256": "c7053063d79c7741cc09e74d7ea5ebe05bbafcbb9ec70e6e46d4a1379c264b68",
+        "apkindex_size": 523519,
+        "apkindex_url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz",
+        "role": "main",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main"
+      },
+      {
+        "apkindex_sha256": "a893cd9f671a29565885b7272ddf2ef05c857a8560ba98d164abdabe41a0777b",
+        "apkindex_size": 2383350,
+        "apkindex_url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz",
+        "role": "community",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/community"
+      }
+    ],
+    "method": "Every atom in world.hardware was looked up in the v3.23 x86_64 APKINDEX sampled below; file-level claims in verified_paths were checked against https://pkgs.alpinelinux.org/contents?branch=v3.23&arch=x86_64.",
+    "note": "Alpine v3.23 main/community keep moving. These versions and digests are a dated sample proving the package names exist in that release, not a pin. What a build actually shipped is recorded per ISO in <iso>.build-manifest.json by distro/alpine/record-build-manifest.py.",
+    "resolved_on": "2026-09-14",
+    "status": "resolved-from-repository-index"
+  },
+  "schema_version": 1,
+  "world_file": "distro/alpine/apks/world.hardware"
+}
