@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import stat
 from pathlib import Path
 import sys
 import time
@@ -88,7 +89,13 @@ class CaptureSchedule:
 
 def _manifest(path=None):
     path = Path(path or os.environ.get('AIOS_FACE_MODEL_MANIFEST', MANIFEST))
-    value = json.loads(path.read_text())
+    if path.is_symlink():
+        raise ValueError('Face manifest must be a regular trusted file')
+    with path.open('rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.getuid()) or info.st_mode & 0o022 or info.st_size > 65536:
+            raise ValueError('Face manifest ownership, permissions or size are invalid')
+        value = json.loads(stream.read(65537))
     calibration = value.get('calibration')
     if not isinstance(calibration, dict) or calibration.get('hardware') != 'brio-101':
         raise ValueError('Face model calibration is missing for the Brio 101')
@@ -99,6 +106,19 @@ def _manifest(path=None):
         raise ValueError('Face model calibration is incomplete')
     if not 0 < calibration['match_threshold'] <= 1 or not 0 < calibration['runner_up_margin'] <= 1:
         raise ValueError('Face model calibration is invalid')
+    if (not 0 < calibration['enrollment_consistency'] <= 1 or
+            not 0 <= calibration['minimum_brightness'] < calibration['maximum_brightness'] <= 255 or
+            calibration['minimum_sharpness'] < 0 or
+            type(calibration.get('minimum_face_size')) is not int or not 20 <= calibration['minimum_face_size'] <= 480):
+        raise ValueError('Face quality calibration is invalid')
+    approval = value.get('approval')
+    binding = _binding(manifest=value, calibration=calibration)
+    digest = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if (type(approval) is not dict or set(approval) != {'status', 'binding_sha256', 'expires_at'} or
+            approval['status'] != 'approved' or approval['binding_sha256'] != digest or
+            type(approval['expires_at']) not in (float, int) or not math.isfinite(approval['expires_at']) or
+            approval['expires_at'] <= time.time()):
+        raise ValueError('Face model/calibration approval is missing, stale or incompatible')
     return value, calibration
 
 
@@ -226,7 +246,9 @@ def recognize(root=None, manifest_path=None, capture=None):
     encoder = FaceEncoder(manifest, calibration=calibration)
     root, _, _ = _paths(root)
     profiles = profile_dispatch({'action': 'profiles'}, root)['profiles']
-    templates = _templates(profiles, _binding(manifest, calibration), root)
+    binding = _binding(manifest, calibration)
+    epoch = FaceStore(root).snapshot()[0]
+    templates = _templates(profiles, binding, root)
     if not templates:
         return {'state': 'manual-only', 'reason': 'no-enrollment'}
     with _locked(root):
@@ -236,6 +258,11 @@ def recognize(root=None, manifest_path=None, capture=None):
                     calibration['runner_up_margin']) for sample in samples]
     if not owners or any(owner is None or owner != owners[0] for owner in owners):
         return {'state': 'ready', 'suggestion': None, 'reason': 'unknown-or-ambiguous'}
+    current_manifest, current_calibration = _manifest(manifest_path)
+    if (FaceStore(root).snapshot()[0] != epoch or load_config().get('camera_recognition') is not True or
+            _binding(current_manifest, current_calibration) != binding):
+        return {'state': 'ready', 'suggestion': None, 'reason': 'configuration-changed'}
+    profiles = profile_dispatch({'action': 'profiles'}, root)['profiles']
     profile = next((item for item in profiles if item['id'] == owners[0]), None)
     if not profile:
         return {'state': 'ready', 'suggestion': None, 'reason': 'deleted'}

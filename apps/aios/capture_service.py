@@ -1,5 +1,6 @@
 """One unprivileged, parent-authenticated desktop camera service (Linux only)."""
 import argparse
+import base64
 import fcntl
 import hashlib
 import json
@@ -16,7 +17,7 @@ import time
 import uuid
 import stat
 
-from .core import load_config
+from .core import load_config, data_dir
 from .recognition import CaptureSchedule
 from .capture_worker import MAX_EVENT
 
@@ -25,7 +26,27 @@ MODES = {'preview', 'photo', 'enroll', 'recognize', 'purge'}
 IDENTIFIER = re.compile(r'^[a-f0-9]{32}$')
 
 
+def valid_portrait(value):
+    if type(value) is not str:
+        return False
+    if not value:
+        return True
+    prefix = 'data:image/png;base64,'
+    if not value.startswith(prefix) or len(value) > 20022:
+        return False
+    try:
+        data = base64.b64decode(value[len(prefix):], validate=True)
+        return data[:8] == b'\x89PNG\r\n\x1a\n' and data[12:24] == b'IHDR\0\0\0@\0\0\0@'
+    except ValueError:
+        return False
+
+
 def decode(raw):
+    value = strict_json(raw, MAX_REQUEST)
+    return validate_request(value)
+
+
+def strict_json(raw, maximum):
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -33,11 +54,17 @@ def decode(raw):
                 raise ValueError('duplicate_field')
             result[key] = value
         return result
-    if len(raw) > MAX_REQUEST:
+    if len(raw) > maximum:
         raise ValueError('oversized')
     value = json.loads(raw, object_pairs_hook=unique,
                        parse_constant=lambda _: (_ for _ in ()).throw(ValueError('nonfinite')))
-    if type(value) is not dict or value.get('version') != 1 or type(value.get('version')) is not int:
+    if type(value) is not dict:
+        raise ValueError('object_required')
+    return value
+
+
+def validate_request(value):
+    if value.get('version') != 1 or type(value.get('version')) is not int:
         raise ValueError('version')
     action = value.get('action')
     if type(action) is not str:
@@ -85,6 +112,30 @@ def inventory():
     return result
 
 
+def policy_signature(config):
+    manifest = Path(os.environ.get('AIOS_FACE_MODEL_MANIFEST', '/etc/aios/face-models.json'))
+    root = data_dir() / 'chat-profiles'
+    paths = [manifest]
+    approved = False
+    try:
+        if manifest.stat().st_size <= 65536:
+            value = json.loads(manifest.read_text())
+            if type(value) is not dict or type(value.get('approval')) is not dict:
+                raise ValueError('invalid_manifest')
+            approved = value.get('approval', {}).get('expires_at', 0) > time.time()
+            paths.extend(Path(value[name]['path']) for name in ('yunet', 'sface'))
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    def stamp(path):
+        try:
+            value = path.stat()
+            return str(path), value.st_ino, value.st_mtime_ns, value.st_size
+        except OSError:
+            return str(path), None
+    return (config.get('camera_device'), approved, tuple(stamp(path) for path in paths),
+            tuple(stamp(path) for path in (root / 'profiles.json', root / 'biometrics/local-greeting/current')))
+
+
 class Service:
     def __init__(self, send, clock=time.monotonic, spawn=subprocess.Popen, scan=inventory, config=load_config):
         self.send = send
@@ -106,6 +157,7 @@ class Service:
         self.next_scan = 0
         self.enabled = False
         self.closed = False
+        self.policy = policy_signature(config())
 
     def event(self, kind, payload=None, reason='ok', request=None, sequence=0, captured_at=0):
         request = request or self.job or {}
@@ -116,7 +168,8 @@ class Service:
         self.send(value)
 
     def cancel(self, reason='cancelled'):
-        self.generation += 1
+        if reason != 'completed':
+            self.generation += 1
         if self.worker:
             self.worker.kill()
             try:
@@ -128,7 +181,7 @@ class Service:
             if self.worker.poll() is not None:
                 self.worker.stdout.close()
                 self.worker = None
-        if self.job:
+        if self.job and reason != 'completed':
             self.event('cancelled', reason=reason)
         self.job = None
         self.buffer.clear()
@@ -219,6 +272,13 @@ class Service:
         now = self.clock()
         if now >= self.next_scan:
             self.refresh()
+            policy = policy_signature(self.config())
+            if policy != self.policy:
+                # Enrollment and purge legitimately publish account/template
+                # updates themselves. Their transactional locks handle races.
+                if policy[:3] != self.policy[:3] or not self.job or self.job['mode'] == 'recognize':
+                    self.cancel('configuration_changed')
+                self.policy = policy
             if (self.config().get('camera_recognition') is True) != self.enabled:
                 self.command({'action': 'configure', 'active': self.active, 'secure': self.secure})
             self.next_scan = now + .5
@@ -254,13 +314,15 @@ class Service:
 
     def result(self, raw):
         try:
-            event = json.loads(raw)
+            event = strict_json(raw, MAX_EVENT)
             if set(event) != {'kind', 'sequence', 'captured_at', 'payload'}:
                 raise ValueError()
             kind, sequence, captured = event['kind'], event['sequence'], event['captured_at']
             if kind not in ('preview', 'photo', 'progress', 'result', 'error') or type(event['payload']) is not dict:
                 raise ValueError()
             if kind == 'error':
+                if event['payload'] or type(sequence) is not int or sequence != 0 or type(captured) not in (float, int) or captured != 0:
+                    raise ValueError()
                 self.fail('unavailable')
                 return False
             if type(sequence) is not int or sequence < self.sequence or (kind in ('preview', 'progress') and sequence == self.sequence):
@@ -286,6 +348,8 @@ class Service:
                     raise ValueError()
             if kind == 'result':
                 mode = self.job['mode']
+                if mode == 'photo':
+                    raise ValueError()
                 if mode == 'enroll' and set(payload) != {'enrolled'}:
                     raise ValueError()
                 if mode == 'recognize' and 'state' not in payload:
@@ -299,14 +363,20 @@ class Service:
                     raise ValueError()
                 if 'reason' in payload and (type(payload['reason']) is not str or len(payload['reason']) > 64):
                     raise ValueError()
+                if 'reason' in payload and payload['reason'] not in ('no-enrollment', 'unknown-or-ambiguous', 'deleted', 'configuration-changed'):
+                    raise ValueError()
                 candidate = payload.get('suggestion')
                 if candidate is not None:
-                    if type(candidate) is not dict or set(candidate) != {'id', 'name', 'photo', 'confidence', 'expires_in'}:
+                    if type(candidate) is not dict or set(candidate) != {'id', 'name', 'photo', 'confidence', 'expires_at'}:
                         raise ValueError()
                     if (type(candidate['id']) is not str or str(uuid.UUID(candidate['id'])) != candidate['id'] or
-                            type(candidate['name']) is not str or len(candidate['name']) > 120 or
-                            type(candidate['photo']) is not str or len(candidate['photo']) > 40000 or
-                            candidate['confidence'] != 'candidate' or candidate['expires_in'] != 5):
+                            type(candidate['name']) is not str or not 1 <= len(candidate['name']) <= 80 or re.search(r'[\x00-\x1f]', candidate['name']) or
+                            not valid_portrait(candidate['photo']) or
+                            candidate['confidence'] != 'candidate' or
+                            type(candidate['expires_at']) not in (float, int) or
+                            not math.isfinite(candidate['expires_at']) or captured <= 0 or sequence < 3 or
+                            candidate['expires_at'] != captured + 5 or candidate['expires_at'] <= self.clock() or
+                            mode != 'recognize' or payload.get('state') != 'ready'):
                         raise ValueError()
             if kind in ('photo', 'preview'):
                 image = payload['image']

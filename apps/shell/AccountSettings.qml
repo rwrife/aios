@@ -24,7 +24,7 @@ ColumnLayout {
                     required property var modelData
                     Layout.fillWidth: true
                     Label { text: modelData.name; color: accounts.ink; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true }
-                    Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.open(); } }
+                    Button { text: "Sign in"; onClicked: { enrollment.creating = false; enrollment.selectedProfile = modelData.name; enrollment.selectedProfileId = modelData.id; enrollment.open(); } }
                     Button {
                         objectName: "enrollRecognition"; text: "Face recognition…"
                         enabled: accounts.control && accounts.control.greetingOnly &&

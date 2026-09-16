@@ -13,6 +13,7 @@
 #include <QUuid>
 #include <QFile>
 #include <cmath>
+#include "CameraProtocol.h"
 #ifdef Q_OS_LINUX
 #include <sys/socket.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@ public:
     }
     void configure(bool active, bool secure) {
         gates = {{"active", active}, {"secure", secure}};
+        protocol.gate(active, secure);
         ensureStarted();
         if (ready) command("configure", controlId, gates);
     }
@@ -48,6 +50,7 @@ public:
             {"owner", owner}, {"pin", pin}, {"consent", consent}});
     }
     void release(const QString &consumer) {
+        protocol.release(consumer);
         for (int i = pending.size() - 1; i >= 0; --i)
             if (pending[i].value("consumer").toString() == consumer) pending.removeAt(i);
         if (ready) command("release", consumer);
@@ -65,6 +68,7 @@ public:
 signals:
     void received(const QJsonObject &event);
     void unavailable();
+    void generationChanged();
 private:
     explicit CameraClient(QObject *parent) : QObject(parent) {
         connector.setInterval(50);
@@ -109,7 +113,8 @@ private:
         if (starting || retryPending || retries > 3 || !directory.isValid() || !qEnvironmentVariableIsEmpty("AIOS_SESSION_SOCKET")) return;
         starting = true;
         ready = false;
-        generation = 0;
+        protocol = CameraProtocol();
+        protocol.gate(gates.value("active").toBool(), gates.value("secure").toBool());
         buffer.clear();
         QFile::remove(directory.path() + "/capture.sock");
         auto environment = QProcessEnvironment::systemEnvironment();
@@ -147,6 +152,7 @@ private:
         const auto data = QJsonDocument(values).toJson(QJsonDocument::Compact) + '\n';
         if (!ready && action == "capture") {
             if (pending.size() >= 4 || data.size() > 4096) return {};
+            protocol.track(request, consumer, values.value("mode").toString());
             pending.append(values);
             return request;
         }
@@ -154,6 +160,7 @@ private:
             process.kill();
             return {};
         }
+        if (action == "capture") protocol.track(request, consumer, values.value("mode").toString());
         socket.write(data);
         return request;
     }
@@ -167,16 +174,14 @@ private:
             QJsonParseError error;
             const auto document = QJsonDocument::fromJson(line, &error);
             const auto event = document.object();
-            const auto next = event.value("generation").toDouble(-1);
-            if (error.error != QJsonParseError::NoError || event.size() != 10 ||
-                event.value("version").toInt() != 1 || next < generation || std::floor(next) != next ||
-                !event.value("payload").isObject() || !event.value("event").isString() ||
-                !event.value("request").isString() || !event.value("consumer").isString() ||
-                !event.value("reason").isString() || !event.value("sequence").isDouble() ||
-                !event.value("captured_at").isDouble() || !event.value("processed_at").isDouble()) {
+            if (error.error != QJsonParseError::NoError || !document.isObject() || !CameraProtocol::uniqueKeys(line)) {
                 process.kill(); return;
             }
-            generation = next;
+            const auto previous = protocol.generation();
+            const auto accepted = protocol.accept(event, CameraProtocol::monotonic());
+            if (accepted == CameraProtocol::Invalid) { process.kill(); return; }
+            if (accepted == CameraProtocol::Drop) continue;
+            if (protocol.generation() != previous) emit generationChanged();
             emit received(event);
         }
         if (buffer.size() > 262144) process.kill();
@@ -191,5 +196,5 @@ private:
     QJsonObject gates{{"active", false}, {"secure", false}};
     bool ready = false, starting = false, retryPending = false;
     int retries = 0;
-    double generation = 0;
+    CameraProtocol protocol;
 };

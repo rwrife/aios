@@ -1,4 +1,5 @@
 import json
+import hashlib
 from contextlib import ExitStack
 from pathlib import Path
 import tempfile
@@ -10,6 +11,7 @@ from aios.face_store import FaceStore
 from aios.authority import pin_record
 from aios.secure_store import atomic_bytes
 from aios.recognition import CaptureSchedule, dispatch, enroll, recognize, revoke
+from aios.recognition import _manifest, _binding
 
 
 class Clock:
@@ -31,6 +33,7 @@ CALIBRATION = {
     'minimum_brightness': 20,
     'maximum_brightness': 240,
     'minimum_sharpness': 10,
+    'minimum_face_size': 80,
 }
 MANIFEST = {
     'sface': {'revision': 'test-model', 'sha256': 'a' * 64},
@@ -74,6 +77,31 @@ class RecognitionScheduleTests(unittest.TestCase):
         self.assertFalse(schedule.due(immediate=True))
 
 
+class ManifestApprovalTests(unittest.TestCase):
+    def test_missing_expired_changed_and_unsafe_manifest_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'manifest.json'
+            manifest = json.loads(json.dumps(MANIFEST))
+            digest = hashlib.sha256(json.dumps(_binding(manifest, CALIBRATION), sort_keys=True,
+                                              separators=(',', ':')).encode()).hexdigest()
+            manifest['approval'] = {'status': 'approved', 'binding_sha256': digest, 'expires_at': 200.}
+            path.write_text(json.dumps(manifest))
+            with patch('aios.recognition.time.time', return_value=100.):
+                self.assertEqual(_manifest(path)[0], manifest)
+                for change in ({'status': 'pending'}, {'expires_at': 99.}, {'binding_sha256': '0' * 64}):
+                    modified = {**manifest, 'approval': {**manifest['approval'], **change}}
+                    path.write_text(json.dumps(modified))
+                    with self.assertRaisesRegex(ValueError, 'approval'):
+                        _manifest(path)
+                path.write_text(json.dumps({**manifest, 'calibration': {**CALIBRATION, 'match_threshold': .9}}))
+                with self.assertRaisesRegex(ValueError, 'approval'):
+                    _manifest(path)
+                path.write_text(json.dumps(MANIFEST))
+                with self.assertRaisesRegex(ValueError, 'approval'):
+                    _manifest(path)
+                path.write_text(json.dumps(manifest)); path.chmod(0o666)
+                with self.assertRaisesRegex(ValueError, 'permissions'):
+                    _manifest(path)
 class RecognitionStorageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -174,6 +202,34 @@ class RecognitionStorageTests(unittest.TestCase):
             self.assertEqual(dispatch({'action': 'disable'}), {'state': 'disabled'})
             purge.assert_not_called()
             save.assert_called_once_with({'camera_recognition': False})
+
+    def test_unknown_ambiguous_conflicting_and_deleted_results_have_no_candidate(self):
+        second = profile_dispatch({'action': 'enroll_manual', 'name': 'Bob', 'pin': '5678', 'consent': True}, self.root)['profile']
+        other_samples = lambda *_: [{'embedding': [0., 1.] + [0.] * 126} for _ in range(3)]
+        with self.configured(), patch('aios.recognition.video_device'):
+            enroll(self.profile['id'], '1234', self.root, capture=self.samples, consent=True)
+            enroll(second['id'], '5678', self.root, capture=other_samples, consent=True)
+            unknown = lambda *_: [{'embedding': [0., 0., 1.] + [0.] * 125} for _ in range(3)]
+            conflict = lambda *_: [self.samples()[0], other_samples()[0], self.samples()[0]]
+            for samples in (unknown, conflict):
+                result = recognize(self.root, capture=samples)
+                self.assertIsNone(result['suggestion'])
+                self.assertEqual(set(result), {'state', 'suggestion', 'reason'})
+            enroll(second['id'], '5678', self.root, capture=self.samples, consent=True)
+            self.assertIsNone(recognize(self.root, capture=self.samples)['suggestion'])
+            revoke(second['id'], self.root)
+            def deleted(*_):
+                revoke(self.profile['id'], self.root)
+                return self.samples()
+            result = recognize(self.root, capture=deleted)
+            self.assertIsNone(result['suggestion'])
+            self.assertEqual(result['reason'], 'configuration-changed')
+
+    def test_uuid_pin_selection_cannot_fall_back_to_a_reused_display_name(self):
+        profile_dispatch({'action': 'delete_profile', 'owner': self.profile['id'], 'pin': '1234', 'confirmed': True}, self.root)
+        profile_dispatch({'action': 'enroll_manual', 'name': self.profile['id'], 'pin': '1234', 'consent': True}, self.root)
+        with self.assertRaisesRegex(ValueError, 'PIN'):
+            profile_dispatch({'action': 'activate_profile', 'owner': self.profile['id'], 'pin': '1234'}, self.root)
 
     def test_enrollment_requires_pin_and_stores_only_encrypted_versioned_templates(self):
         try:

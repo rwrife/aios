@@ -144,6 +144,30 @@ class ServiceTests(unittest.TestCase):
         self.service.tick()
         self.assertEqual(len(self.workers), 2)
 
+    def test_candidate_completion_preserves_generation_and_rejects_private_or_stale_payloads(self):
+        self.config['camera_recognition'] = True
+        self.configure()
+        candidate = {'id': '12345678-1234-1234-1234-123456789012', 'name': 'Example',
+                     'photo': '', 'confidence': 'candidate', 'expires_at': 105.}
+        self.service.command(request(mode='recognize'))
+        generation = self.service.generation
+        self.service.result(json.dumps({'kind': 'result', 'sequence': 3, 'captured_at': 100.,
+                                       'payload': {'state': 'ready', 'suggestion': candidate}}))
+        self.assertEqual(self.service.generation, generation)
+        for change in ({'expires_at': 110.}, {'photo': 'https://remote.invalid/image'},
+                       {'embedding': [1, 2]}, {'id': 'Display name'}):
+            self.clock.advance(60)
+            self.service.command(request(mode='recognize'))
+            value = {**candidate, 'expires_at': self.clock() + 5, **change}
+            self.service.result(json.dumps({'kind': 'result', 'sequence': 3, 'captured_at': self.clock(),
+                                           'payload': {'state': 'ready', 'suggestion': value}}))
+            self.assertEqual(self.events[-1]['reason'], 'invalid_result')
+
+    def test_duplicate_worker_json_fields_are_rejected(self):
+        self.service.command(request(mode='preview'))
+        self.assertFalse(self.service.result(b'{"kind":"result","kind":"preview","sequence":1,"captured_at":100,"payload":{}}'))
+        self.assertEqual(self.events[-1]['reason'], 'invalid_result')
+
     def test_failures_back_off_and_device_add_does_not_bypass_opt_in(self):
         self.config['camera_recognition'] = True
         self.configure()
@@ -208,6 +232,23 @@ class ServiceTests(unittest.TestCase):
         self.service.refresh()
         self.assertIsNone(self.service.worker)
         self.assertEqual(self.events[-1]['reason'], 'device_changed')
+
+    def test_model_change_invalidates_capture_but_enrollment_commit_is_not_self_cancelled(self):
+        self.service.command(request(mode='preview'))
+        current = self.service.policy
+        changed = (current[0], current[1], ('changed-model',), current[3])
+        with patch('aios.capture_service.policy_signature', return_value=changed):
+            self.service.tick()
+        self.assertIsNone(self.service.worker)
+        self.assertEqual(self.events[-1]['reason'], 'configuration_changed')
+        self.config['camera_recognition'] = True
+        self.configure()
+        self.service.command(request(mode='enroll', consent=True))
+        self.clock.advance(.5)
+        updated = (*changed[:3], ('enrollment-commit',))
+        with patch('aios.capture_service.policy_signature', return_value=updated):
+            self.service.tick()
+        self.assertIsNotNone(self.service.worker)
 
     def test_deadline_quarantines_unreaped_worker_instead_of_opening_again(self):
         self.service.command(request())

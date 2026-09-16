@@ -34,7 +34,7 @@ TestCase {
         function setRecognitionEnabled(enabled) {}
         function purgeRecognitionData() {}
         function recognitionConfigurationChanged(enabled) {}
-        function setSecureInput(active) { secureInput = active }
+        function setSecureInput(active) { secureInput = active; if (active) recognitionSuggestion = ({}) }
         signal privacyLost()
         signal documentLoaded(string content)
         signal documentSaved()
@@ -60,6 +60,7 @@ TestCase {
             }
         }
         function unlock(name, pin) { if (name === "Test profile" && pin === "1234") { signins++; profile = {name: name}; unlocked() } }
+        function unlockProfile(id, pin) { if (id === "test-id") unlock("Test profile", pin) }
         property int recoveries: 0
         function recover(name, secret, pin) {
             if (name === "Test profile" && secret === "test-recovery-secret" && pin === "246802") recoveries++
@@ -225,6 +226,7 @@ TestCase {
         bubble.destroy()
     }
     function test_recognition_suggestion_requires_pin_confirmation() {
+        control.greetingOnly = true
         control.profile = {}
         control.recognitionSuggestion = {id: "test-id", name: "Test profile", photo: "", confidence: "candidate"}
         var bubble = bubbleComponent.createObject(test, {control: control})
@@ -235,9 +237,26 @@ TestCase {
         suggestion.triggered()
         var form = findChild(bubble, "bubbleEnrollment")
         tryCompare(form, "opened", true)
+        compare(form.selectedProfileId, "test-id")
         compare(findChild(bubble, "profileName").text, "Test profile")
         compare(findChild(bubble, "enrollmentPin").text, "")
         form.close()
+        bubble.destroy()
+        control.recognitionSuggestion = {}
+    }
+    function test_candidate_never_changes_an_existing_profile_or_crosses_namespace() {
+        control.greetingOnly = true
+        control.profile = {id: "active-id", name: "Active account"}
+        control.recognitionSuggestion = {id: "different-id", name: "Different account", photo: ""}
+        var before = control.signins
+        var bubble = bubbleComponent.createObject(test, {control: control})
+        verify(bubble.greeting.indexOf("Active account") >= 0)
+        compare(control.profile.id, "active-id")
+        compare(control.signins, before)
+        control.profile = {}
+        control.greetingOnly = false
+        compare(bubble.suggestion.name, undefined)
+        compare(control.signins, before)
         bubble.destroy()
         control.recognitionSuggestion = {}
     }
