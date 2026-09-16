@@ -1305,12 +1305,35 @@ def section_hardware_bundle(
                 "missing_fields": missing_fields,
                 "coverage_entries": sorted(entry_ids),
             })
+            continue
+        # A static attribution for a different package revision cannot describe
+        # this image. Require one unambiguous shipped revision; do not silently
+        # accept any-of when two versions of the same atom are embedded.
+        if closure_names is None or world_error:
+            # No evidence is different from an observed empty/mismatched set.
+            continue
+        shipped_versions = sorted(item['version'] for item in resolved.get(package, []))
+        recorded_version = record.get("version_resolved")
+        if not recorded_version or shipped_versions != [recorded_version]:
+            license_failures.append({
+                "package": package,
+                "reason": "recorded attribution version must match exactly one shipped APK version",
+                "recorded_version": recorded_version,
+                "shipped_versions": shipped_versions,
+                "coverage_entries": sorted(entry_ids),
+            })
     if package_manifest_source is None:
         checks.append(_unavailable_check(
             "firmware_license_provenance",
             "every redistributed firmware package has a recorded license and repository",
             "no hardware package manifest available (pass --hardware-package-manifest "
             "or a --build-manifest that embedded one)",
+        ))
+    elif not license_failures and (closure_names is None or world_error):
+        checks.append(_unavailable_check(
+            "firmware_license_provenance",
+            "every redistributed firmware package has a recorded license and repository",
+            world_error or "no embedded package closure available to compare attribution versions",
         ))
     else:
         checks.append(_check(

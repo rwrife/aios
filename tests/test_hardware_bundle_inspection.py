@@ -468,6 +468,78 @@ class HardwareBundleValidationTests(unittest.TestCase):
         failures = self.checks(section)['offline_package_availability']['failures']
         self.assertEqual([item['package'] for item in failures], ['wireless-regdb'])
 
+    def test_firmware_attribution_version_must_match_shipped_apk(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        failures = self.checks(section)['firmware_license_provenance']['failures']
+        self.assertEqual([item['package'] for item in failures], ['sof-firmware'])
+        self.assertIn('version', failures[0]['reason'])
+        self.assertEqual(failures[0]['recorded_version'], '0.0-r999')
+        self.assertEqual(failures[0]['shipped_versions'], ['2025.05-r0'])
+
+    def test_missing_attribution_version_is_rejected(self):
+        original = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        for value in (None, '', '   ', 2025, ['2025.05-r0']):
+            with self.subTest(value=value):
+                manifest = json.loads(json.dumps(original))
+                manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = value
+                self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+                result, section = self.run_tool()
+                self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+                self.assertIn('firmware_license_provenance', section['failed_checks'])
+                self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+
+    def test_multiple_shipped_versions_cannot_reuse_one_attribution(self):
+        apk = self.apks / 'sof-firmware-2025.05-r0.apk'
+        (self.apks / 'sof-firmware-2025.05-r1.apk').write_bytes(apk.read_bytes())
+        self.write_build_manifest()
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        self.assertEqual(self.checks(section)['exact_output_closure']['status'], 'ok')
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['failures'][0]['shipped_versions'], ['2025.05-r0', '2025.05-r1'])
+
+    def test_attribution_cannot_describe_an_absent_firmware_apk(self):
+        self.write_packages(skip=('sof-firmware',))
+        self.write_build_manifest()
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['status'], 'failed')
+        self.assertEqual(check['failures'][0]['shipped_versions'], [])
+
+    def test_repository_fallback_attribution_also_checks_version(self):
+        manifest = package_manifest_fixture()
+        manifest['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.packages_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        self.write_build_manifest(hardware_packages=False)
+        result, section = self.run_tool()
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_FAILED)
+        check = self.checks(section)['firmware_license_provenance']
+        self.assertEqual(check['status'], 'failed')
+        self.assertTrue(check['source'].startswith('repository:'))
+
+    def test_missing_all_package_evidence_is_incomplete_not_inconsistent(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest.pop('output_closure')
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool(extra=('--apks-dir', str(self.base / 'missing-apks')))
+        self.assertEqual(result.returncode, inspect_image.EXIT_VALIDATION_INCOMPLETE)
+        self.assertEqual(section['failed_checks'], [])
+        self.assertIn('firmware_license_provenance', section['incomplete_checks'])
+
+    def test_inventory_mode_reports_stale_attribution_without_failing_cli(self):
+        manifest = json.loads(self.build_manifest.read_text(encoding='utf-8'))
+        manifest['hardware_packages']['packages']['sof-firmware']['version_resolved'] = '0.0-r999'
+        self.build_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+        result, section = self.run_tool(validate=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('firmware_license_provenance', section['failed_checks'])
+
     def test_firmware_package_without_a_license_record_fails(self):
         manifest = package_manifest_fixture()
         del manifest['packages']['sof-firmware']

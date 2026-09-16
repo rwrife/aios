@@ -2,6 +2,80 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-16 04:10 UTC
+
+- Preflight succeeded: `gh repo view rwrife/aios`, `gh api repos/rwrife/aios`,
+  `git ls-remote --heads origin`, fetch/checkout/fast-forward main and a temporary
+  ref create/delete probe. `gh api user --jq .login` returned `rwrife`.
+  No auth fallback needed. Main remains `f43c9f199d9f649a174e4bbc6414563d19659805`.
+- PR snapshot: four open PRs. Merged PRs: none. New PR URL: none.
+  - https://github.com/rwrife/aios/pull/126 — OPEN, CLEAN/MERGEABLE,
+    no current-head checks. Repaired only attribution-version drift this run;
+    held open for remaining metadata/provenance and dependency-closure gaps
+    plus fresh local full-image and BIOS/UEFI verification.
+  - https://github.com/rwrife/aios/pull/131 — OPEN, CLEAN/MERGEABLE, current-head
+    build SUCCESS, but stacked on the blocked `hardware-offline-bundle` (#126).
+    Do not merge an unsafe parent through this stack.
+  - https://github.com/rwrife/aios/pull/132 — OPEN, CLEAN/MERGEABLE, current-head
+    build SUCCESS, but stacked on #131. Its body also explicitly leaves real
+    QEMU installation and coherent update/rollback open. No installation claim.
+  - https://github.com/rwrife/aios/pull/133 — OPEN/DRAFT, CLEAN/MERGEABLE, build
+    SUCCESS. Owner-evidence hold: body says the Brio 101 is disconnected;
+    real capture, contention, unplug/replug, interactive PIN fallback and
+    protected-session compositor checks are outstanding. Left draft unchanged.
+- Bounded repair on existing #126: the firmware attribution's `version_resolved`
+  must equal exactly one embedded APK filename revision. Missing/invalid/stale
+  versions, multiple shipped revisions, and missing selected APKs fail with exit
+  3. Both embedded and repository-fallback attribution records are checked.
+  Inventory mode still reports findings with exit 0. No package payload/world,
+  UI, installer or build workflow changed; no extra full-APK scan was added.
+- Verification:
+  - TDD: healthy fixture passed; new stale-version CLI regression failed with
+    `AssertionError: 0 != 3` before implementation, then passed after repair.
+    Seven new regression tests cover the repaired boundary and inventory behavior.
+    A follow-up missing-evidence canary caught `AssertionError: 3 != 4` in the
+    first candidate. Corrected it to distinguish unavailable evidence (exit 4)
+    from observed inconsistent versions (exit 3), then reran tests and review.
+  - `PYTHONPATH=apps:tests python3 -m unittest test_build_manifest
+    test_hardware_bundle_inspection test_hardware_coverage_manifest
+    test_hardware_world test_identity_image test_inspect_image -q`: 225 passed.
+  - `bash scripts/test.sh`: 708 tests, two failures, nine skips, exit 1.
+    Both failures reproduced on untouched main with explicit cwd and HEAD
+    readback: `test_skills.SkillsTests.test_real_application_builder_skill_loads_cleanly`
+    (`('application', 'build_application') != ('application',)`) and
+    `test_terminal_theme.TerminalThemeTests.test_desktop_launch_paths_use_the_themed_launcher`
+    (`AssertionError: 2 != 1`). No full-suite-green claim; later wrapper checks
+    did not execute. Initial baseline command had a class-name typo, corrected
+    before collecting main evidence.
+  - `/tmp/hermes-verify-aios126-version-jGKljymL.py`: five ad-hoc checks passed,
+    as a healthy control, version-repair proof and remaining-defect reproduction.
+    Independent probes all keep `exact_output_closure=ok`:
+    `stale_version: exit=3; provenance=failed`;
+    `repository=unrelated-repository: exit=0; provenance=ok`;
+    `license=invented-license: exit=0; provenance=ok`;
+    `depend=absent-required-library>=99: exit=0; offline_package_availability=ok`.
+    The dependency mutation regenerates the manifest's APK hashes. This PASS
+    is not approval of the remaining unsafe acceptances.
+  - Whitespace checks passed; final complete repair-diff review and exact pushed
+    head readback are recorded in the PR follow-up comment.
+- Remaining #126 blockers: actual APK metadata/license and repository-index
+  attribution are still unbound; dependency/provides solver validation remains
+  absent. Filename-version consistency is not authenticated package provenance.
+  Host is aarch64; `qemu-system-x86_64` is absent. No current-head full Alpine
+  ISO, BIOS/UEFI, installation, physical-hardware or Brio execution this run.
+  No GitHub ISO build dispatched; repair commit uses `[skip ci]`. Validate is
+  `disabled_manually`; #126's historical green run 34906440477 belongs to
+  `068ae603360104fc31bf787bc787ffda1b7c7fc8`, not this repair.
+- Issue lane stopped behind blocked PRs. Claimed issue URL / assignee readback:
+  none. Claims released: none. No issue comments or assignment changes.
+  Assigned elsewhere (all `rwrife`, including same-account concurrent work):
+  #71, #77, #81, #91, #92, #93, #94, #95, #97, #98, #100, #101.
+- Publication: normal repair commit to existing PR #126; this state is on
+  `hardware-offline-bundle`, not main. Pre-existing issue-77 and pr126-gates
+  worktrees remain untouched; only this run's pr126-provenance worktree is
+  disposable. No direct main commit and no new issue implementation.
+- Self-removal: not triggered; retain the every-six-hours schedule.
+
 ## 2026-09-15 15:10 UTC
 
 - Preflight succeeded: `gh repo view rwrife/aios`, REST repository lookup,
