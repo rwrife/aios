@@ -4,24 +4,52 @@ param(
     [Parameter(Position = 0)][string]$IsoPath,
     [string]$Distro = 'Ubuntu',
     [string]$Name,
+    [switch]$Camera,
     [ValidatePattern('^[0-9]+-[0-9]+$')][string]$CameraBusId,
     [switch]$DryRun,
-    [switch]$Native
+    [switch]$Native,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$RemainingArguments
 )
 $ErrorActionPreference = 'Stop'
+$remaining = @($RemainingArguments)
+if ($IsoPath -eq '--camera') {
+    $Camera = $true
+    $IsoPath = $null
+}
+foreach ($argument in $remaining) {
+    if ([string]::IsNullOrEmpty($argument)) {
+        continue
+    } elseif ($argument -eq '--camera') {
+        $Camera = $true
+    } elseif (-not $IsoPath) {
+        $IsoPath = $argument
+    } else {
+        throw "Unknown argument: $argument"
+    }
+}
 $effectiveDryRun = $DryRun -or $env:DRY_RUN -eq '1'
+$cameraRequested = $Camera -or [bool]$CameraBusId
 $cameraOriginalAcl = $null
 $cameraNodeIdentity = $null
 $cameraAclChanged = $false
+$configuredCameraBus = if ($cameraRequested -and -not $CameraBusId) {
+    [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS')
+} else { '' }
+$configuredCameraAddr = if ($cameraRequested -and -not $CameraBusId) {
+    [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_ADDR')
+} else { '' }
+if ([bool]$configuredCameraBus -xor [bool]$configuredCameraAddr) {
+    throw 'Set both AIOS_VM_CAMERA_BUS and AIOS_VM_CAMERA_ADDR, or neither.'
+}
 if ($Native) {
-    if ($CameraBusId) {
-        Write-Error '-CameraBusId is supported only by the WSL QEMU launcher.'
+    if ($cameraRequested) {
+        Write-Error '-Camera and -CameraBusId are supported only by the WSL QEMU launcher.'
         exit 1
     }
     & "$PSScriptRoot/run-native.ps1" -IsoPath $IsoPath -Name $Name -DryRun:$DryRun
     exit $LASTEXITCODE
 }
-if (-not $CameraBusId) {
+if ($cameraRequested -and -not $CameraBusId -and -not $configuredCameraBus) {
     $savedCameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID')
     if (-not $savedCameraBusId) {
         $savedCameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID', 'User')
@@ -62,6 +90,20 @@ esac
         }
         return $state
     }
+    function Invoke-UsbAttach([string]$UsbExe, [string]$BusId) {
+        $keeper = Start-Process -FilePath wsl.exe -ArgumentList @(
+            '-d', $Distro, '--', 'sleep', '45'
+        ) -WindowStyle Hidden -PassThru
+        try {
+            Start-Sleep -Milliseconds 1500
+            & $UsbExe attach --wsl --busid $BusId
+            if ($LASTEXITCODE -ne 0) { throw "Could not attach USB device $BusId to WSL." }
+        } finally {
+            if (-not $keeper.HasExited) {
+                Stop-Process -Id $keeper.Id -ErrorAction SilentlyContinue
+            }
+        }
+    }
     $cameraUsbId = ''
     if ($CameraBusId) {
         $usbCommand = Get-Command usbipd.exe -ErrorAction SilentlyContinue
@@ -80,17 +122,13 @@ esac
         }
         $cameraUsbId = ($idMatch.Groups[1].Value + ':' + $idMatch.Groups[2].Value).ToLowerInvariant()
         if (-not $effectiveDryRun -and -not $selected[0].ClientIPAddress) {
-            & $usbCommand.Source attach --wsl --busid $CameraBusId
-            if ($LASTEXITCODE -ne 0) { throw "Could not attach USB device $CameraBusId to WSL." }
+            Invoke-UsbAttach $usbCommand.Source $CameraBusId
             Start-Sleep -Seconds 2
         }
     }
-    $cameraBus = if ($CameraBusId) { '' } else { [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS') }
-    $cameraAddr = if ($CameraBusId) { '' } else { [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_ADDR') }
-    if ([bool]$cameraBus -xor [bool]$cameraAddr) {
-        throw 'Set both AIOS_VM_CAMERA_BUS and AIOS_VM_CAMERA_ADDR, or neither.'
-    }
-    if (-not $cameraBus) {
+    $cameraBus = $configuredCameraBus
+    $cameraAddr = $configuredCameraAddr
+    if ($cameraRequested -and -not $cameraBus) {
         if ($cameraUsbId) {
             $usbLines = @()
             $attempts = if ($effectiveDryRun) { 1 } else { 10 }
@@ -125,6 +163,9 @@ done
                 $cameraAddr = $Matches[2]
             }
         }
+    }
+    if ($cameraRequested -and -not $cameraBus) {
+        throw 'No camera is attached to WSL. Supply -CameraBusId with the current USB bus ID, or attach one camera first.'
     }
     if ($cameraBus -and -not $effectiveDryRun) {
         if ($cameraBus -notmatch '^[1-9][0-9]{0,2}$' -or $cameraAddr -notmatch '^[1-9][0-9]{0,2}$') {

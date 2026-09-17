@@ -17,6 +17,10 @@ class WslCameraLeaseTests(unittest.TestCase):
                if not key.startswith('AIOS_') and key != 'DRY_RUN'}
         env.update(AIOS_TEST_LAUNCHER=str(ROOT / 'scripts/run.ps1'),
                    AIOS_TEST_SCENARIO=scenario, AIOS_QEMU_HEADLESS='1')
+        if scenario not in ('explicit-dry', 'explicit-attach', 'no-camera'):
+            env.update(AIOS_VM_CAMERA_BUS='1', AIOS_VM_CAMERA_ADDR='7')
+        if scenario == 'no-camera':
+            env['AIOS_VM_CAMERA_BUS_ID'] = '2-2'
         if scenario in ('dry', 'explicit-dry'):
             env['DRY_RUN'] = '1'
         script = r'''
@@ -34,6 +38,16 @@ function global:Mock-Usbipd {
     throw 'Unexpected USB/IP command'
 }
 function global:Start-Sleep {}
+function global:Start-Process {
+    param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru)
+    Write-Host 'KEEPER-START'
+    return [pscustomobject]@{HasExited=$false; Id=4242}
+}
+function global:Stop-Process {
+    param($Id, $ErrorAction)
+    if ($Id -ne 4242) { throw 'Wrong keeper PID' }
+    Write-Host 'KEEPER-STOP'
+}
 function global:wsl.exe {
     $global:LASTEXITCODE = 0
     if ($args -contains 'wslpath') { return '/mnt/test/scripts/run.sh' }
@@ -42,13 +56,23 @@ function global:wsl.exe {
     if ($args -contains 'id') { return 'tester' }
     if ($args -contains 'stat') {
         $global:statCalls++
-        if ($args[-1] -ne '/dev/bus/usb/001/007') { throw 'Wrong stat target' }
+        $expected = if ($env:AIOS_TEST_SCENARIO -eq 'explicit-attach') {
+            '/dev/bus/usb/003/019'
+        } else {
+            '/dev/bus/usb/001/007'
+        }
+        if ($args[-1] -ne $expected) { throw "Wrong stat target: $args" }
         if ($global:statCalls -gt 1 -and $env:AIOS_TEST_SCENARIO -eq 'replug') { return '1:99:bd:7' }
         return '1:42:bd:7'
     }
     if ($args -contains 'getfacl') { return "user::rw-`nuser:tester:r--`ngroup::r--`nmask::r--`nother::---" }
     if ($args -contains 'setfacl') {
-        if ($args[-1] -ne '/dev/bus/usb/001/007') { throw 'Wrong ACL target' }
+        $expected = if ($env:AIOS_TEST_SCENARIO -eq 'explicit-attach') {
+            '/dev/bus/usb/003/019'
+        } else {
+            '/dev/bus/usb/001/007'
+        }
+        if ($args[-1] -ne $expected) { throw 'Wrong ACL target' }
         if ($args -contains '--set-file=-') {
             $saved = $input | Out-String
             if ($saved -notmatch 'user:tester:r--') { throw 'Original ACL lost' }
@@ -63,10 +87,14 @@ function global:wsl.exe {
     }
     throw "Unexpected WSL call: $args"
 }
-if ($env:AIOS_TEST_SCENARIO -eq 'explicit-dry') {
+if ($env:AIOS_TEST_SCENARIO -in @('explicit-dry', 'explicit-attach')) {
     & $env:AIOS_TEST_LAUNCHER -Name AIOS-recognition-test -CameraBusId 2-2
-} else {
+} elseif ($env:AIOS_TEST_SCENARIO -eq 'no-camera') {
     & $env:AIOS_TEST_LAUNCHER -Name AIOS-recognition-test
+} elseif ($env:AIOS_TEST_SCENARIO -eq 'double-dash') {
+    & $env:AIOS_TEST_LAUNCHER --camera -Name AIOS-recognition-test
+} else {
+    & $env:AIOS_TEST_LAUNCHER -Name AIOS-recognition-test -Camera
 }
 exit $LASTEXITCODE
 '''
@@ -101,6 +129,27 @@ exit $LASTEXITCODE
         self.assertIn('AIOS_VM_CAMERA_BUS=3 AIOS_VM_CAMERA_ADDR=19', result.stdout)
         self.assertNotIn('ATTACH', result.stdout)
         self.assertNotIn('GRANT', result.stdout)
+
+    def test_explicit_camera_keeps_wsl_running_during_attach(self):
+        result = self.run_camera('explicit-attach')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(result.stdout.index('KEEPER-START'), result.stdout.index('ATTACH'))
+        self.assertLess(result.stdout.index('ATTACH'), result.stdout.index('KEEPER-STOP'))
+        self.assertIn('AIOS_VM_CAMERA_BUS=3 AIOS_VM_CAMERA_ADDR=19', result.stdout)
+
+    def test_default_launch_ignores_saved_camera_configuration(self):
+        result = self.run_camera('no-camera')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('ATTACH', result.stdout)
+        self.assertNotIn('GRANT', result.stdout)
+        self.assertNotIn('AIOS_VM_CAMERA_BUS=', result.stdout)
+
+    def test_double_dash_camera_alias_enables_discovery(self):
+        result = self.run_camera('double-dash')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('GRANT', result.stdout)
+        self.assertIn('RESTORE', result.stdout)
+        self.assertIn('AIOS_VM_CAMERA_BUS=1 AIOS_VM_CAMERA_ADDR=7', result.stdout)
 
 
 @unittest.skipUnless(os.name == "nt", "WSL wrapper requires Windows PowerShell")

@@ -142,6 +142,7 @@ class CameraTests(unittest.TestCase):
 
     def test_windows_launcher_discovers_attached_camera(self):
         launcher = (ROOT / 'scripts/run.ps1').read_text()
+        self.assertIn("[switch]$Camera", launcher)
         self.assertIn("[string]$CameraBusId", launcher)
         self.assertIn('usbipd.exe', launcher)
         self.assertIn('/dev/v4l/by-id/*-video-index0', launcher)

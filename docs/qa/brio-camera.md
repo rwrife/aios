@@ -72,13 +72,15 @@ provided the node identity has not changed during unplug/replug. Dry-run modes
 never attach a device or change its ACL:
 
 ```powershell
-.\scripts\run.ps1 -CameraBusId 2-2
+.\scripts\run.ps1 --camera -CameraBusId 2-2
 ```
 
-If exactly one stable `/dev/v4l/by-id/*-video-index0` camera is already attached
-to WSL, a normal `.\scripts\run.ps1` launch discovers it automatically. The
-explicit `-CameraBusId` form is preferred after a WSL restart or USB reconnect.
-Re-enumerate with `usbipd list` if the Windows bus ID changed.
+Camera passthrough is opt-in. If exactly one stable
+`/dev/v4l/by-id/*-video-index0` camera is already attached to WSL,
+`.\scripts\run.ps1 --camera` discovers it automatically. A normal
+`.\scripts\run.ps1` launch starts without a camera, even when a saved bus ID is
+configured. The explicit `-CameraBusId` form is preferred after a WSL restart
+or USB reconnect. Re-enumerate with `usbipd list` if the Windows bus ID changed.
 
 The guest owns capture while passed through; WSL and guest must not compete for
 it. Verify guest UVC enumeration, capture as the intended unprivileged service
