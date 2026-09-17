@@ -590,6 +590,60 @@ TestCase {
         verify(rich.text.indexOf("plain code") >= 0)
     }
 
+    function test_markdown_converter_renders_math() {
+        var colors = { ink: "#f1f5f6", muted: "#b2c3cd", code: "#203340", accent: "#bde4e6" }
+        var html = Markdown.toHtml("Since $x^2 + y^2 = r^2$, $\\alpha \\leq \\beta$ and $\\frac{a+b}{2}$ hold for $a_1$.", colors)
+        verify(html.indexOf("<sup>2</sup>") >= 0, "superscript missing: " + html)
+        verify(html.indexOf("<sub>1</sub>") >= 0, "subscript missing: " + html)
+        verify(html.indexOf("\u03b1") >= 0 && html.indexOf("\u2264") >= 0, "greek/leq missing: " + html)
+        verify(html.indexOf("(a+b)/(2)") >= 0, "fraction missing: " + html)
+        // Delimiters never leak into the rendered reply.
+        verify(html.indexOf("$") === -1, "dollar delimiters leaked: " + html)
+        // Explicit delimiters render too.
+        var explicit = Markdown.toHtml("Euler \\(e^{i\\pi}+1=0\\) and \\[\\sqrt{2}\\]", colors)
+        verify(explicit.indexOf("<sup>i\u03c0</sup>") >= 0, "paren math missing: " + explicit)
+        verify(explicit.indexOf("\u221a(2)") >= 0, "bracket math missing: " + explicit)
+        verify(explicit.indexOf("\\(") === -1 && explicit.indexOf("\\[") === -1, "delimiters leaked: " + explicit)
+        // Code suppresses math, and currency-like dollars stay literal prose.
+        var safe = Markdown.toHtml("Use `$x^2$` as-is; cost is $5 and $10.", colors)
+        verify(safe.indexOf("$x^2$") >= 0, "code span lost math text: " + safe)
+        verify(safe.indexOf("cost is $5 and $10.") >= 0, "currency rewritten: " + safe)
+        verify(safe.indexOf("<sup>2</sup>") === -1, "math rendered inside code: " + safe)
+        // Hostile input inside a math span can only ever be escaped text.
+        var hostile = Markdown.toHtml("$a_{<img src=x onerror=alert(1)>}$", colors)
+        verify(hostile.indexOf("<img") === -1, "raw img tag survived: " + hostile)
+        verify(hostile.indexOf("&lt;img") >= 0, "img not escaped: " + hostile)
+    }
+
+    function test_assistant_replies_render_math() {
+        var main = createDesktop()
+        var chat = main.openChat()
+        var session = backend.createdSessions[0]
+        session.messages = [
+            { role: "assistant", content: "The area is $\\pi r^2$, so if $r=3$ the cost is $5 total." }
+        ]
+        session.changed()
+        var convo = findChild(chat, "conversation")
+        tryCompare(convo, "count", 1)
+        convo.forceLayout()
+        var rich = null
+        tryVerify(function() {
+            var delegate = convo.itemAtIndex(0)
+            if (!delegate) return false
+            var item = collectNamed(delegate, "replyText")[0]
+            if (!item || item.textFormat !== TextEdit.RichText) return false
+            rich = item
+            return true
+        }, 3000)
+        // Qt re-serializes the rich text, so assert stable re-serialized tokens.
+        verify(rich.text.indexOf("\u03c0") >= 0, "pi glyph missing: " + rich.text)
+        verify(rich.text.indexOf("<sup>2</sup>") >= 0 || rich.text.indexOf("vertical-align") >= 0,
+               "superscript missing: " + rich.text)
+        verify(rich.text.indexOf("$\\pi") === -1, "raw latex leaked: " + rich.text)
+        // Currency after the math stays literal text (fail-closed detection).
+        verify(rich.text.indexOf("$5 total") >= 0, "currency rewritten: " + rich.text)
+    }
+
     function test_choice_block_parses_conservatively() {
         var parsed = Markdown.splitChoices("Which style should I build?\n\n```Choose\nNative app\nWeb app\n```")
         compare(parsed.choices.length, 2)
