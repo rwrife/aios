@@ -361,3 +361,13 @@ and test evidence are recorded in `recognition-release.md`.
 No people were enrolled, no cohort measurements were made, and no recognition
 approval was created. Accuracy/adversarial, complete lifecycle/UX and long-soak
 gates remain open in #95; production recognition remains off.
+
+### Desktop recovery launcher validation
+
+The `desktop-startup-recovery` ISO completed its manifest and checksum before
+launch. The guest reported a ready XRender shell at 1920×1080. A bounded probe
+as the ordinary `aios` user received five 640×480 frames in 1.866 seconds and
+closed the capture handle. Frames were discarded; no images or face references
+were saved. The launcher selected the shared Brio through the saved Windows
+`AIOS_VM_CAMERA_BUS_ID` preference and passed its current raw USB address to
+QEMU, despite the WSL host not exposing a V4L2 camera node.
