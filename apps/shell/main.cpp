@@ -208,6 +208,14 @@ public:
         }
         local.terminate(); if (!local.waitForFinished(1500)) local.kill();
     }
+    Q_INVOKABLE void prepareDesktopWindow(QWindow *window) {
+        if (window && QGuiApplication::platformName() == "xcb") {
+            // Qt's XCB backend reads this dynamic property before native window
+            // creation: Desktop (0x2) sets _NET_WM_WINDOW_TYPE_DESKTOP without
+            // Qt::Desktop's special handling that aliases the X11 root window.
+            window->setProperty("_q_xcb_wm_window_type", 0x2);
+        }
+    }
     Q_INVOKABLE QObject *createSession() {
         auto session = new Backend(this); ++openSessions; emit changed();
         connect(session, &QObject::destroyed, this, [this] { --openSessions; emit changed(); });

@@ -8,13 +8,18 @@ Window {
     id: desktop
     property bool chatPreview: Qt.application.arguments.indexOf("--chat") >= 0
     property bool windowed: chatPreview || Qt.application.arguments.indexOf("--windowed") >= 0
-    visible: !chatPreview
+    visible: false
+    Component.onCompleted: {
+        if (!windowed && backendApi && typeof backendApi.prepareDesktopWindow === "function")
+            backendApi.prepareDesktopWindow(desktop)
+        visible = !chatPreview
+    }
     title: "AIOS Desktop"
     width: windowed ? Math.min(1100, Screen.width - 80) : Screen.width
     height: windowed ? Math.min(760, Screen.height - 80) : Screen.height
-    // A normal window can be raised over applications even with the below hint.
-    // The desktop role keeps wallpaper and its controls in the desktop layer.
-    flags: windowed ? Qt.Window : Qt.Desktop | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
+    // Keep a renderable window. Qt.Desktop aliases the X11 root window.
+    // prepareDesktopWindow sets the desktop-layer hint before this window maps.
+    flags: windowed ? Qt.Window : Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
     color: theme.night
     property var backendApi: typeof backend === "undefined" ? null : backend
     property var sessionControlApi: typeof sessionControl === "undefined" ? null : sessionControl
