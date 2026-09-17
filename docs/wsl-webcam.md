@@ -195,6 +195,14 @@ usbipd list
 .\scripts\run.ps1 -CameraBusId <BUSID>
 ```
 
+To reuse a selected camera for plain `run.ps1` launches, set the Windows user
+environment variable `AIOS_VM_CAMERA_BUS_ID` to its bus ID. The launcher reads
+this saved value even from an already-open terminal, attaches that device to
+WSL when needed, and resolves its current Linux USB address. An explicit
+`-CameraBusId` overrides it. This path does not require WSL V4L2/UVC support:
+the Alpine guest owns the passed-through USB camera. Clear the saved variable
+when you no longer want that camera passed to the VM.
+
 The launcher attaches that exact shared device if needed, resolves its current
 Linux USB bus/device numbers, and applies a temporary ACL only to the selected
 `/dev/bus/usb/BBB/DDD` node. If exactly one stable

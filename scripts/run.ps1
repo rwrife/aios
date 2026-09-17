@@ -21,6 +21,15 @@ if ($Native) {
     & "$PSScriptRoot/run-native.ps1" -IsoPath $IsoPath -Name $Name -DryRun:$DryRun
     exit $LASTEXITCODE
 }
+if (-not $CameraBusId) {
+    $CameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID')
+    if (-not $CameraBusId) {
+        $CameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID', 'User')
+    }
+    if ($CameraBusId -and $CameraBusId -notmatch '^[0-9]+-[0-9]+$') {
+        throw 'AIOS_VM_CAMERA_BUS_ID must be a Windows USB bus ID such as 2-2.'
+    }
+}
 try {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
         throw 'WSL is required. Install WSL2 with Ubuntu and WSLg, or use -Native for native Windows QEMU.'
