@@ -2,6 +2,74 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-17 05:15 UTC
+
+- Preflight: `gh repo view rwrife/aios`, `gh api user` -> `rwrife`, fetch /
+  fast-forward main to `aa6405e`. No auth fallback needed; no write-probe
+  failures observed (branch push, PR create and merge all succeeded).
+- PR lane: one open PR, https://github.com/rwrife/aios/pull/138
+  (draft, CLEAN/MERGEABLE, zero checks — Validate workflow is
+  `disabled_manually`). It is the owner's own in-flight desktop-startup /
+  native-size-VM recovery work: body documents completed local ISO/QEMU/Brio
+  validation, no issue linkage, and no signal to mark ready. Per the
+  owner-gated-draft precedent it was left untouched (no ready, no merge, no
+  comment). A draft owned by the same human account is not treated as a
+  write-blocker for the issue lane, matching the #118/#120 precedent where
+  in-flight owner drafts did not halt selection; recorded here for visibility.
+- Merges before issue work: none. Freshness re-query after issue selection and
+  before merge: only #138 (draft, left alone) and this run's own PR.
+- Issue lane: open issues at selection 25. Assigned elsewhere (skipped
+  entirely): #71, #77, #81, #100, #101, #123. Hardware/recognition/voice stage
+  chains left for device-capable runners.
+- Selected issue: https://github.com/rwrife/aios/issues/124 — "Markdown with
+  math/Katex Support". Rationale: the chat is the single interaction point of
+  an AI-only OS; the agent routinely returns math and it currently renders as
+  raw LaTeX, and this slice is fully verifiable headless (Qt rich-text
+  harness) unlike hardware/VM-gated work.
+- Claim: `gh issue edit 124 --repo rwrife/aios --add-assignee @me` ->
+  readback `assignees=[rwrife]` (self, identity `rwrife`); re-checked
+  immediately before push (still `[rwrife]`, OPEN). Claims released: none.
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-124-math`,
+  removed after merge): `apps/shell/Markdown.js` gained a fail-closed,
+  dependency-free LaTeX renderer (no KaTeX/CDN — Qt rich text forbids
+  script). `$...$` (conservative signal gate), `$$...$$`, `\[ \]`, `\( \)`
+  map to Unicode symbols, `<sup>/<sub>` scripts, linearized fractions and
+  roots; matrices/alignment/unbalanced/oversized spans reject whole and
+  render verbatim; code spans and fences suppress math; currency never
+  triggers; all math text is escaped before any tag is emitted. Two new QML
+  regression tests in `tests/qml/tst_chat_launcher.qml`.
+- New implementation PR: https://github.com/rwrife/aios/pull/139 — MERGED at
+  `2026-09-17T05:12:23Z`, squash commit
+  `090bedddb83da4bb19cd9bee55a0f186d1122b28`. Issue #124 CLOSED via `Closes`
+  linkage (readback state CLOSED). Remote branch deletion verified
+  (`git ls-remote --heads origin feat/issue-124-math-markdown` empty). No
+  checks arrived (Validate disabled; free-plan repo has no branch
+  protection, so no `--auto`); merge used the #103/#105/#109 precedent: fresh
+  local changed-scope verification, CLEAN/MERGEABLE, explicit squash.
+- Verification (targeted-suite evidence, not VM green):
+  - RED/GREEN via stash of Markdown.js: new tests FAIL (25 passed, 2 failed),
+    restored -> `tst_chat_launcher` 27 passed, 0 failed (real qmltestrunner,
+    Alpine 3.23 Qt 6, offscreen software backend).
+  - Sibling QML suites on the PR head: chat_scroll 6, local_models 6, theme
+    20, subscription 7, setup 9, app_host 14 — all 0 failures.
+  - 35-case Node behavior probe over the converter: all pass.
+  - `test_artifacts` + `test_applications`: 67 OK (1 native-binary skip).
+  - `bash scripts/test.sh`: 1042 tests, 6 failures + 1 error — all seven
+    reproduce identically on untouched main (install-offline disk
+    identity/guard tests are host-environment sensitive on this aarch64 box;
+    plus `test_recognition.ManifestApprovalTests.test_missing_expired_changed_and_unsafe_manifest_are_rejected`).
+    Baseline drift outside the touched surface; not claimed.
+  - Post-merge freshness: QML suite re-run on updated main HEAD `090bedd`:
+    27 passed, 0 failed, including both new math tests.
+  - Not performed: Alpine ISO / in-VM QEMU GUI session (no display/VM on this
+    headless host; per AGENTS.md no GitHub ISO builds). Stated in the PR.
+- Issue created this run: none (eligible issues existed).
+- Worktree hygiene: this run's `issue-124-math` worktree removed;
+  `git worktree list` shows only pre-existing worktrees from concurrent
+  hardware/recognition lanes (chk132t, chk136t, fix131-137, issue-77,
+  pr126-gates-20260915) — left untouched.
+- Self-removal: not applicable; job remains scheduled every six hours.
+
 ## 2026-09-16 10:10 UTC
 
 - Preflight: `gh repo view rwrife/aios`, `gh api repos/rwrife/aios`,
