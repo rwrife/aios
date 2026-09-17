@@ -2,6 +2,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QScreen>
+#include <QSet>
 #include <QStringDecoder>
 #include <QVariantMap>
 
@@ -92,6 +93,29 @@ bool readTitle(QString &title)
     return true;
 }
 
+// The chat launcher forwards the shell's palette key through AIOS_APP_THEME
+// (the same keys as apps/shell/Theme.qml), falling back to the inherited
+// AIOS_BROWSER_THEME the shell already exports to per-chat tool hosts.
+// Anything unset, empty, or unknown falls back to Ocean ("blue"), matching
+// the Theme.qml paletteIndex fallback and the browser shell's paletteFor().
+QString themeName()
+{
+    static const QSet<QString> knownThemes = {
+        QStringLiteral("blue"), QStringLiteral("teal"), QStringLiteral("sage"),
+        QStringLiteral("amber"), QStringLiteral("copper"), QStringLiteral("rose"),
+        QStringLiteral("violet"), QStringLiteral("slate")
+    };
+    QStringDecoder decoder(QStringDecoder::Utf8);
+    const QString value = decoder.decode(qgetenv("AIOS_APP_THEME"));
+    if (!decoder.hasError() && knownThemes.contains(value))
+        return value;
+    QStringDecoder inherited(QStringDecoder::Utf8);
+    const QString browserTheme = inherited.decode(qgetenv("AIOS_BROWSER_THEME"));
+    if (!inherited.hasError() && knownThemes.contains(browserTheme))
+        return browserTheme;
+    return QStringLiteral("blue");
+}
+
 void signalReady(int descriptor)
 {
     static constexpr char message[] = "ready\n";
@@ -130,7 +154,8 @@ int main(int argc, char *argv[])
 
     QGuiApplication application(argc, argv);
     QQmlApplicationEngine engine;
-    engine.setInitialProperties({{QStringLiteral("appTitle"), title}});
+    engine.setInitialProperties({{QStringLiteral("appTitle"), title},
+                                 {QStringLiteral("appTheme"), themeName()}});
     engine.load(QStringLiteral("qrc:/AppHost.qml"));
     if (engine.rootObjects().size() != 1)
         return fail();

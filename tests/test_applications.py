@@ -1246,12 +1246,13 @@ class ApplicationStoreTests(unittest.TestCase):
                     "argv": sys.argv,
                     "template": os.environ["AIOS_APP_TEMPLATE"],
                     "title": os.environ["AIOS_APP_TITLE"],
+                    "theme": os.environ["AIOS_APP_THEME"],
                 }, stream)
             os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
             os.close(int(os.environ["AIOS_APP_READY_FD"]))
             time.sleep(30)
         """)
-        with mock.patch.dict(os.environ, {"AIOS_TEST_CAPTURE": str(capture)}):
+        with mock.patch.dict(os.environ, {"AIOS_TEST_CAPTURE": str(capture), "AIOS_BROWSER_THEME": "sage"}):
             store = self._store(native_host=host, native_templates=("calculator",))
             created = store.create({
                 "title": "Calculator --bad",
@@ -1265,6 +1266,7 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(captured["argv"], [str(host)])
         self.assertEqual(captured["template"], "calculator")
         self.assertEqual(captured["title"], "Calculator --bad")
+        self.assertEqual(captured["theme"], "sage")
         capture.unlink()
         manifest_path = self.root / created["id"] / "manifest.json"
         manifest = _read_json(manifest_path)
@@ -1273,6 +1275,30 @@ class ApplicationStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.launch({"id": created["id"]})
         self.assertFalse(capture.exists())
+
+    def test_native_launcher_falls_back_to_ocean_theme_without_chat_palette(self):
+        capture = Path(self.tmp.name) / "capture.json"
+        host = self._native_host("""
+            import json, os
+            with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
+                json.dump({"theme": os.environ["AIOS_APP_THEME"]}, stream)
+            os.write(int(os.environ["AIOS_APP_READY_FD"]), b"ready\\n")
+            os.close(int(os.environ["AIOS_APP_READY_FD"]))
+        """)
+        env = {"AIOS_TEST_CAPTURE": str(capture)}
+        env.pop("AIOS_BROWSER_THEME", None)
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop("AIOS_BROWSER_THEME", None)
+            store = self._store(native_host=host, native_templates=("calculator",))
+            created = store.create({
+                "title": "Calculator",
+                "request": "Native calculator",
+                "runtime": "native",
+                "template": "calculator",
+            })
+            store.publish({"id": created["id"], "summary": "Calculator", "keywords": ["calculator"]})
+            self.assertTrue(store.launch({"id": created["id"]})["launched"])
+        self.assertEqual(_read_json(capture)["theme"], "blue")
 
     @unittest.skipUnless(os.name == "posix", "compiled native host validation requires POSIX")
     def test_compiled_native_host_binary_ready_protocol_and_validation(self):
@@ -1283,7 +1309,7 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertTrue(host.is_file(), binary)
         secret = "native-host-secret-value"
 
-        def run_host(*, template="calculator", title="Calculator"):
+        def run_host(*, template="calculator", title="Calculator", extra_env=None):
             read_fd, write_fd = os.pipe()
             env = os.environ.copy()
             env.update({
@@ -1294,6 +1320,7 @@ class ApplicationStoreTests(unittest.TestCase):
                 "QT_QPA_PLATFORM": "offscreen",
                 "QT_QUICK_BACKEND": "software",
             })
+            env.update(extra_env or {})
             process = None
             try:
                 process = subprocess.Popen(
@@ -1334,6 +1361,16 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(ready, b"ready\n")
         self.assertEqual(stdout, b"")
         self.assertNotIn(secret, (stdout + stderr).decode("utf-8", errors="replace"))
+
+        # A palette from the chat launcher (or a stray value) never blocks startup.
+        for theme in ("sage", "not-a-theme", ""):
+            with self.subTest(theme=theme):
+                returncode, ready, stdout, stderr = run_host(
+                    extra_env={"AIOS_APP_THEME": theme, "AIOS_BROWSER_THEME": "violet"},
+                )
+                self.assertEqual(ready, b"ready\n")
+                self.assertEqual(stdout, b"")
+                self.assertNotIn(secret, (stdout + stderr).decode("utf-8", errors="replace"))
 
         for kwargs in (
             {"template": "unsupported"},
@@ -1395,6 +1432,66 @@ class ApplicationStoreTests(unittest.TestCase):
                 "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'",
             )
             self.assertEqual(app["body"].decode("utf-8"), html)
+
+    def test_wrapper_uses_chat_palette_and_falls_back_to_ocean(self):
+        import colorsys
+        from aios import app_runner
+
+        def expected_hsl(hue, saturation, lightness):
+            red, green, blue = (round(channel * 255) for channel in colorsys.hls_to_rgb(hue, lightness, saturation))
+            return f"#{red:02x}{green:02x}{blue:02x}"
+
+        store = self._store()
+        created = store.create({"title": "Palettes", "request": "Build a palette page"})
+        store.write({"id": created["id"], "html": "<!doctype html><title>P</title>"})
+        store.publish({"id": created["id"], "summary": "Palette", "keywords": ["palette"]})
+        document = app_runner.load_document(self.root / created["id"])
+
+        ocean = app_runner.handler_for(document)
+        sage = app_runner.handler_for(document, theme="sage")
+        bogus = app_runner.handler_for(document, theme="not-a-theme")
+        with self._serve(ocean) as ocean_url, self._serve(sage) as sage_url, self._serve(bogus) as bogus_url:
+            default_body = self._get(ocean_url + "/")["body"].decode("utf-8")
+            sage_body = self._get(sage_url + "/")["body"].decode("utf-8")
+            bogus_body = self._get(bogus_url + "/")["body"].decode("utf-8")
+        self.assertIn("background:#101b27", default_body)
+        sage_night = expected_hsl(0.30, 0.24, 0.10)
+        self.assertNotEqual(sage_night, "#101b27")
+        self.assertIn(f"background:{sage_night}", sage_body)
+        self.assertIn(f"color:{expected_hsl(0.30, 0.24 * 0.55, 0.74)}", sage_body)
+        self.assertEqual(bogus_body.count("background:#101b27"), default_body.count("background:#101b27"))
+
+    def test_run_threads_chat_theme_into_browser_and_wrapper(self):
+        from aios import app_runner
+
+        store = self._store()
+        created = store.create({"title": "Themed", "request": "Build a themed page"})
+        store.write({"id": created["id"], "html": "<!doctype html><title>T</title>"})
+        store.publish({"id": created["id"], "summary": "Themed", "keywords": ["themed"]})
+        capture = Path(self.tmp.name) / "capture.json"
+        chromium = self._write_executable("aios-browser", """
+            import json, os, sys
+            from urllib.request import urlopen
+            url = sys.argv[sys.argv.index("--url") + 1]
+            theme = sys.argv[sys.argv.index("--theme") + 1]
+            body = urlopen("http://" + url.split("//", 1)[1].split("/")[0] + "/", timeout=5).read().decode("utf-8")
+            with open(os.environ["AIOS_TEST_CAPTURE"], "w", encoding="utf-8") as stream:
+                json.dump({"argv": sys.argv[1:], "theme": theme, "wrapper": body}, stream)
+        """)
+        env = {
+            "PATH": str(chromium.parent) + os.pathsep + os.environ.get("PATH", ""),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "apps"),
+            "AIOS_TEST_CAPTURE": str(capture),
+            "AIOS_BROWSER_THEME": "sage",
+        }
+        with mock.patch.dict(os.environ, env):
+            app_runner.run(self.root / created["id"], ready_fd=None)
+        captured = _read_json(capture)
+        self.assertEqual(captured["theme"], "sage")
+        self.assertIn('<iframe sandbox="allow-scripts" src="/app"', captured["wrapper"])
+        import colorsys
+        red, green, blue = (round(channel * 255) for channel in colorsys.hls_to_rgb(0.30, 0.10, 0.24))
+        self.assertIn(f"background:#{red:02x}{green:02x}{blue:02x}", captured["wrapper"])
 
     def test_handler_rejects_unknown_and_query_paths(self):
         from aios import app_runner

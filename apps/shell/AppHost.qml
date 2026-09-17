@@ -11,8 +11,17 @@ Window {
     minimumWidth: WindowSizing.extent(320, Screen.width, Screen.desktopAvailableWidth)
     minimumHeight: WindowSizing.extent(460, Screen.height, Screen.desktopAvailableHeight)
     visible: true
-    color: "#101b27"
+    color: palette.night
     title: appTitle
+
+    // The desktop shell exports the user's palette through the environment and
+    // the native host validates it before injecting this property. Unknown or
+    // unset values fall back to Ocean ("blue") exactly like Theme.qml itself.
+    property string appTheme: "blue"
+    Theme {
+        id: palette
+        selected: calculator.appTheme
+    }
 
     property string appTitle: "Calculator"
     property string displayValue: "0"
@@ -248,6 +257,7 @@ Window {
     component CalcButton: Button {
         required property string keyValue
         required property string accessibleName
+        required property var theme
         Layout.fillWidth: true
         Layout.fillHeight: true
         focusPolicy: Qt.StrongFocus
@@ -257,12 +267,12 @@ Window {
         Accessible.name: accessibleName
         background: Rectangle {
             radius: 12
-            color: parent.down ? "#4c6574" : parent.hovered ? "#354e60" : "#203340"
-            border.color: "#4c6574"
+            color: parent.down ? theme.line : parent.hovered ? theme.horizon : theme.input
+            border.color: theme.line
         }
         contentItem: Text {
             text: parent.text
-            color: "#f1f5f6"
+            color: theme.ink
             font: parent.font
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -291,7 +301,7 @@ Window {
                 Layout.fillWidth: true
                 text: calculator.appTitle
                 textFormat: Text.PlainText
-                color: "#b2c3cd"
+                color: palette.muted
                 font.pixelSize: 18
                 elide: Text.ElideRight
                 Accessible.role: Accessible.Heading
@@ -302,8 +312,8 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 96
                 radius: 14
-                color: "#172633"
-                border.color: "#4c6574"
+                color: palette.panel
+                border.color: palette.line
 
                 Label {
                     objectName: "calculatorDisplay"
@@ -311,7 +321,7 @@ Window {
                     anchors.margins: 18
                     text: calculator.displayValue
                     textFormat: Text.PlainText
-                    color: "#f1f5f6"
+                    color: palette.ink
                     font.pixelSize: 38
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
@@ -328,25 +338,25 @@ Window {
                 rowSpacing: 8
                 columnSpacing: 8
 
-                CalcButton { keyValue: "C"; accessibleName: "Clear" }
-                CalcButton { keyValue: "±"; accessibleName: "Toggle sign" }
-                CalcButton { keyValue: "⌫"; accessibleName: "Backspace" }
-                CalcButton { keyValue: "÷"; accessibleName: "Divide" }
-                CalcButton { keyValue: "7"; accessibleName: "Seven" }
-                CalcButton { keyValue: "8"; accessibleName: "Eight" }
-                CalcButton { keyValue: "9"; accessibleName: "Nine" }
-                CalcButton { keyValue: "×"; accessibleName: "Multiply" }
-                CalcButton { keyValue: "4"; accessibleName: "Four" }
-                CalcButton { keyValue: "5"; accessibleName: "Five" }
-                CalcButton { keyValue: "6"; accessibleName: "Six" }
-                CalcButton { keyValue: "−"; accessibleName: "Subtract" }
-                CalcButton { keyValue: "1"; accessibleName: "One" }
-                CalcButton { keyValue: "2"; accessibleName: "Two" }
-                CalcButton { keyValue: "3"; accessibleName: "Three" }
-                CalcButton { keyValue: "+"; accessibleName: "Add" }
-                CalcButton { keyValue: "0"; accessibleName: "Zero" }
-                CalcButton { keyValue: "."; accessibleName: "Decimal point" }
-                CalcButton { keyValue: "="; accessibleName: "Equals"; Layout.columnSpan: 2 }
+                CalcButton { keyValue: "C"; accessibleName: "Clear"; theme: palette }
+                CalcButton { keyValue: "±"; accessibleName: "Toggle sign"; theme: palette }
+                CalcButton { keyValue: "⌫"; accessibleName: "Backspace"; theme: palette }
+                CalcButton { keyValue: "÷"; accessibleName: "Divide"; theme: palette }
+                CalcButton { keyValue: "7"; accessibleName: "Seven"; theme: palette }
+                CalcButton { keyValue: "8"; accessibleName: "Eight"; theme: palette }
+                CalcButton { keyValue: "9"; accessibleName: "Nine"; theme: palette }
+                CalcButton { keyValue: "×"; accessibleName: "Multiply"; theme: palette }
+                CalcButton { keyValue: "4"; accessibleName: "Four"; theme: palette }
+                CalcButton { keyValue: "5"; accessibleName: "Five"; theme: palette }
+                CalcButton { keyValue: "6"; accessibleName: "Six"; theme: palette }
+                CalcButton { keyValue: "−"; accessibleName: "Subtract"; theme: palette }
+                CalcButton { keyValue: "1"; accessibleName: "One"; theme: palette }
+                CalcButton { keyValue: "2"; accessibleName: "Two"; theme: palette }
+                CalcButton { keyValue: "3"; accessibleName: "Three"; theme: palette }
+                CalcButton { keyValue: "+"; accessibleName: "Add"; theme: palette }
+                CalcButton { keyValue: "0"; accessibleName: "Zero"; theme: palette }
+                CalcButton { keyValue: "."; accessibleName: "Decimal point"; theme: palette }
+                CalcButton { keyValue: "="; accessibleName: "Equals"; theme: palette; Layout.columnSpan: 2 }
             }
         }
     }

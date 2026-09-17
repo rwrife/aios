@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import colorsys
 import json
 import os
 import re
@@ -31,6 +32,57 @@ from .applications import (
 
 _APP_PATH = "/app"
 _WRAPPER_TITLE = "AIOS application preview"
+# CSS palettes mirroring apps/shell/Theme.qml roles (night, panel, input, ink,
+# muted, line) for each saved desktop theme key. Unknown keys fall back to
+# Ocean, matching Theme.qml's paletteIndex fallback and the browser shell.
+_WRAPPER_PALETTES = {
+    "blue": {
+        "night": "#101b27", "panel": "#172633", "ink": "#f1f5f6",
+        "muted": "#b2c3cd", "line": "#4c6574",
+    },
+}
+_DEFAULT_WRAPPER_THEME = "blue"
+_THEME_HUES = {
+    "teal": (0.48, 0.24), "sage": (0.30, 0.24), "amber": (0.11, 0.24),
+    "copper": (0.055, 0.24), "rose": (0.96, 0.24), "violet": (0.73, 0.24),
+    "slate": (0.60, 0.055),
+}
+
+
+def _hsl(hue: float, saturation: float, lightness: float) -> str:
+    red, green, blue = (round(channel * 255) for channel in colorsys.hls_to_rgb(hue, lightness, saturation))
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+def _wrapper_palette(theme: str | None) -> dict[str, str]:
+    key = theme if theme in _WRAPPER_PALETTES or theme in _THEME_HUES else _DEFAULT_WRAPPER_THEME
+    if key in _WRAPPER_PALETTES:
+        return _WRAPPER_PALETTES[key]
+    hue, saturation = _THEME_HUES[key]
+    return {
+        "night": _hsl(hue, saturation, 0.10),
+        "panel": _hsl(hue, saturation, 0.145),
+        "ink": "#f1f5f6",
+        "muted": _hsl(hue, saturation * 0.55, 0.74),
+        "line": _hsl(hue, saturation, 0.38),
+    }
+
+
+def _wrapper_html(palette: dict[str, str]) -> str:
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        f"<title>{_WRAPPER_TITLE}</title>"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<style>"
+        f"html,body{{margin:0;height:100%;background:{palette['night']};color:{palette['ink']};font:16px/1.4 system-ui,sans-serif;}}"
+        "body{display:grid;grid-template-rows:auto 1fr;}"
+        f"header{{padding:16px 20px;background:{palette['panel']};color:{palette['muted']};border-bottom:1px solid {palette['line']};}}"
+        "iframe{width:100%;height:100%;border:0;background:#fff;}"
+        "</style></head><body>"
+        f"<header><h1>{_WRAPPER_TITLE}</h1></header>"
+        '<iframe sandbox="allow-scripts" src="/app" title="Generated application preview"></iframe>'
+        "</body></html>"
+    )
 _BROWSER_BIN = "aios-browser"
 _WRAPPER_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; "
@@ -178,21 +230,8 @@ def load_document(folder: Path | str) -> str:
     return document
 
 
-def handler_for(document: str, on_app_loaded=None) -> type[BaseHTTPRequestHandler]:
-    wrapper_html = (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        f"<title>{_WRAPPER_TITLE}</title>"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        "<style>"
-        "html,body{margin:0;height:100%;background:#0f172a;color:#e2e8f0;font:16px/1.4 system-ui,sans-serif;}"
-        "body{display:grid;grid-template-rows:auto 1fr;}"
-        "header{padding:16px 20px;border-bottom:1px solid rgba(148,163,184,.24);}"
-        "iframe{width:100%;height:100%;border:0;background:#fff;}"
-        "</style></head><body>"
-        f"<header><h1>{_WRAPPER_TITLE}</h1></header>"
-        '<iframe sandbox="allow-scripts" src="/app" title="Generated application preview"></iframe>'
-        "</body></html>"
-    )
+def handler_for(document: str, on_app_loaded=None, theme: str | None = None) -> type[BaseHTTPRequestHandler]:
+    wrapper_html = _wrapper_html(_wrapper_palette(theme))
     wrapper_bytes = wrapper_html.encode("utf-8")
     app_bytes = document.encode("utf-8")
     callback_lock = threading.Lock()
@@ -299,7 +338,8 @@ def run(folder: Path | str, ready_fd: int | None = None) -> None:
     process = None
     try:
         document = load_document(folder)
-        handler = handler_for(document, on_app_loaded=signal_ready if ready_fd is not None else None)
+        handler = handler_for(document, on_app_loaded=signal_ready if ready_fd is not None else None,
+                              theme=os.environ.get("AIOS_BROWSER_THEME"))
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
