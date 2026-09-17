@@ -218,4 +218,57 @@ TestCase {
         keyClick(Qt.Key_Backspace)
         compare(host.displayValue, "0")
     }
+
+    Theme {
+        id: ocean
+        selected: "blue"
+    }
+
+    Theme {
+        id: sage
+        selected: "sage"
+    }
+
+    function test_default_palette_is_ocean() {
+        compare(host.color, ocean.night)
+        compare(host.appTheme, "blue")
+        var display = findChild(host.contentItem, "calculatorDisplay")
+        verify(display !== null)
+        compare(display.color, ocean.ink)
+        var button = findButton(host.contentItem, "7")
+        verify(button !== null)
+        compare(button.background.color, ocean.input)
+    }
+
+    function test_selected_palette_follows_the_chat_theme() {
+        var themed = createTemporaryObject(themeHostComponent, test)
+        verify(themed !== null)
+        tryCompare(themed, "visible", true)
+        waitForRendering(themed.contentItem)
+        themed.requestActivate()
+        wait(50)
+        compare(themed.color, sage.night)
+        verify(themed.color !== ocean.night)
+        var display = findChild(themed.contentItem, "calculatorDisplay")
+        verify(display !== null)
+        compare(display.color, sage.ink)
+        var panel = display.parent
+        compare(panel.color, sage.panel)
+        compare(panel.border.color, sage.line)
+        var button = findButton(themed.contentItem, "7")
+        verify(button !== null)
+        compare(button.background.color, sage.input)
+        compare(button.background.border.color, sage.line)
+        themed.close()
+        themed.destroy()
+    }
+
+    Component {
+        id: themeHostComponent
+        AppHost {
+            visible: true
+            appTitle: "Themed Calculator"
+            appTheme: "sage"
+        }
+    }
 }

@@ -33,6 +33,7 @@ MAX_REQUEST_LENGTH = 2000
 MAX_SUMMARY_LENGTH = 300
 MAX_KEYWORDS = 20
 NATIVE_TEMPLATES = ("calculator",)
+THEME_KEYS = ("blue", "teal", "sage", "amber", "copper", "rose", "violet", "slate")
 RUNTIMES = ("web", "native")
 LAUNCH_FAILURE_REASON = "Application window could not open."
 
@@ -736,6 +737,7 @@ class ApplicationStore:
                     "AIOS_APP_TEMPLATE": template,
                     "AIOS_APP_TITLE": manifest["title"],
                     "AIOS_APP_READY_FD": str(write_fd),
+                    "AIOS_APP_THEME": os.environ.get("AIOS_BROWSER_THEME") or "blue",
                 })
             else:
                 command = [
