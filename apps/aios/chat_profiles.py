@@ -50,7 +50,8 @@ def dispatch(request, directory=None):
             return {'profiles': [{'id': key, 'name': value['name'], 'photo': value.get('photo', '')}
                                  for key, value in records.items()]}
         if action not in ('enroll_manual', 'enroll_profile', 'activate_verified',
-                          'verify_profile', 'activate_profile', 'delete_profile'):
+                          'verify_profile', 'activate_profile', 'delete_profile',
+                          'update_profile_photo'):
             raise ValueError('Unsupported profile action')
         name = request.get('name') if action.startswith('enroll') else request.get('owner')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
@@ -64,6 +65,8 @@ def dispatch(request, directory=None):
             owner = name if name in records else None
             if request.get('confirmed') is not True:
                 raise ValueError('Confirm account deletion')
+        if action == 'update_profile_photo':
+            owner = name if name in records else None
         if action.startswith('enroll'):
             if request.get('consent') is not True:
                 raise ValueError('Confirm creation of your local profile')
@@ -77,6 +80,11 @@ def dispatch(request, directory=None):
         else:
             if not owner:
                 raise ValueError('Profile or PIN was not recognized')
+            if action == 'update_profile_photo':
+                records[owner]['photo'] = portrait(request.get('photo'))
+                atomic_bytes(path, json.dumps(records).encode())
+                value = records[owner]
+                return {'profile': {'id': owner, 'name': value['name'], 'photo': value['photo'], 'detected': False}}
             valid = verify_pin(records[owner]['pin'], request.get('pin'), time.time())
             atomic_bytes(path, json.dumps(records).encode())
             if not valid:

@@ -61,19 +61,32 @@ Dialog {
             const manage = dialog.greetingOnly && profile && profile.id
             const id = manage ? profile.id : ""
             const name = manage ? profile.name : ""
+            const photo = manage ? profile.photo : ""
             dialog.close()
             if (manage) {
                 accountDetails.accountId = id
                 accountDetails.accountName = name
+                accountDetails.photo = photo
                 accountDetails.open()
             }
         }
-        function onPhotoCaptured(preview, rgb) { if (dialog.opened && dialog.creating) { dialog.photoPreview = preview; dialog.photoRgb = rgb; } }
+        function onPhotoCaptured(preview, rgb) {
+            if (dialog.opened && dialog.creating) {
+                dialog.photoPreview = preview
+                dialog.photoRgb = rgb
+            } else if (accountDetails.opened) {
+                control.updateProfilePhoto(rgb)
+            }
+        }
+        function onProfilePhotoUpdated(photo) {
+            if (accountDetails.opened) accountDetails.photo = photo
+        }
     }
     Dialog {
         id: accountDetails; objectName: "unlockedAccountDetails"
         property string accountId: ""
         property string accountName: ""
+        property string photo: ""
         parent: Overlay.overlay; anchors.centerIn: parent
         width: Math.min(440, parent ? parent.width - 32 : 440)
         title: "Account"; modal: true; standardButtons: Dialog.Close
@@ -86,11 +99,28 @@ Dialog {
         palette.buttonText: dialog.theme.ink
         palette.button: dialog.theme.input
         background: Rectangle { color: dialog.theme.panel; border.color: dialog.theme.line }
-        onClosed: { accountId = ""; accountName = ""; accountFace.close(); }
+        onOpened: control.setSecureInput(true)
+        onClosed: { accountId = ""; accountName = ""; photo = ""; accountFace.close(); control.setSecureInput(false); }
         contentItem: ColumnLayout {
             spacing: 12
             Label { text: accountDetails.accountName; textFormat: Text.PlainText; font.bold: true; Layout.fillWidth: true }
             Label { text: "Your account is unlocked."; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Image {
+                    source: accountDetails.photo
+                    cache: false
+                    visible: source.toString().length > 0
+                    Layout.preferredWidth: 64
+                    Layout.preferredHeight: 64
+                }
+                Button {
+                    objectName: "accountProfilePhoto"
+                    text: accountDetails.photo ? "Retake profile photo" : "Add profile photo"
+                    enabled: !control.busy
+                    onClicked: control.takeProfilePhoto()
+                }
+            }
             Button {
                 objectName: "accountFaceSetup"; text: "Set up face recognition…"
                 enabled: !control.busy

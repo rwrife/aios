@@ -43,3 +43,14 @@ class ChatProfileTests(unittest.TestCase):
             self.assertEqual(json.loads((root / 'profiles.json').read_text())[created['profile']['id']]['pin']['failures'], 1)
             with self.assertRaises(ValueError):
                 dispatch({'action': 'enroll_manual', 'name': 'ALICE', 'pin': '1234', 'consent': True}, root)
+
+    def test_unlocked_profile_photo_can_be_added(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            created = dispatch({'action': 'enroll_manual', 'name': 'Alice', 'pin': '1234', 'consent': True}, root)
+            owner = created['profile']['id']
+            rgb = base64.b64encode(bytes([42]) * 12288).decode()
+            updated = dispatch({'action': 'update_profile_photo', 'owner': owner, 'photo': rgb}, root)
+            self.assertEqual(updated['profile']['id'], owner)
+            self.assertTrue(updated['profile']['photo'].startswith('data:image/png;base64,'))
+            self.assertEqual(dispatch({'action': 'profiles'}, root)['profiles'][0]['photo'], updated['profile']['photo'])
