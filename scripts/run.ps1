@@ -22,13 +22,14 @@ if ($Native) {
     exit $LASTEXITCODE
 }
 if (-not $CameraBusId) {
-    $CameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID')
-    if (-not $CameraBusId) {
-        $CameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID', 'User')
+    $savedCameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID')
+    if (-not $savedCameraBusId) {
+        $savedCameraBusId = [Environment]::GetEnvironmentVariable('AIOS_VM_CAMERA_BUS_ID', 'User')
     }
-    if ($CameraBusId -and $CameraBusId -notmatch '^[0-9]+-[0-9]+$') {
+    if ($savedCameraBusId -and $savedCameraBusId -notmatch '^[0-9]+-[0-9]+$') {
         throw 'AIOS_VM_CAMERA_BUS_ID must be a Windows USB bus ID such as 2-2.'
     }
+    if ($savedCameraBusId) { $CameraBusId = $savedCameraBusId }
 }
 try {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
