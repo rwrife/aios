@@ -192,15 +192,23 @@ camera's Windows USB/IP bus ID to the launcher:
 
 ```powershell
 usbipd list
-.\scripts\run.ps1 -CameraBusId <BUSID>
+.\scripts\run.ps1 --camera -CameraBusId <BUSID>
 ```
+
+Camera passthrough is opt-in. Use `--camera` (or the PowerShell-native
+`-Camera`) to use the saved Windows user environment variable
+`AIOS_VM_CAMERA_BUS_ID`, or to discover exactly one camera already attached to
+WSL. A plain `run.ps1` launch ignores camera environment variables and starts a
+camera-free VM. An explicit `-CameraBusId` enables passthrough and overrides the
+saved bus ID. This path does not require WSL V4L2/UVC support: the Alpine guest
+owns the passed-through USB camera.
 
 The launcher attaches that exact shared device if needed, resolves its current
 Linux USB bus/device numbers, and applies a temporary ACL only to the selected
-`/dev/bus/usb/BBB/DDD` node. If exactly one stable
-`/dev/v4l/by-id/*-video-index0` camera is already attached, `run.ps1` also
-discovers it automatically without `-CameraBusId`. Use the explicit form when
-multiple cameras are attached or after WSL restarts and USB reconnects.
+`/dev/bus/usb/BBB/DDD` node. With `--camera`, if exactly one stable
+`/dev/v4l/by-id/*-video-index0` camera is already attached, `run.ps1` discovers
+it automatically without `-CameraBusId`. Use the explicit form when multiple
+cameras are attached or after WSL restarts and USB reconnects.
 
 The launcher passes only that device through a virtual USB 3 controller using
 [QEMU USB passthrough](https://www.qemu.org/docs/master/system/devices/usb.html).

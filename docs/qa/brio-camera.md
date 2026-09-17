@@ -72,13 +72,15 @@ provided the node identity has not changed during unplug/replug. Dry-run modes
 never attach a device or change its ACL:
 
 ```powershell
-.\scripts\run.ps1 -CameraBusId 2-2
+.\scripts\run.ps1 --camera -CameraBusId 2-2
 ```
 
-If exactly one stable `/dev/v4l/by-id/*-video-index0` camera is already attached
-to WSL, a normal `.\scripts\run.ps1` launch discovers it automatically. The
-explicit `-CameraBusId` form is preferred after a WSL restart or USB reconnect.
-Re-enumerate with `usbipd list` if the Windows bus ID changed.
+Camera passthrough is opt-in. If exactly one stable
+`/dev/v4l/by-id/*-video-index0` camera is already attached to WSL,
+`.\scripts\run.ps1 --camera` discovers it automatically. A normal
+`.\scripts\run.ps1` launch starts without a camera, even when a saved bus ID is
+configured. The explicit `-CameraBusId` form is preferred after a WSL restart
+or USB reconnect. Re-enumerate with `usbipd list` if the Windows bus ID changed.
 
 The guest owns capture while passed through; WSL and guest must not compete for
 it. Verify guest UVC enumeration, capture as the intended unprivileged service
@@ -361,3 +363,13 @@ and test evidence are recorded in `recognition-release.md`.
 No people were enrolled, no cohort measurements were made, and no recognition
 approval was created. Accuracy/adversarial, complete lifecycle/UX and long-soak
 gates remain open in #95; production recognition remains off.
+
+### Desktop recovery launcher validation
+
+The `desktop-startup-recovery` ISO completed its manifest and checksum before
+launch. The guest reported a ready XRender shell at 1920×1080. A bounded probe
+as the ordinary `aios` user received five 640×480 frames in 1.866 seconds and
+closed the capture handle. Frames were discarded; no images or face references
+were saved. The launcher selected the shared Brio through the saved Windows
+`AIOS_VM_CAMERA_BUS_ID` preference and passed its current raw USB address to
+QEMU, despite the WSL host not exposing a V4L2 camera node.

@@ -5,9 +5,11 @@ desktop is a Qt Quick application, with a separate chat window managed by
 Openbox. Qt's software renderer is the VM default; waves use Canvas rather than
 GPU-only shader effects. The wave animation pauses while chat is open.
 
-The full desktop uses Qt's Desktop window type so Openbox keeps wallpaper and
-system controls below application windows. A below-layer hint on a normal
-window alone does not prevent click-to-raise from covering applications.
+The full desktop uses a normal renderable Qt window with the XCB desktop-layer
+hint set before mapping, so Openbox keeps wallpaper and system controls below
+application windows. Qt's `Desktop` type aliases the X11 root and must not be
+used for the Qt Quick scene. A below-layer hint alone does not prevent
+click-to-raise from covering applications.
 Windowed previews retain the normal window type. In the live QEMU guest,
 wallpaper and volume clicks preserve chat's normal state and keep it above the
 desktop; explicit minimize/restore behavior is covered by the launcher tests.

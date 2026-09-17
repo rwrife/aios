@@ -82,7 +82,7 @@ fi
 if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
   QEMU_ARGS+=( -display none )
 else
-  QEMU_ARGS+=( -display gtk,full-screen=off,zoom-to-fit=on )
+  QEMU_ARGS+=( -display gtk,full-screen=off,zoom-to-fit=off )
 fi
 
 if [ "$(uname -m)" = "x86_64" ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
