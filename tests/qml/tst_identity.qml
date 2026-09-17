@@ -41,6 +41,7 @@ TestCase {
         signal documentSaved()
         signal enrollmentCompleted(string recovery)
         signal photoCaptured(string preview, string rgb)
+        signal profilePhotoUpdated(string photo)
         signal cameraReleaseRequested()
         signal unlocked()
         signal accountDeleted(string id)
@@ -52,6 +53,7 @@ TestCase {
         property int signins: 0
         property int photosTaken: 0
         function takeProfilePhoto() { photosTaken++ }
+        function updateProfilePhoto(rgb) { profilePhotoUpdated("data:image/png;base64," + rgb) }
         property int recognitionEnrollments: 0
         signal recognitionEnrollmentCompleted(string id)
         function enrollRecognition(id, pin, consent) {
@@ -321,6 +323,24 @@ TestCase {
         compare(account.opened, true)
         control.privacyLost()
         tryCompare(account, "opened", false)
+        form.destroy(); control.profile = {}; control.greetingOnly = false
+    }
+    function test_unlock_can_add_a_profile_photo() {
+        control.greetingOnly = true
+        control.cameraPreview = ""
+        var form = enrollmentComponent.createObject(test, {control: control, creating: false})
+        form.open(); tryCompare(form, "opened", true)
+        control.profile = {id: "test-id", name: "Saved account", photo: ""}
+        control.unlocked()
+        var account = findChild(form, "unlockedAccountDetails")
+        tryCompare(account, "opened", true)
+        var photo = findChild(account, "accountProfilePhoto")
+        compare(photo.text, "Add profile photo")
+        mouseClick(photo)
+        compare(control.photosTaken, 1)
+        control.photoCaptured("", "Kio=")
+        tryCompare(photo, "text", "Retake profile photo")
+        account.close()
         form.destroy(); control.profile = {}; control.greetingOnly = false
     }
     function test_face_setup_is_hidden_until_account_screen_opt_in() {

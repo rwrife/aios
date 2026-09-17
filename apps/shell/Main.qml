@@ -615,7 +615,7 @@ Window {
                     } else {
                         c.save(); c.translate(width, 0); c.scale(-1, 1)
                         c.arc(17, 17, 11, -Math.PI / 2, Math.PI)
-                        c.stroke(); c.beginPath(); c.moveTo(2, 22); c.lineTo(6, 17); c.lineTo(10, 22)
+                        c.stroke(); c.beginPath(); c.moveTo(14, 13); c.lineTo(5, 11); c.lineTo(7, 20)
                         c.stroke(); c.restore()
                         return
                     }

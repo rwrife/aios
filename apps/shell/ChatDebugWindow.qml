@@ -11,8 +11,8 @@ Window {
     title: "Chat debug trace"
     visible: true
     flags: Qt.Window | Qt.FramelessWindowHint
-    width: WindowSizing.extent(760, Screen.width, Screen.desktopAvailableWidth)
-    height: WindowSizing.extent(620, Screen.height, Screen.desktopAvailableHeight)
+    width: WindowSizing.extent(640, Screen.width, Screen.desktopAvailableWidth)
+    height: WindowSizing.extent(440, Screen.height, Screen.desktopAvailableHeight)
     x: Screen.virtualX + (Screen.width - width) / 2
     y: Screen.virtualY + WindowSizing.topCenterY(Screen.height, height)
     color: "transparent"
@@ -33,7 +33,6 @@ Window {
             Layout.preferredHeight: 40
             WindowTitle {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
                 theme: debugWindow.theme
                 text: "Raw model trace"
             }
@@ -46,7 +45,7 @@ Window {
             }
             WindowControlButton {
                 theme: debugWindow.theme
-                symbol: "⧉"
+                symbol: "copy"
                 tip: "Copy debug trace"
                 enabled: session.debugLog.length > 0
                 onClicked: session.copy(session.debugLog)

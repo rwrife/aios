@@ -51,7 +51,7 @@ public:
         });
         connect(&photoCapture, &ProfilePhoto::failed, this, [this](const QString &message) {
             recognitionRoot()->finishCameraOperation(this);
-            m_error = message + " You can create a profile without a photo.";
+            m_error = message + " Try again or continue without a photo.";
             emit changed();
         });
         timer.setInterval(500);
@@ -130,6 +130,10 @@ public:
             if (!root->beginCameraOperation(this)) return;
             photoCapture.take(capturePath);
         }
+    }
+    Q_INVOKABLE void updateProfilePhoto(const QString &photo) {
+        if (greetingOnly() && !pendingEnrollment && !m_profile.value("id").toString().isEmpty())
+            call({{"action", "update_profile_photo"}, {"owner", m_profile.value("id").toString()}, {"photo", photo}});
     }
     Q_INVOKABLE void setSecureInput(bool active) {
         m_secureInput = active;
@@ -263,6 +267,7 @@ signals:
     void documentSaved();
     void enrollmentCompleted(const QString &recovery);
     void photoCaptured(const QString &preview, const QString &rgb);
+    void profilePhotoUpdated(const QString &photo);
     void accountDeleted(const QString &id);
     void unlocked();
     void displayRequested(const QString &app);
@@ -551,7 +556,7 @@ private:
     void callGreeting(const QJsonObject &request) {
         if (pendingEnrollment) return;
         const auto action = request.value("action").toString();
-        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "activate_profile" && action != "delete_profile") return;
+        if (action != "profiles" && action != "enroll_manual" && action != "enroll_profile" && action != "activate_verified" && action != "activate_profile" && action != "delete_profile" && action != "update_profile_photo") return;
         pendingEnrollment = true; m_error.clear(); emit changed();
         auto process = new QProcess(this);
         auto environment = QProcessEnvironment::systemEnvironment();
@@ -591,6 +596,9 @@ private:
                                 if (control->m_profiles[i].toMap().value("id").toString() == id) control->m_profiles.removeAt(i);
                             emit control->accountDeleted(id); emit control->changed();
                         }
+                    } else if (action == "update_profile_photo") {
+                        m_profile = result.value("profile").toObject().toVariantMap();
+                        emit profilePhotoUpdated(m_profile.value("photo").toString());
                     }
                     else {
                         m_profile = result.value("profile").toObject().toVariantMap();
