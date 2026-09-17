@@ -2,6 +2,72 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-17 20:30 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`; fetch +
+  fast-forward main to `7dfcc73`. No auth fallback needed; branch push, PR
+  create, and merge all succeeded under the ambient gh OAuth auth.
+- PR lane: 0 open PRs at start and after issue selection (freshness
+  re-checked). No merges, no blocked PRs behind the issue lane.
+- Issue lane: open issues at selection 25. Assigned elsewhere (skipped
+  entirely): #71, #77, #81, #97-#102, #123. Hardware/recognition/voice stage
+  chains left for device-capable runners; #70 reopened by the owner after
+  PR #114 (in-VM evidence required); #75/#82 have open Progresses gaps that
+  need a real QEMU session; #74 is a pixel-level chrome-consistency report
+  needing in-VM visual validation.
+- Selected issue: https://github.com/rwrife/aios/issues/79 — "mcp created
+  apps should use the native theme". Rationale: agent-created apps are the
+  AI-only OS's extensibility surface and every app opened in hardcoded Ocean
+  colors regardless of the saved palette; the fix and its regressions are
+  fully verifiable headless (compiled native host + real qmltestrunner).
+- Claim: `gh issue edit 79 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self, identity `rwrife`); re-checked immediately
+  before push (still `[rwrife]`, OPEN).
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-79-app-theme`,
+  removed after merge): native launches export `AIOS_APP_THEME` (shell's
+  theme_color via the tool host's inherited `AIOS_BROWSER_THEME`, fallback
+  Ocean); `app_host.cpp` validates the key against the eight Theme.qml
+  palette keys (invalid/unset never blocks startup) and injects `appTheme`;
+  `AppHost.qml` renders through shared Theme roles instead of literal hex
+  and Theme.qml joined the app-host QRC; the web-app preview wrapper in
+  `apps/aios/app_runner.py` now follows the same palette (Ocean table is
+  byte-identical to the old wrapper; HSL formulas mirror Theme.qml).
+  `docs/settings.md` updated.
+- New PR: https://github.com/rwrife/aios/pull/142 — MERGED at
+  `2026-09-17T20:29:45Z`, squash commit
+  `7bbb8bef60f8616dcb1f8abc0acdc02a47340972`. Remote branch deletion
+  verified. Linkage `Progresses #79` (NOT Closes): the in-VM QEMU session
+  confirmation remains unperformed on this headless runner, so #79 stays
+  OPEN by design; assignment retained per claim-release policy (merged PR
+  documents the remaining in-VM QA gap; issue closure is owner/device scope).
+- Verification (targeted-suite evidence, not VM green):
+  - Real compiled `aios-app-host` (g++ + rcc, exact CMake file set, Alpine
+    3.23 Qt 6.10.3 offscreen): repo's compiled-host protocol test passes,
+    including sage/invalid/empty theme subcases (ready protocol never
+    blocked, secret env never leaked).
+  - `tst_app_host` 16/16 with two new palette regression tests; RED via
+    stash (`Cannot assign to non-existent property "appTheme"`) -> GREEN.
+    Siblings: theme 20, chat_launcher 27, chat_scroll 6, local_models 6,
+    setup 9, subscription 7 — 0 failures.
+  - Python: test_applications + test_toolhost + test_browser_shell +
+    test_browser_agent 182/182 (new launcher-env, wrapper-palette, and
+    end-to-end run() theme probes).
+  - `bash scripts/test.sh`: 1049 tests, 7 failures + 1 error — all eight
+    reproduce identically on untouched main this run (host-sensitive
+    install-offline disk tests + recognition manifest test). Baseline drift
+    outside the touched surface; not claimed.
+  - Not performed: Alpine ISO / in-VM QEMU GUI session (no display/VM on
+    this host; AGENTS.md forbids ISO builds on GitHub Actions). PR body
+    states this.
+- Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; this run's
+  worktree removed. The `Build bootable ISO` workflow is active but its
+  pull_request path filters did not match any changed path (verified: zero
+  runs for the branch), so no forbidden ISO CI was triggered.
+- Worktree hygiene: `issue-79-app-theme` removed; `git worktree list` shows
+  only pre-existing concurrent-lane worktrees (chk132t, chk136t, fix131-137,
+  issue-77, pr126-gates-20260915) — left untouched.
+- Self-removal: not applicable; job remains scheduled every six hours.
+
 ## 2026-09-17 05:15 UTC
 
 - Preflight: `gh repo view rwrife/aios`, `gh api user` -> `rwrife`, fetch /
