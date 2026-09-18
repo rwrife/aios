@@ -85,7 +85,11 @@ class ManifestApprovalTests(unittest.TestCase):
             digest = hashlib.sha256(json.dumps(_binding(manifest, CALIBRATION), sort_keys=True,
                                               separators=(',', ':')).encode()).hexdigest()
             manifest['approval'] = {'status': 'approved', 'binding_sha256': digest, 'expires_at': 200.}
-            path.write_text(json.dumps(manifest))
+            # _manifest rejects group/world-writable manifests, so the
+            # fixture must not inherit the host umask on creation; pin the
+            # trusted mode explicitly (the deliberate 0666 subcase below
+            # still proves the permissions rejection).
+            path.write_text(json.dumps(manifest)); path.chmod(0o600)
             with patch('aios.recognition.time.time', return_value=100.):
                 self.assertEqual(_manifest(path)[0], manifest)
                 for change in ({'status': 'pending'}, {'expires_at': 99.}, {'binding_sha256': '0' * 64}):

@@ -98,8 +98,15 @@ def run_library(snippet, mountpoints="", disk_type="disk", types="disk\npart",
             '  *-nro\\ TYPE*) cat "$AIOS_TEST_DIR/types";;\n'
             "esac\n")
         stub.chmod(0o755)
+        # install.sh keeps aios_is_block_device as a test seam "so tests can
+        # exercise the surrounding logic without a real block device". Use it
+        # for both outcomes: the suite must not depend on the host owning a
+        # /dev/sda, so the stub answers the acceptance path too. An explicit
+        # `overrides=` argument can still replace the stub (it is sourced
+        # after it).
+        stub = "return 0" if block_device else "return 1"
         script = (f'. "{LIBRARY}"\n'
-                  + ("" if block_device else "aios_is_block_device() { return 1; }\n")
+                  + f"aios_is_block_device() {{ {stub}; }}\n"
                   + overrides + "\n" + snippet + "\n")
         return subprocess.run(
             ["sh", "-c", script, "sh", *[str(argument) for argument in arguments]],
