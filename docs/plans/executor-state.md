@@ -2,6 +2,61 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-18 09:35 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`; fetch +
+  fast-forward main to `f36d2bd`. No auth fallback needed; branch push, PR
+  create, and merge all succeeded under the ambient gh OAuth auth.
+- PR lane: 0 open PRs at start and after issue selection (freshness
+  re-checked). No merges, no blocked PRs behind the issue lane.
+- Issue lane: open issues at selection 25. Assigned elsewhere (skipped
+  entirely): #71, #77, #79, #81, #97-#102, #123. Hardware/recognition/voice
+  stage chains left for device-capable runners; #70 reopened by the owner
+  after PR #114 (in-VM evidence required); #75/#82 have open Progresses gaps
+  that need a real QEMU session; #74 is a pixel-level chrome-consistency
+  report needing in-VM visual validation.
+- New issue filed this run: https://github.com/rwrife/aios/issues/144 —
+  the canonical suite's only deterministic (non-host-sensitive) failure:
+  `test_run_launchers` still asserted the pre-#138 `zoom-to-fit=on` launcher
+  string after #138 intentionally switched `scripts/run-qemu-live.sh` to
+  native-size `zoom-to-fit=off` (owner-validated in-VM). Dedupe-checked
+  against open+closed issues (no prior report).
+- Claim: `gh issue edit 144 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self, identity `rwrife`); re-checked immediately
+  before push (still `[rwrife]`, OPEN).
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-144-zoom-test`,
+  removed after merge): one-line test-expectation alignment in
+  `tests/test_run_launchers.py` to the merged, VM-validated launcher intent;
+  no runtime behavior change.
+- New PR: https://github.com/rwrife/aios/pull/145 — MERGED at
+  `2026-09-18T09:32:51Z`, squash commit
+  `0f66a767568adfd468485521f59fcac11c7faf2f`; issue #144 CLOSED via `Closes`
+  linkage (readback state CLOSED). Remote branch deletion verified. No
+  checks arrived (Validate workflow `disabled_manually`; free-plan repo has
+  no branch protection — protection API returns plan 403), so per the
+  #103/#105/#139 precedent the merge used fresh local changed-scope
+  verification + CLEAN/MERGEABLE + explicit squash (no `--auto`).
+- Verification (canonical-suite evidence):
+  - `python3 -m unittest tests.test_run_launchers` on the PR head: 17 tests
+    OK (14 Windows-only skips).
+  - Full `python3 -m unittest discover -s tests` on the PR head: 1049 tests;
+    the deterministic launcher failure is gone; the remaining 6 failures +
+    1 error (host-sensitive `test_install_offline_parity` disk tests +
+    `test_recognition` manifest test) reproduce identically on untouched
+    main this run and are outside the touched surface. A one-off
+    `test_toolhost` drip-fed timing error seen in the first main-only pass
+    did not reproduce on the head run or in three isolated re-runs.
+  - Canonical `scripts/test.sh` shell-syntax pass + openbox `rc.xml` parse:
+    PASS.
+  - Not performed: Alpine ISO / in-VM QEMU session — not required for this
+    slice; the in-VM behavior was already owner-validated in #138.
+- Post-merge PR-lane re-check: 0 open PRs; remote branch deleted; this run's
+  worktree removed. `git worktree list` shows only pre-existing
+  concurrent-lane worktrees (chk132t, chk136t, fix131-137, issue-77,
+  pr126-gates-20260915) — left untouched.
+- Claims released: none (issue closed by the merged `Closes` linkage).
+- Self-removal: not applicable; job remains scheduled every six hours.
+
 ## 2026-09-17 20:30 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`; fetch +
