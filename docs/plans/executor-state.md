@@ -2,6 +2,57 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-18 20:15 UTC
+
+- Preflight: env `GH_TOKEN` from `~/.hermes/.env` returned `401 Bad
+  credentials`; fell back to stored gh OAuth per policy — `gh api user` ->
+  `rwrife`, repo/ls-remote OK, fetch + fast-forward main to `8570215`.
+- PR lane: 0 open PRs at start and after issue selection (freshness
+  re-checked). No merges, no blocked PRs behind the issue lane.
+- Issue lane: open issues at selection 24. Assigned elsewhere (skipped
+  entirely): #71, #77, #79, #81, #97-#102, #123. Remaining unassigned issues
+  (#70, #74, #75, #82-#90, #96, #99, #102) are hardware/voice/recognition
+  stage chains or need in-VM GUI evidence this headless runner cannot
+  produce; the prior run already deduped those candidates.
+- New issue filed this run: https://github.com/rwrife/aios/issues/147 —
+  the canonical suite (`bash scripts/test.sh`) was deterministically red on
+  a clean host: 6 disk-guard/identity failures because the shell-library
+  harness only stubbed `aios_is_block_device` on the refusal path (real
+  `[ -b /dev/sda ]` ran on the happy path; this host has no /dev/sda), plus
+  1 umask-002 error in `test_recognition` (fixture inherited group-writable
+  mode; `_manifest` correctly rejected it). Reproduced on untouched `main`
+  at `8570215` with exact command evidence; dedupe-checked against open +
+  closed issues.
+- Claim: `gh issue edit 147 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self, identity `rwrife`); re-checked immediately
+  before push (still `[rwrife]`, OPEN).
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-147-hermetic-tests`,
+  removed after merge): harness now stubs `aios_is_block_device` on both
+  outcomes (explicit `overrides=` still wins; refusal path unchanged) and
+  the recognition fixture pins mode `0600` while keeping the deliberate
+  `0666` rejection subcase. Test-only; no production behavior change.
+- New PR: https://github.com/rwrife/aios/pull/148 — MERGED at
+  `2026-09-18T20:15:49Z`, squash commit
+  `8233aceaad6f2b7028cece98ca647d9535575967`; issue #147 CLOSED via
+  `Closes` linkage (readback state CLOSED). Remote branch deletion
+  verified. No checks arrived (Validate workflow `disabled_manually`;
+  free-plan repo has no branch protection), so per the #103/#105/#139/#145
+  precedent the merge used fresh canonical-suite verification +
+  CLEAN/MERGEABLE + explicit squash (no `--auto`).
+- Verification (canonical evidence): `bash scripts/test.sh` on the PR head:
+  `Ran 1049 tests ... OK (skipped=16)`, rc=0 — first fully-green canonical
+  run on this host class (no /dev/sda, umask 002). Before the change, the
+  same command on `main` reported `failures=6, errors=1` with exactly the
+  affected tests. Touched suites also 139/139 OK under umask 022.
+  Post-merge re-run of the full discover on updated `main`
+  (`8233ace`): OK. Not performed: Alpine ISO / in-VM QEMU session — not
+  required for this test-only slice.
+- Post-merge PR-lane re-check: 0 open PRs; this run's worktree removed;
+  pre-existing concurrent-lane worktrees (chk132t, chk136t, fix131-137,
+  issue-77, pr126-gates-20260915) left untouched.
+- Claims released: none (issue closed by the merged `Closes` linkage).
+- Self-removal: not applicable; job remains scheduled every six hours.
+
 ## 2026-09-18 09:35 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`; fetch +
