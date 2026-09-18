@@ -300,7 +300,7 @@ class RunLauncherTests(unittest.TestCase):
                 env=env, text=True,
             ))
             self.assertEqual(args[args.index("-display") + 1],
-                             "gtk,full-screen=off,zoom-to-fit=on")
+                             "gtk,full-screen=off,zoom-to-fit=off")
             self.assertEqual(args[args.index("-serial") + 1],
                              f"file:{ROOT / '.tmp-aios-boot.log'}")
             self.assertEqual(args.count("-serial"), 1)
