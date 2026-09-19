@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt
+      - run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt"
       - run: bash scripts/test.sh
       - name: Check pinned ChatGPT runtime without account credentials
         run: |
