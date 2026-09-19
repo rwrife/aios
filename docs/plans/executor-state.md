@@ -61,6 +61,17 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 - New PR: https://github.com/rwrife/aios/pull/153 (`Closes #152`); this
   PR's own `pull_request`-triggered `Validate` run is the acceptance
   evidence for a real completed-green workflow on the restored YAML.
+- Final state (post-run sync): PR #153 MERGED at 2026-09-19T15:41:19Z
+  (squash commit `4f0b911a8e3a97481418aecfae9f0659300b8827`), remote
+  branch deleted; issue #152 CLOSED via the `Closes` linkage (readback
+  state CLOSED). Intermediate heads `e16e972`/`6e1cd79`/`b2a75cb` each
+  exposed the next real failure layer (unquoted YAML -> missing numpy ->
+  the unstaged workflow-wiring fix); final head `6d232d8` was fully green
+  on both `pull_request` and `push` runs. Post-merge `Validate` on `main`
+  (run 35452592693) concluded `success` — the first green Validate since
+  2026-09-10 — so the workflow stays `active` and #152's acceptance is met
+  with a real completed-green run recorded here. Claims released: none
+  outstanding (the #152 assignment clears with the closed issue).
 
 ## 2026-09-19 02:20 UTC
 
