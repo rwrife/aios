@@ -187,6 +187,10 @@ done
     $wslArgs = @('-d', $Distro, '--exec', 'env')
     $vmName = if ($Name) { $Name } else { $env:AIOS_VM_NAME }
     if ($vmName) { $wslArgs += "AIOS_VM_NAME=$vmName" }
+    # Preserve a caller-supplied PulseAudio endpoint through PowerShell -> WSL
+    # -> the Linux launcher so QEMU's pa backend reaches the same server the
+    # host diagnostics validated. Never synthesize one here.
+    if ($env:PULSE_SERVER) { $wslArgs += "PULSE_SERVER=$env:PULSE_SERVER" }
     foreach ($name in @('AIOS_VM_MEM_MB', 'AIOS_VM_CPUS', 'AIOS_VM_DISK_SIZE',
                         'AIOS_QEMU_AUDIO', 'AIOS_QEMU_HEADLESS', 'AIOS_QEMU_UEFI', 'AIOS_QEMU_SERIAL')) {
         $value = [Environment]::GetEnvironmentVariable($name)

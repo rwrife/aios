@@ -27,6 +27,23 @@ DISK_SIZE="${AIOS_VM_DISK_SIZE:-64G}"
 MEM_MB="${AIOS_VM_MEM_MB:-16384}"
 CPU_COUNT="${AIOS_VM_CPUS:-4}"
 VM_NAME="${AIOS_VM_NAME:-AIOS-$(basename "$ISO_PATH" .iso)-$$}"
+AUDIO_BACKEND="${AIOS_QEMU_AUDIO:-pa}"
+
+# Stage-0 audio preflight (issue #84): name the selected backend and resolve
+# its Pulse endpoint before QEMU starts, so silent audio failures are
+# attributable here instead of inside the guest. A caller-supplied
+# PULSE_SERVER is preserved; unix:/mnt/wslg/PulseServer is only used after
+# its socket exists. This warning never blocks headless or non-audio flows.
+if [ "$AUDIO_BACKEND" = "pa" ]; then
+  if [ -n "${PULSE_SERVER:-}" ]; then
+    printf '[aios] QEMU audio backend pa uses the preserved PULSE_SERVER=%s\n' "$PULSE_SERVER" >&2
+  elif [ -S /mnt/wslg/PulseServer ]; then
+    export PULSE_SERVER="unix:/mnt/wslg/PulseServer"
+    printf '[aios] QEMU audio backend pa uses the validated WSLg socket %s\n' "$PULSE_SERVER" >&2
+  elif [ "$DRY_RUN" != "1" ]; then
+    printf '[aios] warning: QEMU audio backend is pa but no Pulse endpoint exists (no PULSE_SERVER, no /mnt/wslg/PulseServer); guest audio will be silent. See docs/qa/wsl-audio.md or set AIOS_QEMU_AUDIO=none to silence this warning.\n' >&2
+  fi
+fi
 SERIAL="${AIOS_QEMU_SERIAL:-}"
 if [ -z "$SERIAL" ]; then
   if [ "${AIOS_QEMU_HEADLESS:-0}" = "1" ]; then
@@ -67,7 +84,7 @@ QEMU_ARGS=(
   -serial "$SERIAL"
   -drive "if=virtio,file=${DISK_PATH//,/,,},format=qcow2"
   -nic user,model=virtio-net-pci
-  -audiodev "${AIOS_QEMU_AUDIO:-pa},id=audio0"
+  -audiodev "${AUDIO_BACKEND},id=audio0"
   -device intel-hda
   -device hda-duplex,audiodev=audio0
 )
