@@ -61,7 +61,7 @@ Dialog {
             const manage = dialog.greetingOnly && profile && profile.id
             const id = manage ? profile.id : ""
             const name = manage ? profile.name : ""
-            const photo = manage ? profile.photo : ""
+            const photo = manage ? (profile.photo || "") : ""
             dialog.close()
             if (manage) {
                 accountDetails.accountId = id
