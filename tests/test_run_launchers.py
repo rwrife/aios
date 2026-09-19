@@ -387,5 +387,110 @@ class RunLauncherTests(unittest.TestCase):
                     self.assertIn(str(iso), command)
 
 
+class WslAudioStageZeroTests(unittest.TestCase):
+    """Stage 0 (issue #84): the diagnostics reporter and launcher wiring."""
+
+    @unittest.skipUnless(os.name == "posix", "audio diagnostics harness requires bash")
+    def test_self_test_passes_with_deterministic_stubs(self):
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/test-wsl-audio.sh"), "--self-test"],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SELFTEST:PASS", result.stdout)
+
+    @unittest.skipUnless(os.name == "posix", "audio diagnostics harness requires bash")
+    def test_check_is_read_only_and_never_uses_capture_stages(self):
+        # Forcing the tool probes to report missing keeps this hermetic on
+        # hosts with or without pactl installed.
+        env = dict(os.environ, AIOS_FAKE_HAVE="0")
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts/test-wsl-audio.sh"), "check"],
+            env=env, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("STAGE pulseaudio_client not-tested", result.stdout)
+        self.assertIn("RESULT check ok", result.stdout)
+        for stage in ("capture", "playback", "roundtrip_playback"):
+            self.assertNotIn(f"STAGE {stage} ", result.stdout)
+
+    @unittest.skipUnless(os.name == "posix", "audio diagnostics harness requires bash")
+    def test_recording_seconds_are_capped_at_ten(self):
+        for seconds in ("0", "11", "99"):
+            with self.subTest(seconds=seconds):
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts/test-wsl-audio.sh"),
+                     "record", "--seconds", seconds],
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("between 1 and 10", result.stderr)
+
+    @unittest.skipUnless(os.name == "posix", "Linux launcher requires bash")
+    def test_linux_launcher_names_audio_backend_and_preserves_pulse_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            iso = Path(directory) / "audio-test-x86_64.iso"
+            iso.touch()
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith("AIOS_")}
+            env.update(DRY_RUN="1", PULSE_SERVER="unix:/tmp/custom-pulse",
+                       AIOS_QEMU_AUDIO="pa")
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/run.sh"), str(iso)],
+                env=env, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # The DRY_RUN stdout stays a pure command line.
+            args = shlex.split(result.stdout)
+            self.assertEqual(args[args.index("-audiodev") + 1], "pa,id=audio0")
+            self.assertIn("-device", args)
+            self.assertIn("hda-duplex,audiodev=audio0", args)
+            self.assertIn("preserved PULSE_SERVER=unix:/tmp/custom-pulse",
+                          result.stderr)
+            env["AIOS_QEMU_AUDIO"] = "none"
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/run.sh"), str(iso)],
+                env=env, capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            args = shlex.split(result.stdout)
+            self.assertEqual(args[args.index("-audiodev") + 1], "none,id=audio0")
+            self.assertNotIn("PULSE_SERVER", result.stderr)
+
+    def test_windows_wrapper_preserves_pulse_server_into_wsl(self):
+        wrapper = (ROOT / "scripts/run.ps1").read_text()
+        self.assertIn('PULSE_SERVER=$env:PULSE_SERVER', wrapper)
+        audio = (ROOT / "scripts/wsl-audio.ps1").read_text()
+        for stage in ("windows_audio_devices", "windows_microphone_privacy",
+                      "wsl_distro", "wslg_bridge", "distro_probe"):
+            self.assertIn(f"'{stage}'", audio)
+        for mode in ("Check", "Playback", "Record", "RoundTrip"):
+            self.assertIn(mode, audio)
+        # Recording bounds and non-retention defaults.
+        self.assertIn("[ValidateRange(1, 10)]", audio)
+        self.assertIn("test-wsl-audio.sh", audio)
+
+    def test_preview_supports_desktop_mode_and_full_dependency_check(self):
+        preview = (ROOT / "scripts/preview-chat.sh").read_text()
+        self.assertIn("--desktop", preview)
+        self.assertIn("DRYRUN mode=", preview)
+        # Dependency detection must verify audio packages per name, never
+        # rely on cmake alone hiding missing multimedia/pulse dependencies.
+        self.assertIn("apk info -e", preview)
+        for package in ("qt6-qtmultimedia-dev", "qt6-qtmultimedia-gstreamer",
+                        "gst-plugins-good", "pulseaudio-utils"):
+            self.assertIn(package, preview)
+        self.assertIn("whisper-cli", preview)
+        self.assertIn("espeak-ng", preview)
+
+    def test_wsl_audio_runbook_documents_layers_and_gates(self):
+        text = (ROOT / "docs/qa/wsl-audio.md").read_text()
+        for token in ("passed", "failed", "not-tested", "PULSE_SERVER",
+                      "monitor", "--self-test", "--desktop"):
+            self.assertIn(token, text)
+        # Honest scope: device/human gates remain unverified.
+        self.assertIn("Not yet verified", text)
+
+
 if __name__ == "__main__":
     unittest.main()

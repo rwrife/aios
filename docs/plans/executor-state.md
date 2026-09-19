@@ -2,6 +2,43 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-19 02:20 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
+  fetch + main at `fdd17d6` (already current). Canonical suite re-run on
+  `main` before issue work: `bash scripts/test.sh` -> `Ran 1049 tests ...
+  OK (skipped=16)`, rc=0.
+- PR lane: 0 open PRs at start and after issue selection (freshness
+  re-checked). No merges, no blocked PRs.
+- Issue lane: 24 open issues. Assigned elsewhere (skipped entirely): #71,
+  #77, #79, #81, #97-#102, #123. Remaining unassigned issues were screened:
+  #83/#85-#90 (wake-word stack layers 2-6) sit above #84 and need Alpine
+  live-measurement hardware; #96/#99/#102 and #70/#74/#75 need physical
+  devices or in-VM GUI evidence this headless runner cannot produce.
+- Selected issue: https://github.com/rwrife/aios/issues/84 — "Stage 0:
+  Establish WSL, preview, and QEMU audio validation". Rationale: it is the
+  bottom layer of the 7-layer wake-word stack that every later voice issue
+  depends on, and its tooling/runbook deliverables are the only chain items
+  buildable and verifiable on this headless host; live device runs remain
+  honestly gated.
+- Claim: `gh issue edit 84 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self, identity `rwrife`); re-checked immediately
+  before push.
+- Implementation (worktree `/home/rwrife/repos/aios-wt/issue-84-audio-foundation`):
+  `scripts/test-wsl-audio.sh` (layered pass/failed/not-tested probe with
+  self-test), `scripts/wsl-audio.ps1` (Windows wrapper), `--desktop` +
+  per-package dependency verification in `scripts/preview-chat.sh`,
+  audio-backend preflight in `scripts/run-qemu-live.sh`, `PULSE_SERVER`
+  preservation in `scripts/run.ps1`, `docs/qa/wsl-audio.md` runbook, and
+  7 regression tests in `tests/test_run_launchers.py`.
+- Verification (targeted canonical evidence): `test_run_launchers` 24 tests
+  OK (14 Windows-only skips); `test_worker` + `test_terminal_theme` 23 OK;
+  `test-wsl-audio.sh --self-test` SELFTEST:PASS; RED/GREEN via stashing the
+  launcher/preview wiring (3 new tests fail, restored pass); bash -n / sh
+  -n / PowerShell parser checks on every touched script. Not performed: any
+  real audio hardware, WSL, container, or VM run.
+- New PR: pending creation (recorded below once opened).
+
 ## 2026-09-18 20:15 UTC
 
 - Preflight: env `GH_TOKEN` from `~/.hermes/.env` returned `401 Bad
