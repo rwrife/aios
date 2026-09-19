@@ -37,7 +37,22 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   launcher/preview wiring (3 new tests fail, restored pass); bash -n / sh
   -n / PowerShell parser checks on every touched script. Not performed: any
   real audio hardware, WSL, container, or VM run.
-- New PR: pending creation (recorded below once opened).
+- New PR: https://github.com/rwrife/aios/pull/150 — MERGED at
+  `2026-09-19T05:59:48Z`, squash commit
+  `8c5ceebc64f2adb115cdc4f0ca3a18c826c0ba56`. Issue #84 intentionally stays
+  OPEN with the assignment retained (body links `Progresses #84`; the
+  remaining acceptance work — live Windows/WSLg mic+speaker runs, preview
+  container audio, in-guest manual voice — is device/human-gated). No
+  checks arrived (Validate workflow `disabled_manually`; free-plan repo has
+  no branch protection), so per the #103/#105/#139/#145/#148 precedent the
+  merge used fresh canonical-suite verification + CLEAN/MERGEABLE + explicit
+  squash (no `--auto`).
+- Post-merge verification (canonical, full suite on the merged head):
+  `bash scripts/test.sh` -> `Ran 1056 tests ... OK (skipped=16)`, rc=0
+  (1049 baseline + 7 new). Remote branch deletion verified; this run's
+  worktree removed.
+- Claims released: none (assignment on #84 intentionally retained for the
+  human/device gate; it does not block any automatable remainder).
 
 ## 2026-09-18 20:15 UTC
 
