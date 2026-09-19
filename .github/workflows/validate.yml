@@ -8,7 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt
+      - run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt"
+      # CI-only: the recognition capture/biometrics suites exercise the real
+      # numpy-backed worker code paths. numpy ships in the AIOS image via the
+      # py3-opencv apk dependency, so the pin lives in a CI-only requirements
+      # file and never enters apps/requirements.txt (the image-stage list).
+      - name: Install the pinned numpy wheel for the recognition suites
+        run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements-test.txt"
       - run: bash scripts/test.sh
       - name: Check pinned ChatGPT runtime without account credentials
         run: |
