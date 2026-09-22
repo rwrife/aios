@@ -2,6 +2,67 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-22 11:55 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
+  fetch + `git pull --ff-only origin main` -> updated `ed54451..a5f467a`,
+  clean tree, `origin` remote present.
+- PR lane: 0 open PRs at start and again at issue selection and after the
+  implementation merge (freshness re-queried each time). No merges before
+  issue work; no blocked PRs.
+- CI signal: `Validate` active; push run on `main` head `a5f467a` was green
+  historically and the PR-event run on this run's work passed (run
+  35723742308, completed success). No workflow pathology.
+- Issue lane: 30 open issues (new completion-backlog #159-#170 filed
+  2026-09-21 23:34 UTC; the previous pass predates them). Assigned
+  elsewhere (skipped entirely, no churn): #79, #81, #84, #97, #98, #100,
+  #101. Skipped as hardware/user-interaction gated after reading bodies:
+  #102/#99 (physical certification), #96/#90/#89/#88/#87/#86/#85/#83
+  (wake-word/audio stack behind owner-assigned #84 live measurements),
+  #159/#160 (acceptance requires validation in the real Alpine VM with two
+  actual Linux users and reboot persistence),
+  #161 (acceptance requires a real capable-model fresh-install run),
+  #162/#164/#165/#166/#168/#169/#170 (acceptance requires a real capable
+  model and/or installed Alpine VM runs).
+- Selected issue: https://github.com/rwrife/aios/issues/163 — durable
+  owner-scoped app-data storage. Rationale: it is the foundational storage
+  layer that #165/#166/#167 build on, its deliverable is a software
+  library + backend contract fully verifiable headlessly with unit tests
+  (the VM/reboot acceptance lines are honest remaining gates recorded as
+  Progresses gaps), and no other agent had claimed it.
+- Claim: `gh issue edit 163 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self); re-checked before push (still rwrife).
+  Assignment retained after merge because #163 remains open (Progresses
+  linkage); it is released only when the remaining acceptance lands.
+- Implementation (worktree `.worktree issue163-appdata` from fresh
+  `origin/main`): new `apps/aios/app_data.py` — broker-side app-data store
+  separating code from data; UUID-only identity (app/kind/record, never
+  paths); atomic rename commits with sha256 envelopes; optimistic
+  concurrency; per-app quotas rejected before write; crash recovery of
+  partial writes; transactional layout migration with rollback-preserving
+  staging + journal (failed migration keeps old layout authoritative);
+  ephemeral guest storage with TTL expiry and quarantine-on-failed-scrub;
+  integrity-checked export/import bundles with into-empty/replace modes.
+- Verification (fresh, on the exact pushed head `ff9db4f`):
+  - Canonical `bash scripts/test.sh`: Ran 1077 tests, OK (skipped=16),
+    rc=0 (baseline 1056 OK + 21 new).
+  - New `tests/test_app_data.py`: 21/21 pass.
+  - Mutation canary: disabling the read-time integrity gate flips the
+    suite to FAILED; restoring returns OK.
+  - Post-merge canonical suite re-run on updated `main`
+    (`2acd52ba`): Ran 1077 tests, OK, rc=0.
+  - Not verified: in-VM Alpine with two real Linux users, installed-system
+    reboot, ENOSPC fault injection (runner-class limits; listed as open
+    acceptance gaps in the PR body and issue).
+- Merged: https://github.com/rwrife/aios/pull/171 (squash commit
+  `2acd52ba28be958b864dcf29b9165a665c5cedf4`, 2026-09-22T11:53:30Z;
+  PR-event Validate run success on head `ff9db4f`). Issue #163 asserted
+  still OPEN post-merge (Progresses intent honored); head branch deleted;
+  worktree removed.
+- Post-merge PR-lane re-check: 0 open PRs.
+- Claims released: none (assignment on #163 intentionally retained while
+  its remaining acceptance gaps are open).
+
 ## 2026-09-21 17:29 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
