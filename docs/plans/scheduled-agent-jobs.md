@@ -1,7 +1,12 @@
 # Scheduled agent jobs and orb attention
 
-Status: milestone 1 implemented as an internal core; scheduling is not yet
-exposed to users and no background workers are started.
+Status: milestone 1 is implemented as an internal core. Milestone 2's
+supervision layer (`apps/aios/scheduler.py`) now provides the per-user
+singleton, cooperative worker deadlines, cancellation, restart recovery, and
+the actionable/quiet-hours delivery decision, all display-independent and
+unit-tested; the concrete worker/tool-host execution adapter, packaged
+launcher, and Alpine session startup remain pending. Scheduling is still not
+exposed to users and no background workers are started in the image.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
