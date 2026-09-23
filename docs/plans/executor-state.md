@@ -2,6 +2,76 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-23 17:25 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
+  fetch + `git pull --ff-only origin main` -> current at `fa6c172`, clean
+  tree, `origin` remote present. No write probe needed (env-token pushes
+  succeeded later without fallback).
+- PR lane: 0 open PRs at start, after issue selection, after the
+  implementation merge, and at final reporting (freshness re-queried each
+  time). No merges before issue work; no blocked PRs.
+- CI signal: `Validate` active; push runs on `main` heads `fa6c172` and
+  `c6dccde` completed success beforehand. No workflow pathology.
+- Issue lane: 30 open issues. Assigned elsewhere (skipped entirely, no
+  churn): #79, #81, #84, #97, #98, #100, #101, #163, #167 (both #163/#167
+  are self-retained Progresses claims from prior passes). Skipped as
+  hardware/user-interaction gated after reading bodies: #102/#99 (physical
+  certification), #96/#90/#89/#88/#87/#86/#85/#83 (wake-word/audio stack
+  behind owner-assigned #84), #159/#160 (acceptance requires the real
+  Alpine VM with two real Linux users + reboot), #161 (real capable-model
+  fresh-install run), #162/#164 (deliverable is the isolated runtime /
+  real-model repair cycle itself), #165 (installed-VM reboot + two-account
+  journey), #166/#168 (native picker/connection flows with in-VM
+  acceptance), #170 (release matrix gated on all of the above).
+- Selected issue: https://github.com/rwrife/aios/issues/169 — scheduled
+  agent execution + quiet durable delivery. Rationale: its milestone-2
+  supervision layer is an unwritten pure-software core beneath the
+  adapter/launcher/VM acceptance lines, fully unit-verifiable headlessly
+  per the repo's own plan doc; no hardware or human interaction is needed
+  for that half, and no other agent had claimed it.
+- Claim: `gh issue edit 169 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self); re-checked before push (still rwrife).
+  Assignment retained after merge: the `Progresses #169` linkage leaves
+  #169 open, and the retained claim signals in-flight remainder — only
+  this executor lane resumes it.
+- Implementation (worktree `.worktree-issue169` from fresh `origin/main`):
+  new `apps/aios/scheduler.py` — flock-enforced per-store singleton
+  supervisor; startup recovery of abandoned runs as `interrupted` without
+  blind retry; cooperative `WorkerControl` cancellation with monotonic
+  deadlines and bounded grace before honest abandonment (late results
+  dropped by the store's terminal guard); stale provider-binding gate ->
+  one `needs_user_action` + paused job; pure durable `attention()` view
+  computing action_needed > unread > running > idle with actionable-only
+  unchanged suppression, cross-midnight quiet hours in the stored zone,
+  and snooze suppression that never consumes or acknowledges outbox
+  rows; sanitized bounded worker errors; execution injected as an
+  `executor(run, control)` callable so no adapter/launcher is claimed.
+  Plan doc status updated honestly.
+- Verification (fresh, on the exact pushed head `6afa3e0`):
+  - New `tests/test_scheduler.py`: 21/21 pass, run twice consecutively
+    (threaded settle via the service's own monotonic poll loop).
+  - Canonical `bash scripts/test.sh`: Ran 1129 tests, OK (skipped=16),
+    rc=0 (baseline 1108 + 21 new).
+  - Three mutation canaries (no-op startup recovery -> FAILED; delivery
+    suppression disabled -> 2 FAILED; timeout-abandonment disabled -> the
+    abandonment test FAILED); restore -> OK.
+  - Post-merge canonical suite re-run on updated `main` (`8622e60`):
+    Ran 1129 tests, OK, rc=0.
+  - Not verified: real worker/tool-host execution, packaged launcher +
+    Alpine session startup, scheduling tool/settings surfaces, shell orb
+    bridge, installed-VM reboot/clock-change acceptance (runner-class
+    limits; listed as open gaps in the PR body).
+- Merged: https://github.com/rwrife/aios/pull/175 (squash commit
+  `8622e60`, 2026-09-23T17:21:28Z; push and pull_request Validate runs
+  both success on head `6afa3e0`). Issue #169 asserted still OPEN
+  post-merge (Progresses intent honored; body closing-keyword scrub
+  rc=1); head branch deleted; worktree removed; local branch deleted
+  after MERGED verification.
+- Post-merge PR-lane re-check: 0 open PRs.
+- Claims released: none (#169 assignment intentionally retained while its
+  remaining acceptance gaps are open).
+
 ## 2026-09-23 02:45 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
