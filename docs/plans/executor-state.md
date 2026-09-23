@@ -2,6 +2,76 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-23 02:45 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
+  fetch + `git pull --ff-only origin main` -> already current at `05c1c2f`,
+  clean tree, `origin` remote present. Write probe (create+delete temp
+  ref via `gh api`) passed under env-token auth; no fallback needed.
+- PR lane: 0 open PRs at start, after selection, and after the
+  implementation merge (freshness re-queried each time). No merges before
+  issue work; no blocked PRs.
+- Issue lane: 30 open issues. Assigned elsewhere (skipped entirely, no
+  churn): #79, #81, #84, #97, #98, #100, #101, #163. Skipped as
+  hardware/user-interaction gated after reading bodies: #102/#99 (physical
+  certification), #96/#90/#89/#88/#87/#86/#85/#83 (wake-word/audio stack
+  behind owner-assigned #84), #159/#160 (acceptance requires the real
+  Alpine VM with two real Linux users and reboot persistence), #161
+  (real-capable-model fresh-install run), #162/#164 (deliverable is the
+  isolated runtime / real-model repair cycle itself), #165 (acceptance is
+  an installed-VM reboot + two-account journey), #166/#168 (native
+  picker/connection flows with in-VM acceptance), #169 (worker-execution
+  milestone whose acceptance requires installed-system reboot delivery),
+  #170 (release matrix gated on all of the above).
+- Selected issue: https://github.com/rwrife/aios/issues/167 — durable task
+  resume + crash-safe side-effect recovery. Rationale: its core
+  deliverable beneath the reboot-acceptance line is an unwritten pure-
+  software library (owner-scoped task store + two-phase side-effect
+  journal) fully verifiable headlessly with unit tests; no hardware or
+  human interaction is needed for that half, and no other agent had
+  claimed it.
+- Claim: `gh issue edit 167 --add-assignee @me` -> readback
+  `assignees=[rwrife]` (self); re-checked before push (still rwrife).
+  Assignment retained after merge because #163-style Progresses linkage
+  keeps #167 open; the retained claim signals in-flight remainder and
+  means only this executor lane resumes it.
+- Implementation (worktree `.worktree-issue167` from fresh `origin/main`):
+  new `apps/aios/task_recovery.py` — per-owner task records with gated
+  status transitions; bounded durable checkpoints with pruning; artifact/
+  tool references validated fail-closed against secret shapes; explicit
+  attempts with crash-time `interrupted` adoption; two-phase side-effect
+  journal (begin/commit/fail) where a crash-pending effect becomes
+  `unverified`, blocks completion and resume, and requires explicit user
+  resolution (`completed` = never re-run, duplicate re-begin rejected;
+  `skipped`/`failed` = retry re-arms the same journal row); resume
+  revalidates the saved provider/model/capability binding and returns
+  bounded reconstruction (newest checkpoints under a 64 KiB budget,
+  prior artifacts, executed effects); owner comes only from the trusted
+  service context, every query owner-filtered; ephemeral guest tasks
+  require TTLs and a failed destroy quarantines instead of claiming
+  cleanup.
+- Verification (fresh, on the exact pushed head `df734f3`):
+  - Canonical `bash scripts/test.sh`: Ran 1108 tests, OK (skipped=16),
+    rc=0 (baseline 1077 OK + 31 new).
+  - New `tests/test_task_recovery.py`: 31/31 pass.
+  - Three mutation canaries (recovery-unverified gate, resume gate,
+    completion gate) each flipped the suite to FAILED; restoring returned
+    OK.
+  - Post-merge canonical suite re-run on updated `main` (`c6dccde`):
+    Ran 1108 tests, OK, rc=0.
+  - Not verified: installed-VM reboot/resume with two Linux users,
+    real broker/sessiond wiring, shell task-list surface (runner-class
+    limits; listed as open acceptance gaps in the PR body).
+- Merged: https://github.com/rwrife/aios/pull/173 (squash commit
+  `c6dccdef712f66a6bb628f2289fac55d72d64475`, 2026-09-23T02:44:24Z; push
+  and pull_request Validate runs both success on head `df734f3`). Issue
+  #167 asserted still OPEN post-merge (Progresses intent honored; body
+  closing-keyword scrub verified no match); head branch deleted; worktree
+  removed; local branch deleted after MERGED verification.
+- Post-merge PR-lane re-check: 0 open PRs.
+- Claims released: none (#167 assignment intentionally retained while its
+  remaining acceptance gaps are open).
+
 ## 2026-09-22 11:55 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
