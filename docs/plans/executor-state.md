@@ -2,6 +2,80 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-09-25 00:56 UTC
+
+- Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
+  fetch + `git pull --ff-only origin main` -> current at `78589a2`, clean
+  tree, `origin` remote present. No write probe needed (env-token push
+  succeeded without fallback).
+- PR lane: 0 open PRs at start, after issue selection, after the
+  implementation merge, and at final reporting (freshness re-queried each
+  time). No merges before issue work; no blocked PRs.
+- CI signal: `Validate` active; push + pull_request runs on the
+  implementation head `2a69e3a` both completed success before merge.
+- Issue lane: 30 open issues. Assigned elsewhere (skipped entirely, no
+  churn): #79, #81, #84, #97, #98, #100, #101, #163, #167, #169 (the
+  latter three are self-retained Progresses claims from prior passes;
+  #169 was continued below, not re-claimed). Skipped as
+  hardware/user-interaction gated after reading bodies: #102/#99
+  (physical certification), #96/#90/#89/#88/#87/#86/#85/#83
+  (wake-word/audio stack behind owner-assigned #84), #159/#160
+  (acceptance requires the real Alpine VM with two real Linux users +
+  reboot), #161 (real capable-model fresh-install run), #162/#164
+  (deliverable is the isolated runtime / real-model repair cycle
+  itself), #165 (installed-VM reboot + two-account journey), #166/#168
+  (native picker/connection flows with in-VM acceptance), #82 (option-
+  fence UX already landed via PR #118; remaining acceptance is
+  real-conversation sign-off).
+- Selected issue: https://github.com/rwrife/aios/issues/169 — scheduled
+  agent execution + quiet durable delivery. Rationale: the next
+  headless-deliverable slice on its own retained claim — the milestone-3
+  validated scheduling tool contract (fixed actions, validation,
+  readback, explicit error codes) is a pure-software core fully unit-
+  verifiable per the repo's own plan doc; no hardware or human
+  interaction is needed for that half.
+- Claim: pre-existing self-assignment from the 2026-09-23 pass
+  (readback `assignees=[rwrife]` before implementation and again before
+  push); no new claim needed, no release needed (PR merged, Progresses
+  linkage keeps #169 open with the claim intentionally retained for the
+  remaining slices).
+- Implementation (worktree `.worktree-issue169` from fresh `origin/main`
+  at `78589a2`): new `apps/aios/scheduled_jobs.py` — `ScheduledJobsTool`
+  fixed-action validated facade over `SchedulerService`/`ScheduledStore`
+  with the published model-facing schema; per-action required/optional
+  field gates, opaque-UUID validation, bounded pagination, expected
+  revisions on all mutations, owner-field rejection, preview-bearing
+  job readback anchored at the occurrence watermark, in-flight body
+  stripping in run replies, request-id-idempotent `run_now` via the
+  supervisor, and explicit invalid/unavailable/conflict/quota_exceeded
+  replies. Tool deliberately NOT advertised to models / no skill shipped
+  until the service host + worker adapter land (AGENTS.md: never claim
+  an unimplemented operation). Plan doc status rewritten honestly.
+- Verification (fresh, on the exact pushed head `2a69e3a`):
+  - New `tests/test_scheduled_jobs_tool.py`: 16/16 pass against the
+    real store + real supervisor (threaded blocking-executor quota
+    test included).
+  - Canonical `bash scripts/test.sh`: Ran 1145 tests, OK (skipped=16),
+    rc=0 (baseline 1129 + 16 new).
+  - Two mutation canaries (unknown-field gate removed -> 4 FAILED;
+    `_run_reply` body-stripping removed -> 1 FAILED); restore -> 16/16
+    OK. (A first canary relaxing `_uuid` alone stayed green because the
+    store's own `identifier()` defense masks it — noted, not a gap in
+    the shipped guards.)
+  - Post-merge targeted re-run on updated `main` (`83f1e53`):
+    test_scheduled_jobs_tool + test_scheduler 37/37 OK.
+  - Not verified: real worker/tool-host execution, packaged launcher +
+    Alpine session startup, socket plumbing, shell orb bridge,
+    installed-VM reboot/clock-change acceptance (listed in the PR body).
+- Merged: https://github.com/rwrife/aios/pull/177 (squash commit
+  `83f1e53`, 2026-09-25T00:56:07Z). Issue #169 asserted still OPEN
+  post-merge (Progresses intent honored; body closing-keyword scrub
+  clean); head branch deleted; worktree removed after MERGED
+  verification.
+- Post-merge PR-lane re-check: 0 open PRs.
+- Claims released: none (#169 assignment intentionally retained while its
+  remaining acceptance gaps are open).
+
 ## 2026-09-23 17:25 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
