@@ -1,12 +1,19 @@
 # Scheduled agent jobs and orb attention
 
 Status: milestone 1 is implemented as an internal core. Milestone 2's
-supervision layer (`apps/aios/scheduler.py`) now provides the per-user
+supervision layer (`apps/aios/scheduler.py`) provides the per-user
 singleton, cooperative worker deadlines, cancellation, restart recovery, and
 the actionable/quiet-hours delivery decision, all display-independent and
-unit-tested; the concrete worker/tool-host execution adapter, packaged
-launcher, and Alpine session startup remain pending. Scheduling is still not
-exposed to users and no background workers are started in the image.
+unit-tested. Milestone 3's validated tool contract is now implemented as
+`apps/aios/scheduled_jobs.py`: the twelve fixed actions with action-specific
+validation, bounded pagination, expected revisions, opaque identifiers,
+preview-bearing readback, and explicit invalid/unavailable/conflict/quota
+results, unit-tested against the real store and supervisor. The tool is not
+yet advertised to models or wired into a per-user service host, and the
+concrete worker/tool-host execution adapter, packaged launcher, Alpine
+session startup, shipped skill, and shell/orb delivery bridge remain
+pending. Scheduling is still not exposed to users and no background workers
+are started in the image.
 Baseline: `main` at `6986a2d` (2026-09-10).
 
 ## Implementation progress
@@ -39,15 +46,16 @@ result returns unavailable instead of running again. Unread results are never
 automatically pruned. The database is capped at 100 MiB, with a dispatch reserve
 for active-run completion; storage exceptions propagate to the future service.
 
-Milestones 2-5 remain pending. The core records provider/model/capability
-bindings but cannot authorize or execute them. The service must enforce
-singleton ownership, validate those bindings against live configuration, use
-monotonic deadlines and bounded timer rechecks, supervise isolated workers, and
-stop processes before recording cancellation/deletion or restart recovery.
-Outbox storage is ready for the later notification bridge; quiet-hours,
-actionable-only filtering, and snooze are saved policy, not active delivery.
-No scheduling tool, skill, settings UI, orb changes, or protected-workspace
-adapter is enabled yet.
+Milestones 2-5 remain partially pending. The supervisor enforces singleton
+ownership, validates bindings against an injected checker, uses monotonic
+deadlines and bounded timer rechecks, supervises worker callables, and stops
+processes before recording cancellation/deletion or restart recovery; the
+concrete isolated worker/tool-host process adapter is not wired. The
+validated scheduling tool contract exists but is not advertised, and no
+skill, settings UI, orb changes, or protected-workspace adapter is enabled
+yet. Outbox storage is ready for the later notification bridge; quiet-hours,
+actionable-only filtering, and snooze are enforced by the durable attention
+view, not active delivery.
 
 ## Outcome
 
@@ -118,9 +126,14 @@ give interactive requests priority.
 
 Add `apps/aios/scheduling.py` for schemas/time calculations,
 `scheduled_store.py` for storage, `scheduler.py` for supervision, and
-`scheduled_jobs.py` for the validated service client/tool. These names are
-proposed new files. Add a shipped `scheduled-jobs` skill and document the
-actual interface in `docs/agentic-tools.md` when implementing it.
+`scheduled_jobs.py` for the validated service client/tool. The first four
+names now exist; `scheduled_jobs.py` implements the action contract as a
+validated facade over `SchedulerService`/`ScheduledStore` and is
+unit-tested, but it is deliberately not advertised to models and ships no
+skill until the per-user service host and worker adapter land, so the model
+can never be told about an action that has no running backend. Add a shipped
+`scheduled-jobs` skill and document the actual interface in
+`docs/agentic-tools.md` when wiring the host.
 
 Expose fixed actions: `create`, `get`, `list`, `update`, `pause`, `resume`,
 `delete`, `run_now`, `cancel_run`, `list_runs`, `read_result`, and
