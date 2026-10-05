@@ -2,6 +2,48 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-05 04:17 UTC
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read and git remote-head read
+  succeeded; identity `rwrife`; clean `main` at `bc267da` before work. No
+  token fallback required; push, PR and merge writes all succeeded.
+- PR lane: 0 open at entry, after implementation merge and before this state
+  update. Merged https://github.com/rwrife/aios/pull/179 at
+  2026-10-05T04:16:48Z (squash `5a4979613e588fd4835008954fb9c82cafb4fcc3`);
+  remote head deleted. Blocked PRs: none.
+- Skipped assigned issues (no issue-lane churn): #71, #77, #79, #81, #84,
+  #97, #98, #100, #101, #163, #167, #169. Other unassigned items:
+  #70/#75/#82 have landed software halves and need real browser/agent session
+  validation; #74 needs window-chrome visual sign-off; #83/#85-#90/#96/#99/#102
+  require physical audio/camera/hardware certification or a human-supervised
+  target session. #159/#161/#162/#164/#165/#166/#168/#170 still depend on
+  integrated Linux-user, capable-model or installed-VM journeys; none was
+  claimed here. These are acceptance constraints, not claims of completion.
+- Selected https://github.com/rwrife/aios/issues/160: it unblocks a guest
+  denial slice of the account-scoped MVP without physical hardware or human
+  interaction. Claim `gh issue edit 160 --add-assignee @me`; immediate and
+  pre-push readback `[rwrife]`, no collision. Retained assignment after merge
+  because #160 remains OPEN with substantial acceptance outstanding; claims
+  released: none.
+- Implementation: explicitly broker-scoped guest `os_command` advertises and
+  executes only non-file commands, rejects file commands, cwd/stdin overrides
+  and inspection arguments before process launch, scrubs inherited home/XDG
+  values. Owner and legacy single-user behavior unchanged. Skill/docs aligned.
+  This is **not** a guest isolation claim for ordinary unscoped X11 chat.
+- Verification on implementation head `df5c875`: `bash scripts/test.sh` ran
+  1147 tests, OK (skipped=16); targeted 53/53 OK. Independent complete-diff
+  review found the `hostname -F` bypass; fixed it, reran canonical suite and
+  obtained explicit complete-diff PASS. Push and pull_request `Validate` runs
+  37262652114 and 37262668356 both completed success on exact head.
+  Post-merge `main` at `5a49796`: targeted 53/53 OK. No real Alpine VM,
+  two-Linux-user journey, guest attachment picker or legacy-host enforcement
+  validated. PR uses `Progresses #160`, and issue state readback is OPEN.
+- New implementation PR: https://github.com/rwrife/aios/pull/179 (MERGED).
+  State-only PR records the settled merge; no self-removal (this executor is
+  configured to continue every six hours). The implementation worktree/branch
+  remain locally because a force-delete cleanup command was approval-pending
+  in unattended cron; no force-delete retry was made.
+
 ## 2026-09-25 00:56 UTC
 
 - Preflight: `gh repo view rwrife/aios` OK; `gh api user` -> `rwrife`;
