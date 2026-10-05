@@ -4,6 +4,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from aios import os_command
@@ -16,6 +19,66 @@ def _completed(stdout="", stderr="", returncode=0):
 
 
 class OsCommandTests(unittest.TestCase):
+    def test_guest_schema_and_execution_share_the_same_allowlist(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            guest = SimpleNamespace(owner=None, workspace=Path(workspace))
+            with mock.patch.object(os_command, "current_principal", return_value=guest), \
+                    mock.patch.object(os_command, "_resolve", return_value="/bin/echo"), \
+                    mock.patch.object(os_command.subprocess, "run", return_value=_completed("hi\n")) as run, \
+                    mock.patch.dict(os.environ, {"HOME": "/private/alice", "XDG_DATA_HOME": "/private/alice/data"}):
+                commands = os_command.definition()["function"]["parameters"]["properties"]["command"]["enum"]
+                self.assertEqual(commands, list(os_command.GUEST_COMMANDS))
+                self.assertNotIn("ls", commands)
+                self.assertEqual(set(os_command.definition()["function"]["parameters"]["properties"]), {"command", "args"})
+                self.assertEqual(os_command.act({"command": "echo", "args": ["hi"]})["stdout"], "hi\n")
+                self.assertEqual(run.call_args.kwargs["cwd"], workspace)
+                self.assertEqual(run.call_args.kwargs["env"]["HOME"], workspace)
+                self.assertNotIn("XDG_DATA_HOME", run.call_args.kwargs["env"])
+                for request in ({"command": "cat", "args": ["/private/alice/file"]},
+                                {"command": "tee", "args": ["report"], "stdin": "data"},
+                                {"command": "ls"}, {"command": "date", "args": ["-f", "/private/alice/file"]},
+                                {"command": "echo", "cwd": "/private/alice"},
+                                {"command": "printf", "stdin": "secret"}):
+                    with self.subTest(request=request), self.assertRaisesRegex(ValueError, "Sign in"):
+                        os_command.act(request)
+                for request in ({"command": "hostname", "args": ["-F", "/private/alice/file"]},
+                                {"command": "hostname", "args": ["changed-hostname"]},
+                                {"command": "id", "args": ["other-user"]},
+                                {"command": "pwd", "args": ["-P"]}):
+                    with self.subTest(request=request), self.assertRaisesRegex(ValueError, "no arguments"):
+                        os_command.act(request)
+                self.assertEqual(run.call_count, 1)
+
+    def test_explicit_guest_descriptor_in_stdio_mcp_and_builtin_host(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            descriptor = json.dumps({"owner": None, "uid": os.getuid(), "scope": str(uuid.uuid4()),
+                                     "workspace": "/workspace"})
+            # The stdio adapter's listing and execution both consult the same principal.
+            messages = [{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                            "name": "os_command", "arguments": {"command": "cat", "args": ["/etc/passwd"]}}}]
+            # Principal.decode requires a UID >=1000, even for the guest.
+            with mock.patch.object(os_command, "current_principal", return_value=SimpleNamespace(owner=None, workspace=Path(workspace))):
+                class Fake:
+                    def definitions(self): return [], []
+                    def definition(self): return APPLICATION_TOOL
+                    def close(self): pass
+                host = ToolHost(browser=Fake(), applications=Fake(), mcp=Fake())
+                tool = next(item for item in host.definitions()["tools"] if item["function"]["name"] == "os_command")
+                self.assertEqual(tool["function"]["parameters"]["properties"]["command"]["enum"], list(os_command.GUEST_COMMANDS))
+                with self.assertRaises(ValueError):
+                    host.call("os_command", {"command": "cat", "args": ["/etc/passwd"]})
+            if os.getuid() >= 1000:
+                completed = subprocess.run([sys.executable, "-m", "aios.os_command"],
+                                           input="\n".join(map(json.dumps, messages)) + "\n", capture_output=True,
+                                           text=True, timeout=5, check=True,
+                                           env={**os.environ, "AIOS_PRINCIPAL": descriptor})
+                listed, denied = map(json.loads, completed.stdout.splitlines())
+                self.assertEqual(listed["result"]["tools"][0]["inputSchema"]["properties"]["command"]["enum"],
+                                 list(os_command.GUEST_COMMANDS))
+                self.assertTrue(denied["result"]["isError"])
+                self.assertIn("Sign in", denied["result"]["content"][0]["text"])
+
     def test_schema_lists_allowlisted_commands_only(self):
         function = os_command.TOOL["function"]
         self.assertEqual(function["name"], "os_command")

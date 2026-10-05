@@ -148,6 +148,19 @@ call supplies a bounded string. Each stream is truncated at 32KiB; a 10-second
 timeout kills the process. The result includes `command`, `path`, `argv`,
 `cwd`, `exit_code`, `stdout`, `stderr`, and `truncated`.
 
+When the native broker supplies an explicit guest principal, the advertised
+command enum narrows to `echo`, `printf`, `pwd`, `whoami`, `id`, `uname`, and
+`hostname`. Execution rechecks that restriction (including direct tool calls),
+refuses `cwd`/`stdin` overrides before spawning anything, sets the cwd and HOME
+to the session's `/workspace`, and drops inherited personal-home/XDG variables.
+Only guest `echo`/`printf` accept arguments; other guest commands take no
+arguments (notably `hostname -F` would otherwise read a file).
+File access returns a sign-in-required error. An owner-bearing principal keeps
+the existing command enum and behavior. A legacy desktop process without a
+broker principal retains the existing single-user desktop behavior; this is
+**not** proof of guest isolation in the ordinary X11 chat. Namespace/process
+isolation and the remaining #159/#160 gates must land before multi-user claims.
+
 For a separate local MCP client, the same implementation is available as
 `python3 -m aios.os_command`. Configure it with an explicit tool allowlist:
 
