@@ -142,7 +142,7 @@ def _static_tools(application_definition: dict[str, Any] = APPLICATION_TOOL) -> 
         application_definition,
         BUILD_APPLICATION_TOOL,
         os_settings.TOOL,
-        os_command.TOOL,
+        os_command.definition(),
     ):
         name = _definition_name(definition)
         if name is None or name in names:

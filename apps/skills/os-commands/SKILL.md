@@ -12,6 +12,15 @@ shell, pipe, redirect, glob expansion, or `~` expansion. Pass each argument as
 its own `args` string. Use `cwd` for the working directory; it defaults to
 `HOME`. Use `stdin` when the program should read input, for example `tee`.
 
+In an explicit broker guest process, only `echo`, `printf`, `pwd`, `whoami`,
+`id`, `uname`, and `hostname` are available; the tool refuses `cwd` and
+`stdin` overrides and runs in the guest's `/workspace` with no inherited
+personal-home or XDG paths. File commands are unavailable until an owner
+context is established by the native broker. Do not infer ownership from a
+profile name, sign-in status message, or recognition suggestion. A refused
+call returns an error and has no filesystem side effect. For guests, only
+`echo` and `printf` accept `args`; inspection commands accept no arguments.
+
 Do not open Terminal to run these programs. Do not build an application for a
 listing, file read, or echo. Do not request unlisted binaries, interpreters, or
 package managers.

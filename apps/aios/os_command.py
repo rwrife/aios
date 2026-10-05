@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+from .principals import current as current_principal
 
 COMMANDS = (
     "basename", "cat", "cp", "date", "df", "dirname", "du", "echo", "grep",
@@ -19,6 +20,7 @@ MAX_ARG_BYTES = 4096
 MAX_STDIN_BYTES = 16 * 1024
 OUTPUT_LIMIT = 32 * 1024
 TIMEOUT_SECONDS = 10
+GUEST_COMMANDS = ("echo", "printf", "pwd", "whoami", "id", "uname", "hostname")
 
 TOOL = {
     "type": "function",
@@ -53,6 +55,26 @@ TOOL = {
     },
 }
 
+
+def definition():
+    """Advertise only actions executable in the current broker context."""
+    principal = current_principal()
+    if principal is None or principal.owner is not None:
+        return TOOL
+    return {
+        **TOOL,
+        "function": {
+            **TOOL["function"],
+            "description": "Guest: echo/printf may print text; pwd/whoami/id/uname/hostname accept no args. File operations require an authenticated owner. No shell, cwd override or stdin.",
+            "parameters": {
+                **TOOL["function"]["parameters"],
+                "properties": {
+                    "command": {"type": "string", "enum": list(GUEST_COMMANDS)},
+                    "args": TOOL["function"]["parameters"]["properties"]["args"],
+                },
+            },
+        },
+    }
 
 def _bounded_text(value, limit, label):
     if not isinstance(value, str) or "\0" in value:
@@ -90,8 +112,12 @@ def _working_directory(cwd):
     return cwd
 
 
-def _environment(cwd):
+def _environment(cwd, guest=False):
     env = {"PATH": "/usr/bin:/bin", "PWD": cwd, "LC_ALL": "C"}
+    if guest:
+        # Do not pass inherited personal-home or XDG pointers to guest tools.
+        env["HOME"] = cwd
+        return env
     for key in INHERITED_ENV:
         value = os.environ.get(key)
         if value and "\0" not in value:
@@ -105,16 +131,29 @@ def act(arguments):
     command = arguments.get("command")
     if command not in COMMANDS:
         raise ValueError("Invalid OS command request.")
+    principal = current_principal()
+    guest = principal is not None and principal.owner is None
+    if guest:
+        if command not in GUEST_COMMANDS or arguments.get("cwd") is not None or arguments.get("stdin") is not None:
+            raise ValueError("File operations are unavailable in a guest session. Sign in to access files.")
     args = arguments.get("args", [])
     if not isinstance(args, list) or len(args) > MAX_ARGS:
         raise ValueError("Invalid OS command request.")
     argv_tail = []
     for item in args:
         argv_tail.append(_bounded_text(item, MAX_ARG_BYTES, "Argument is too large."))
+    if guest and command not in ("echo", "printf") and argv_tail:
+        # In particular hostname -F reads files and hostname NAME mutates the
+        # kernel hostname; never mistake an inspection binary for a safe argv.
+        raise ValueError("Guest inspection commands accept no arguments.")
     stdin = arguments.get("stdin")
     if stdin is not None:
         stdin = _bounded_text(stdin, MAX_STDIN_BYTES, "Standard input is too large.")
-    cwd = _working_directory(arguments.get("cwd"))
+    if guest:
+        assert principal is not None
+        cwd = _working_directory(str(principal.workspace))
+    else:
+        cwd = _working_directory(arguments.get("cwd"))
     executable = _resolve(command)
     argv = [executable, *argv_tail]
     kwargs = {
@@ -124,7 +163,7 @@ def act(arguments):
         "errors": "replace",
         "timeout": TIMEOUT_SECONDS,
         "cwd": cwd,
-        "env": _environment(cwd),
+        "env": _environment(cwd, guest=guest),
         "check": False,
     }
     if stdin is None:
@@ -181,7 +220,7 @@ def main():
                 ),
             }
         elif method == "tools/list":
-            function = TOOL["function"]
+            function = definition()["function"]
             response["result"] = {"tools": [{"name": function["name"], "description": function["description"], "inputSchema": function["parameters"]}]}
         elif method == "tools/call":
             try:
