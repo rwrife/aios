@@ -2,7 +2,7 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
-## 2026-10-06 15:15 UTC (entry snapshot; state PR disposition pending)
+## 2026-10-06 15:15 UTC (entry snapshot; finalized 15:31 UTC)
 
 - Preflight: NFS repo share mounted; `gh repo view rwrife/aios`, REST repo
   read and git remote read succeeded; stored gh OAuth identity `rwrife`.
@@ -47,9 +47,18 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   was exercised. No new issue evidence/comments since the preceding pass;
   screening carries forward the prior acceptance verdicts, not completion.
 - Outcome as-of snapshot: verification-only pass; no implementation PR or
-  claimed issue. This separate docs-only state PR has pending disposition/CI;
-  its URL is resolved by branch `docs/executor-state-20261006-1515`.
-  No self-removal (executor runs every 6 hours).
+  claimed issue. https://github.com/rwrife/aios/pull/185 was opened and
+  squash-merged at 15:31:04 UTC (commit `3836927c8b22e13e5b0f1707a2c6c5a69c996d88`),
+  with remote branch removed. Post-merge PR queue verified at 0 open; open
+  issue count verified at 35. No self-removal (executor runs every 6 hours).
+- Both exact-head `15306ec` Validate events succeeded before #185 merged:
+  push https://github.com/rwrife/aios/actions/runs/37487395553 and
+  pull_request https://github.com/rwrife/aios/actions/runs/37487405857.
+- This follow-up final-state sync is a docs-only PR on branch
+  `docs/executor-final-20261006-1531`; its own disposition/CI is pending
+  as-of this snapshot. Entry queue counts above exclude this follow-up.
+  Existing other-agent worktrees left untouched; local force-branch deletion
+  was approval-blocked, so no forced cleanup was attempted.
 
 ## 2026-10-06 10:08 UTC (entry snapshot; final PR disposition pending)
 
