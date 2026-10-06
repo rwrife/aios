@@ -2,6 +2,45 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-06 10:08 UTC (entry snapshot; final PR disposition pending)
+
+- Preflight: NFS repo share mounted; `gh repo view rwrife/aios`, REST and
+  git remote read succeeded; stored gh OAuth identity `rwrife`; main was clean
+  at `6d95978` on entry; no auth fallback required.
+- PR lane: #181 (state-only) had a successful pull_request Validate run but
+  a cancelled push run. Reran the cancelled push run 37370477498 on exact
+  head `15ea6d5`; all three jobs then succeeded. Squash-merged
+  https://github.com/rwrife/aios/pull/181 at 10:11:26 UTC, merge commit
+  `9c1fe46`, verified remote branch removed. Queue empty on re-query.
+- Skipped assigned issues (no issue-lane changes): #71, #77, #79, #81,
+  #84, #97, #98, #100, #101, #160, #163, #167, #169.
+  Skipped hardware: #83/#85-#90 (audio stage #84), #96 (camera),
+  #99/#102 (physical hardware certification).
+  Skipped user/integration acceptance: #70/#75 (already-landed browser
+  halves, real Alpine browser journey); #74 (native visual sign-off);
+  #82 (already-landed choice UX half, real-model use); #159/#161/#162/
+  #164-#166/#168/#170 (real-user Alpine integration, capable-model,
+  native interaction or external-service acceptance). No duplicate issue
+  filed for those existing gaps.
+- Observed a distinct headlessly verifiable CI issue in Validate: runner
+  annotation reports `actions/checkout@v4` forced from deprecated Node 20
+  to Node 24. Filed https://github.com/rwrife/aios/issues/182 after deduping
+  open/closed issue titles; claimed via `--add-assignee @me`, readback
+  `[rwrife]`. Rationale: pinning current Node-24 checkout keeps the core
+  automated validation lane maintainable without hardware or interaction.
+- Issue #182 verification on worktree from `9c1fe46`: test first failed on
+  the three v4 refs and passed with immutable v7.0.1 commit
+  `3d3c42e5aac5ba805825da76410c181273ba90b1`; canary changing the
+  test's SHA failed, then was restored. Upstream action.yml declares
+  `runs.using: node24`; actionlint passed. With an isolated Python 3.13
+  venv inheriting system cryptography and pinned cronsim/numpy,
+  `bash scripts/test.sh` passed 1148 tests (18 skipped); initial host
+  test run failed for missing cronsim, initial isolated venv run failed
+  for missing cryptography, then resolved via system-site packages.
+- Implementation PR: pending; issue #182 claim retained only if PR opens.
+  No ISO/VM, physical hardware, real-model or manual GUI acceptance claimed.
+  No self-removal; this every-6-hours executor remains active.
+
 ## 2026-10-05 20:31 UTC
 
 - Preflight: `gh repo view rwrife/aios`, REST repo read and git remote-head
