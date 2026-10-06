@@ -7,7 +7,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
       - run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt"
       # CI-only: the recognition capture/biometrics suites exercise the real
       # numpy-backed worker code paths. numpy ships in the AIOS image via the
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
       - name: Enable disposable encrypted-volume test support
         run: sudo modprobe dm_crypt && sudo modprobe loop
       - name: Permit bubblewrap user namespaces on the Ubuntu test host
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
       - name: Permit disposable bubblewrap user namespaces
         run: sudo apparmor_parser -r scripts/qa/aios-bwrap.apparmor
       - name: Test rendered private surfaces, PIN input and display socket isolation
