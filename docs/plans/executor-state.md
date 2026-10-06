@@ -2,6 +2,55 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-06 15:15 UTC (entry snapshot; state PR disposition pending)
+
+- Preflight: NFS repo share mounted; `gh repo view rwrife/aios`, REST repo
+  read and git remote read succeeded; stored gh OAuth identity `rwrife`.
+  Local `main` up to date with `origin/main` at `3dcc5f2`.
+- PR lane: 0 open PRs at entry, after issue screening, and before this state
+  update (freshness re-queried). PR #184 from the prior pass merged cleanly
+  at 11:28:32 UTC (`3dcc5f2`). Merged PRs this run: none; blocked PRs: none.
+- Issue lane: 35 open issues. Assigned elsewhere / locked (skipped, no churn):
+  #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #163, #167, #169.
+  (Retained partial-slice assignments on #160, #163, #167, #169 remain locked).
+  Unassigned issues screened against headless execution constraints:
+  - Hardware-gated: #83, #85-#90 (audio/wake stack dependent on owner-assigned
+    live audio rig #84); #96 (physical Brio webcam recognition); #99, #102
+    (physical x86_64 hardware certification).
+  - User-interaction / in-VM GUI / real-environment acceptance gated:
+    - #70, #75: code halves already landed (#114, #116); remaining gate is real
+      Alpine browser sandbox journey.
+    - #74: requires native Openbox/Qt title bar visual sign-off.
+    - #82: multi-choice UX code half landed (#118); remaining gate is real-model
+      conversational acceptance.
+    - #159, #161, #162, #164, #165, #166, #168, #170: require real Linux-user
+      isolation (#159), capable-model onboarding (#161), managed sandboxed
+      runtime (#162), real-model repair loop (#164), installed-VM reboot app
+      reuse (#165), home-scoped native file picker (#166), third-party service
+      integration (#168), and end-to-end matrix release gates (#170).
+  - No new automatable software-only defect or deprecation was discovered; no
+    duplicate issue filed.
+  - Claims: none made this pass; claims released: none.
+- Verification on `main` (`3dcc5f2`):
+  - Canonical `bash scripts/test.sh`: 1,148 tests OK (18 skipped), rc=0, using
+    isolated Python 3.13 venv with pinned cronsim 2.6 and numpy 2.4.6.
+  - All shell scripts pass syntax checks (`bash -n` / `sh -n`).
+  - Openbox configuration `distro/alpine/overlay/etc/xdg/openbox/rc.xml`
+    parses valid XML.
+  - Current-head Validate push run 37456646423 completed success on `3dcc5f2`.
+- Verification setup: initial host suite failed (four imports) with
+  `ModuleNotFoundError: No module named 'cronsim'`; installed committed
+  hash-pinned requirements into an isolated system-site Python 3.13 venv,
+  then the canonical suite passed. No source repair was required.
+- Runner probe: `qemu-system-x86_64`, `Xvfb`, and `qmltestrunner` absent.
+  No ISO, Alpine VM, physical hardware, real-model or manual visual acceptance
+  was exercised. No new issue evidence/comments since the preceding pass;
+  screening carries forward the prior acceptance verdicts, not completion.
+- Outcome as-of snapshot: verification-only pass; no implementation PR or
+  claimed issue. This separate docs-only state PR has pending disposition/CI;
+  its URL is resolved by branch `docs/executor-state-20261006-1515`.
+  No self-removal (executor runs every 6 hours).
+
 ## 2026-10-06 10:08 UTC (entry snapshot; final PR disposition pending)
 
 - Preflight: NFS repo share mounted; `gh repo view rwrife/aios`, REST and
