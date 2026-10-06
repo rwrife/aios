@@ -37,9 +37,32 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   `bash scripts/test.sh` passed 1148 tests (18 skipped); initial host
   test run failed for missing cronsim, initial isolated venv run failed
   for missing cryptography, then resolved via system-site packages.
-- Implementation PR: pending; issue #182 claim retained only if PR opens.
+- Entry snapshot at implementation PR creation: #183 was open, exact-head
+  push/pull_request CI pending; do not read this as the final disposition.
   No ISO/VM, physical hardware, real-model or manual GUI acceptance claimed.
-  No self-removal; this every-6-hours executor remains active.
+
+### Final state after CI, merge and issue readback (as of 2026-10-06 11:18 UTC)
+
+- https://github.com/rwrife/aios/pull/183 merged at 11:17:17 UTC, squash
+  commit `d1fbaeb6438a06890389cbee45f6609777ea37f5` verified on main;
+  remote feature branch removed. Both exact-head `f39631f` Validate runs
+  succeeded in all three jobs: push
+  https://github.com/rwrife/aios/actions/runs/37454731653 and pull_request
+  https://github.com/rwrife/aios/actions/runs/37454740592. Neither run's
+  annotations include the earlier checkout Node 20 warning (only the
+  unrelated future ubuntu-latest migration notice).
+- PR #183 used `Progresses #182` while hosted checks were pending. Once both
+  event runs passed and the warning was absent, posted the evidence at
+  https://github.com/rwrife/aios/issues/182#issuecomment-6015099142,
+  explicitly closed https://github.com/rwrife/aios/issues/182 as completed,
+  removed the assignment, and read back `state=CLOSED, assignees=[]`.
+- Merged this run: #181 and #183; no blocked PRs. Open PR queue was empty
+  after #181 and again after #183, before this final state-only PR.
+  Post-merge push Validate on main `d1fbaeb` also succeeded:
+  https://github.com/rwrife/aios/actions/runs/37455398037.
+- Final state sync is a separate docs-only PR; its own disposition and
+  exact-head CI are necessarily pending as-of this snapshot. No self-removal;
+  this every-6-hours executor remains active.
 
 ## 2026-10-05 20:31 UTC
 
