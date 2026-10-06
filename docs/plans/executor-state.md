@@ -38,8 +38,18 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   - Openbox configuration `distro/alpine/overlay/etc/xdg/openbox/rc.xml`
     parses valid XML.
   - Current-head Validate push run 37456646423 completed success on `3dcc5f2`.
-- Outcome: verification-only pass; PR queue and issue lane settled; no
-  self-removal (executor runs every 6 hours).
+- Verification setup: initial host suite failed (four imports) with
+  `ModuleNotFoundError: No module named 'cronsim'`; installed committed
+  hash-pinned requirements into an isolated system-site Python 3.13 venv,
+  then the canonical suite passed. No source repair was required.
+- Runner probe: `qemu-system-x86_64`, `Xvfb`, and `qmltestrunner` absent.
+  No ISO, Alpine VM, physical hardware, real-model or manual visual acceptance
+  was exercised. No new issue evidence/comments since the preceding pass;
+  screening carries forward the prior acceptance verdicts, not completion.
+- Outcome as-of snapshot: verification-only pass; no implementation PR or
+  claimed issue. This separate docs-only state PR has pending disposition/CI;
+  its URL is resolved by branch `docs/executor-state-20261006-1515`.
+  No self-removal (executor runs every 6 hours).
 
 ## 2026-10-06 10:08 UTC (entry snapshot; final PR disposition pending)
 
