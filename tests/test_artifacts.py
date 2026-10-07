@@ -35,6 +35,28 @@ class ArtifactTests(unittest.TestCase):
             artifacts.save(self.root, os.getuid(), 'escape/private.txt', 'replacement')
         self.assertEqual(outside.read_text(), 'outside workspace')
 
+    def test_csv_result_roundtrip_and_stale_save_is_rejected(self):
+        original = artifacts.save(self.root, os.getuid(), 'results.csv', 'item,count\nA,1\n')
+        self.assertEqual(artifacts.read(self.root, 'results.csv')['content'], 'item,count\nA,1\n')
+        latest = artifacts.save(self.root, os.getuid(), 'results.csv', 'item,count\nA,2\n',
+                                expected_sha256=original['sha256'])
+        with self.assertRaises(artifacts.ArtifactConflict):
+            artifacts.save(self.root, os.getuid(), 'results.csv', 'stale',
+                           expected_sha256=original['sha256'])
+        self.assertEqual(artifacts.read(self.root, 'results.csv')['sha256'], latest['sha256'])
+
+    def test_conflict_guard_rejects_missing_and_symlink_destinations(self):
+        with self.assertRaises(artifacts.ArtifactConflict):
+            artifacts.save(self.root, os.getuid(), 'missing.txt', 'data',
+                           expected_sha256='0' * 64)
+        outside = self.root / 'outside.txt'
+        outside.write_text('outside')
+        (self.root / 'artifacts' / 'link.txt').symlink_to(outside)
+        with self.assertRaises((artifacts.ArtifactConflict, PermissionError, OSError)):
+            artifacts.save(self.root, os.getuid(), 'link.txt', 'data',
+                           expected_sha256='0' * 64)
+        self.assertEqual(outside.read_text(), 'outside')
+
     def test_save_replaces_link_without_touching_target(self):
         outside = self.root / 'private.txt'
         outside.write_text('unchanged')
