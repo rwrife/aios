@@ -2,6 +2,48 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 16:00 UTC (implementation snapshot; final CI disposition pending)
+
+- Preflight: NFS repository share mounted; GraphQL repo view, REST repo read,
+  git remote read and temporary-ref create/delete succeeded. Identity `rwrife`.
+  Clean main synced to `65a3e1a`; PR queue empty at entry and before claim/push.
+  Merged PRs this run: none as of this snapshot. Blocked entry PRs: none.
+- Selected https://github.com/rwrife/aios/issues/165: exact app-name reuse is
+  missing in the existing cache search and is independently testable headlessly.
+  Reuse the current store rather than adding a second registry. Partial scope:
+  exact title matches outrank request and token matches; both count as exact.
+  Claimed with `--add-assignee @me`, readback `[rwrife]`, repeated before push.
+- New implementation PR: pending creation on
+  `feat/issue-165-name-search-20261007`, using `Progresses #165`.
+  No full-app, authenticated owner-cache, reboot, upgrade/rollback or migration
+  acceptance claimed. Duplicate exact names remain listed, with existing
+  runtime/recency/ID ordering; this does not auto-select an ambiguous app.
+- Verification: two new tests first failed, passed after implementation, and
+  failed again when exact-name matching was disabled; restored. Three new
+  regressions cover published reuse through a fresh store, duplicate names,
+  and name/request/token ranking. Canonical
+  `PATH=/tmp/aios-venv-162/bin:$PATH bash scripts/test.sh`: 1163 tests OK
+  (18 skipped), shell syntax and Openbox XML checks passed. Complete-diff
+  independent review and final post-state-edit suite required before push.
+  Initial standalone test invocation lacked `PYTHONPATH=apps`; corrected to
+  the repository harness. Existing pinned venv reused; no host install.
+- Skipped assigned elsewhere / locked, no churn: #71, #77, #79, #81, #84,
+  #97, #98, #100, #101, #160, #162, #163, #166, #167, #169.
+- Skipped physical hardware: #83, #85-#90 (live audio/wake evidence), #96
+  (Brio camera/cohort), #99/#102 (physical certification).
+- Skipped remaining interaction/integration gates: #70/#75 (already-landed
+  browser halves, real Alpine sandbox journey), #74 (native chrome visual
+  sign-off), #82 (choice UX already landed, real-model acceptance), #159
+  (native account activation and real Alpine two-user isolation), #161
+  (real-model onboarding), #164 (depends on managed #162 runtime), #168
+  (native service authorization), #170 (release journeys and rollback).
+  Software-only partial slices remain possible; no duplicate issues created.
+- QEMU, Xvfb and qmltestrunner absent. No ISO build, manual GUI, physical
+  hardware or real-model acceptance exercised. Claims released: none if PR
+  creation succeeds; assignment retained for partial work. No self-removal.
+  Other worktrees untouched. Final remote PR/issue state must be read back;
+  this entry is an as-of snapshot, not a future merge claim.
+
 ## 2026-10-07 11:31 UTC (final implementation disposition; docs sync snapshot)
 
 - https://github.com/rwrife/aios/pull/189 merged at 11:31:12 UTC, squash
