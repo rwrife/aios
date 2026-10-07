@@ -2,6 +2,60 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 05:18 UTC (as-of implementation PR snapshot)
+
+- Preflight: required NFS repository share mounted; GraphQL repo view, REST
+  repo read, git remote read and create/delete temporary-ref write probe passed.
+  Identity: `rwrife`; main clean at `96ff4da`. Entry PR queue empty, refreshed
+  before issue claim and before push. No auth fallback required.
+- Selected https://github.com/rwrife/aios/issues/166: implement the existing
+  artifact storage layer's missing CSV and stale-save conflict protection.
+  This pure-Python library slice is testable without hardware or interaction;
+  it advances reliable task output while native home/picker integration stays
+  explicitly incomplete. Claimed via `--add-assignee @me`; readback `[rwrife]`,
+  repeated before push with no other assignee. Assignment retained while PR
+  exists. Claims released: none.
+- New implementation PR: https://github.com/rwrife/aios/pull/187,
+  `Progresses #166` (no closing keywords). As-of this snapshot it is OPEN;
+  no PR merged this run yet. Final disposition requires readback after CI.
+- Code: bounded UTF-8 CSV artifacts; optional expected SHA-256 compare before
+  atomic save; directory flock serializes cooperating broker writers. Existing
+  unconditional calls remain unchanged; the guard is not yet wired into the
+  session/file UI. External editors do not participate in the advisory lock.
+- Verification: original two tests failed on missing CSV/guard; five targeted
+  tests passed, digest-check bypass canary failed as expected, restored.
+  Canonical `PATH=<isolated-venv>/bin:$PATH bash scripts/test.sh` passed
+  1150 tests (18 skipped). Two further tests cover two serialized writers
+  with exactly one winner and malformed digest rejection. Independent review
+  found two test-vacuity gaps: symlink check now uses the target's true digest,
+  and the writer test probes the real directory lock while hashing and orders
+  two writers. A lock-bypass canary failed as expected; restored. The final
+  canonical suite and complete-diff review are required before the next push.
+  Initial unconfigured host suite had four `cronsim` import errors; reused the
+  pinned isolated Python 3.13 verification venv rather than changing the host.
+- Original head `d14708c`: push Validate succeeded; pull_request Validate
+  run https://github.com/rwrife/aios/actions/runs/37575167419 first failed in
+  unrelated `test_response_and_request_boundary_frames_pass` with
+  `ConnectionRefusedError: [Errno 111] Connection refused` at
+  `tests/test_toolhost.py:707`. Same-SHA failed-job rerun succeeded; no source
+  repair or red merge. These runs do not cover subsequent test/state edits.
+- Skipped assigned/locked (no churn): #79, #81, #84, #97, #98, #100, #101,
+  #160, #163, #167, #169. Retained partial-slice self-assignments are locks too.
+- Skipped physical hardware: #83 and #85-#90 (audio stages depend on measured
+  microphone/speaker engines and #84); #96 (Brio capture and consented cohort);
+  #99/#102 (physical wireless/graphics/installation certification).
+- Other remaining gates screened: #82 has choice UX software already landed
+  (#118), real conversational acceptance remains; #159 needs native verified
+  user activation and Alpine isolation; #161 real-model onboarding; #162
+  managed multi-file Alpine runtime; #164 sandboxed real-model repair; #165
+  owner-private reboot/cache integration; #168 native credential connection;
+  #170 full release journeys. No parallel work created for these.
+- Not verified: ISO/Alpine VM, native selection/save UI, image/PDF creation or
+  preview, opaque owner-bound file handles, authenticated home/guest flow,
+  two-real-user isolation, real-model tasks or manual visual acceptance.
+  QEMU, Xvfb and qmltestrunner absent on this host. No ISO CI requested.
+- Self-removal: not configured. Other-agent worktrees left untouched.
+
 ## 2026-10-06 15:15 UTC (entry snapshot; finalized 15:31 UTC)
 
 - Preflight: NFS repo share mounted; `gh repo view rwrife/aios`, REST repo
