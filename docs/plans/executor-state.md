@@ -2,6 +2,27 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 06:02 UTC (finalized after implementation merge)
+
+- Final readback: https://github.com/rwrife/aios/pull/187 MERGED at
+  05:52:17 UTC, squash commit `51bf17e11f385386456e8b2f3d0e78915cb17eca`;
+  remote implementation branch absent. https://github.com/rwrife/aios/issues/166
+  remains OPEN with `[rwrife]` assignee, as required by `Progresses #166`.
+  No claim released because the PR exists and the issue is still in progress.
+- Exact-head `588c539` Validate push run 37578081510 and PR run 37578085554
+  both completed successfully before merge. Canonical final local suite on
+  changed head: 1152 tests OK (18 skipped); 7 targeted artifact tests OK.
+  Lock-bypass test canary failed, then original lock restored; review inspected
+  full three-file diff and reported PASS after two test-strengthening fixes.
+- Final remote PR queue: 0 open after merge re-query; open issues: 30.
+  No self-removal. Post-merge main aligns with origin/main at `51bf17e`;
+  implementation worktree removed; local implementation branch retained
+  because cron force-deletion approval was unavailable. Other-agent worktrees
+  were not touched.
+- This docs-only final-state sync PR is pending as of this snapshot. Its own
+  PR/checks/merge disposition must be read back separately; do not count its
+  entry queue snapshot as final queue state.
+
 ## 2026-10-07 05:18 UTC (as-of implementation PR snapshot)
 
 - Preflight: required NFS repository share mounted; GraphQL repo view, REST
