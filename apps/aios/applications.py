@@ -634,10 +634,11 @@ class ApplicationStore:
                         "keywords": [],
                         "updated_at": draft["created_at"],
                     }
-                exact = normalized.casefold() == entry["request"].casefold()
+                exact_name = normalized.casefold() == entry["title"].casefold()
+                exact = exact_name or normalized.casefold() == entry["request"].casefold()
                 overlap = len(query_tokens & _tokenize(entry["title"])) * 2
                 overlap += len(query_tokens & set(entry["keywords"]))
-                score = (10_000 if exact else 0) + overlap
+                score = (20_000 if exact_name else 10_000 if exact else 0) + overlap
                 if score <= 0:
                     continue
                 results.append({

@@ -423,6 +423,45 @@ class ApplicationStoreTests(unittest.TestCase):
         self.assertEqual(launched, [folder])
         self.assertEqual(publish_result["sha256"], _read_json(folder / "manifest.json")["sha256"])
 
+    def test_exact_published_name_reopens_after_new_chat_without_regeneration(self):
+        launched = []
+        store = self._store(launcher=lambda folder: launched.append(folder) or True)
+        named = store.create({"title": "Expense Tracker", "request": "Make a budget ledger"})
+        other = store.create({"title": "Tracker Guide", "request": "Make a tracker guide"})
+        for app in (named, other):
+            store.write({"id": app["id"], "html": "<!doctype html><title>App</title>"})
+            store.publish({"id": app["id"], "summary": "App", "keywords": ["tracker"]})
+        store.close()
+        reopened = self._store(launcher=lambda folder: launched.append(folder) or True)
+        matches = reopened.search({"query": "  EXPENSE TRACKER  "})
+        self.assertEqual(matches[0]["id"], named["id"])
+        self.assertTrue(matches[0]["exact"])
+        self.assertTrue(reopened.launch({"id": matches[0]["id"]})["launched"])
+        self.assertEqual(launched, [self.root / named["id"]])
+
+    def test_exact_name_outranks_exact_request_and_keyword_overlap(self):
+        store = self._store()
+        named = store.create({"title": "Notes", "request": "Make a plain editor"})
+        request_match = store.create({"title": "Notes Notes", "request": "Notes"})
+        overlap = store.create({"title": "Notes Guide", "request": "Make a guide"})
+        for app in (named, request_match, overlap):
+            store.write({"id": app["id"], "html": "<!doctype html><p>Notes</p>"})
+            store.publish({"id": app["id"], "summary": "Notes", "keywords": ["notes"]})
+        results = store.search({"query": "notes"})
+        self.assertEqual([item["id"] for item in results], [named["id"], request_match["id"], overlap["id"]])
+        self.assertEqual([item["exact"] for item in results], [True, True, False])
+
+    def test_duplicate_exact_names_are_ranked_deterministically(self):
+        store = self._store()
+        apps = [store.create({"title": "Notes", "request": f"Make notes {n}"}) for n in range(2)]
+        for app in apps:
+            store.write({"id": app["id"], "html": "<!doctype html><p>Notes</p>"})
+            store.publish({"id": app["id"], "summary": "Notes", "keywords": []})
+        results = store.search({"query": "notes"})
+        self.assertEqual({item["id"] for item in results}, {app["id"] for app in apps})
+        self.assertTrue(all(item["exact"] for item in results))
+        self.assertEqual([item["id"] for item in results], [item["id"] for item in store.search({"query": "notes"})])
+
     def test_exact_request_ranks_above_keyword_overlap(self):
         store = self._store()
         exact = store.create({"title": "Blue Sky", "request": "Make a blue sky gallery"})
