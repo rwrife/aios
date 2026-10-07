@@ -2,6 +2,47 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 10:18 UTC (as-of issue implementation snapshot)
+
+- Preflight: NFS `/home/rwrife/repos` mounted; `gh repo view`, REST repo
+  read and `git ls-remote --heads origin` passed. Stored gh OAuth identity
+  `rwrife`. Fresh main synced to `602bfd2`; clean on entry.
+- PR lane: https://github.com/rwrife/aios/pull/188 had two green Validate
+  runs (push and pull_request), CLEAN/MERGEABLE; squash-merged at 10:10:20 UTC
+  (`602bfd2ce9c0019ae5b79bdbef65d2114765d6cf`), remote head absent.
+  Re-queried open PRs after merge and before claim: zero. Blocked PRs: none.
+- Skipped assigned elsewhere / locked without issue churn: #79, #81, #84,
+  #97, #98, #100, #101, #160, #163, #166, #167 and #169.
+- Skipped hardware: #83, #85-#90 (audio/wake chain blocked by live capture);
+  #96 (Brio camera and consented cohort); #99 and #102 (physical device
+  certification). Skipped human/native acceptance: #82 (existing UX half;
+  real-agent selection remains); #159 (two real Linux users in Alpine VM),
+  #161 (real capable-model task run), #165 (installed VM reboot and two-user
+  reuse), #168 (native service authorization), #170 (release matrix). #164
+  depends on the as-yet incomplete #162 runtime; not claimed. These are not
+  completion claims; software-only partial slices are still possible later.
+- Selected https://github.com/rwrife/aios/issues/162 because its missing
+  structured multi-file manifest is a headless-testable prerequisite of the
+  bounded isolated app runtime. Claimed `--add-assignee @me`; readback
+  `[rwrife]`, no competing assignees. Partial-slice policy: only a data
+  validator/deterministic digest, not a build service or production runtime.
+- New PR: pending this snapshot; link intent `Progresses #162`. Remaining
+  #162 acceptance: pinned Node/frontend toolchain, safe dependency acquisition,
+  supervised isolated build/run and resource limits, model-driven Alpine
+  execution, output artifacts, cross-user isolation and cancellation.
+- Verification: eight bundle tests passed; collision-check disable canary
+  caused two expected failures, then restored. Canonical full suite ran 1160
+  tests (18 skipped), rc=0, including shell syntax and Openbox XML checks.
+  Codex inspected the earlier staged diff and found no actionable defects;
+  later implementation/test/state edits require fresh complete-diff review
+  and another final canonical run before push.
+  Pinned cronsim installation via pip was blocked by cron security scanner;
+  a SHA-256-verified wheel was unpacked in a temporary Python 3.13 venv with
+  system-site deps for local tests. No ISO/VM/physical/manual checks claimed.
+- Claims released: none (PR pending). Self-removal: not configured. Other
+  agents' worktrees left untouched. Final remote PR and issue disposition
+  must be read back after CI/merge before reporting; this entry is as-of.
+
 ## 2026-10-07 06:02 UTC (finalized after implementation merge)
 
 - Final readback: https://github.com/rwrife/aios/pull/187 MERGED at
