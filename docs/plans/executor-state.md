@@ -2,6 +2,43 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 16:40 UTC (final implementation disposition; docs sync snapshot)
+
+- https://github.com/rwrife/aios/pull/191 merged at 16:37:19 UTC, squash
+  commit `2afe0d4912fb3da08e43eca03ed36c55e87d2f60`; remote branch
+  `feat/issue-165-name-search-20261007` deleted. Both exact-head
+  `459601eab2c2f1d9fad9ee0e48713f9ee2d76a0e` Validate runs completed success
+  before merge: push https://github.com/rwrife/aios/actions/runs/37651439065 and
+  pull_request https://github.com/rwrife/aios/actions/runs/37651463507.
+  Post-merge `main` push run
+  https://github.com/rwrife/aios/actions/runs/37653489752 completed success.
+- https://github.com/rwrife/aios/issues/165 remains OPEN with assignee `[rwrife]`
+  as required by `Progresses #165`; no claim released. Re-queried open PR list:
+  zero open PRs at merge completion; no blocked PRs.
+- Implementation scope landed: published applications discoverable by exact title
+  with precedence over exact request and token-overlap matches; duplicate exact
+  titles remain deterministically ordered by runtime, recency and ID. Reused
+  existing ApplicationStore; no new registry, schema or filesystem write path.
+- Verification: 3 regression tests added. Two failed before implementation,
+  passed afterward, and failed with exact-name matching disabled; restored.
+  Canonical `PATH=/tmp/aios-venv-162/bin:$PATH bash scripts/test.sh`: 1163 OK
+  (18 skipped). Independent Codex review inspected the complete staged diff and
+  returned PASS (`459601eab2c2f1d9fad9ee0e48713f9ee2d76a0e`).
+- Remaining #165 gaps: full multi-file runtime caching, authenticated owner
+  scopes via identity broker, rename/update/delete management, app-data
+  continuity across versions, legacy migration, installed-Alpine reboot and
+  two-user isolation journeys.
+- Skipped assigned elsewhere / locked: #71, #77, #79, #81, #84, #97, #98, #100,
+  #101, #160, #162, #163, #166, #167, #169.
+- Skipped physical hardware: #83, #85-#90 (audio/wake capture), #96 (Brio/cohort),
+  #99/#102 (hardware certification).
+- Skipped interaction/integration gates: #70/#75, #74, #82, #159, #161, #164,
+  #168, #170.
+- Final state sync uses `docs/executor-final-165-20261007`, a docs-only PR
+  with no issue-closing keyword. Its own PR number and CI are pending at this
+  snapshot; the zero-PR count above is historical, not a final queue claim.
+- No self-removal (job runs indefinitely). Issue worktree removed cleanly.
+
 ## 2026-10-07 16:00 UTC (implementation snapshot; final CI disposition pending)
 
 - Preflight: NFS repository share mounted; GraphQL repo view, REST repo read,
