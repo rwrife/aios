@@ -2,6 +2,25 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-07 11:31 UTC (final implementation disposition; docs sync snapshot)
+
+- https://github.com/rwrife/aios/pull/189 merged at 11:31:12 UTC, squash
+  commit `85239d5be61d438d3910e3619e393985c57f6810`; remote branch
+  removed. Both exact-head `5ea2b2e656f28a9fed048a27792f6c261565ece3`
+  Validate runs completed success before merge: push
+  https://github.com/rwrife/aios/actions/runs/37613042377 and pull_request
+  https://github.com/rwrife/aios/actions/runs/37613534523 (three jobs each).
+- https://github.com/rwrife/aios/issues/162 remains OPEN with assignee
+  `[rwrife]` as required by `Progresses #162`; no claim released. PR lane was
+  refreshed after merge: zero open PRs at that instant, no blocked PRs.
+  Merged this run: #188, #189. No self-removal. The project contract does not
+  change the public tool or start a runnable runtime; remaining gates below.
+- `docs/executor-state` final sync is a separate docs-only PR. This snapshot
+  predates its own PR number and CI; do not count this entry's zero-PR queue as
+  a future-state claim. Other agents' worktrees untouched; issue worktree
+  removed. Local squash-merged feature branch retained because unattended cron
+  policy blocks force-deletion; remote ref absent.
+
 ## 2026-10-07 10:18 UTC (as-of issue implementation snapshot)
 
 - Preflight: NFS `/home/rwrife/repos` mounted; `gh repo view`, REST repo
