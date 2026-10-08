@@ -2,6 +2,45 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-08 05:00 UTC (final implementation disposition; docs sync snapshot)
+
+- https://github.com/rwrife/aios/pull/193 merged at 04:55:30 UTC, squash
+  commit `df4e2df5b68e51d62910578df4edf780be9a8f8e`; remote branch
+  `feat/issue-164-functional-evidence-20261008` deleted. Both exact-head
+  `bffe38471ed4b8267bcbfbee181f4c4364446711` Validate runs completed success
+  before merge: push https://github.com/rwrife/aios/actions/runs/37729472874
+  and pull_request https://github.com/rwrife/aios/actions/runs/37729477645.
+  Post-merge `main` push run
+  https://github.com/rwrife/aios/actions/runs/37729820212 completed success.
+- https://github.com/rwrife/aios/issues/164 remains OPEN with assignee `[rwrife]`
+  as required by `Progresses #164`; no claim released. Re-queried open PR list:
+  zero open PRs at merge completion; no blocked PRs.
+- Implementation scope landed: `apps/aios/project_verification.py` decides
+  whether observed functional test results actually prove that this source
+  revision satisfies separately declared acceptance examples. Readiness,
+  blank windows, or missing results never yield `tested`. Output reports
+  echo neither inputs, observations, nor untrusted status strings.
+  Repair loop and execution adapters deliberately NOT stubbed; wait for
+  #162 managed runtime.
+- Verification: 9/9 unit tests pass; canonical `scripts/test.sh` 1172 OK
+  (18 skipped). Two mutation canaries forced FAILED and restored.
+  Initial independent review passed; final re-review confirmed source grading
+  and status-redaction checks (17 targeted tests), but returned FAIL because
+  its read-only sandbox prevented full-suite temporary-file creation. The
+  executor's writable canonical suite and exact-head CI passed separately;
+  that final reviewer verdict is not recorded as approval.
+- Remaining #164 gaps: execution in sandbox, screenshot harness, theme/palette
+  checks, real-model Alpine repair journey, multi-step retry budget without
+  duplicate side effects.
+- Skipped assigned elsewhere / locked: #169, #167, #166, #165, #163, #162,
+  #160, #101, #100, #98, #97, #84, #81, #79, #77.
+- Skipped physical hardware: #102, #99, #96, #83, #85-#90.
+- Skipped interaction/integration gates: #170, #168, #161, #159, #82, #75, #74, #70.
+- Final state sync uses `docs/executor-final-164-20261008`, a docs-only PR
+  with no issue-closing keyword. Its own PR number and CI are pending at this
+  snapshot; the zero-PR count above is historical, not a final queue claim.
+- No self-removal (job runs indefinitely). Issue worktree removed cleanly.
+
 ## 2026-10-08 04:50 UTC (implementation snapshot; final CI disposition pending)
 
 - Preflight: NFS share mounted; GraphQL/REST repo reads and ref write probe
