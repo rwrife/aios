@@ -28,10 +28,19 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   scripts/test.sh` exited 0, 1172 tests in 70.560s, OK (18 skipped);
   shell syntax and Openbox XML checks succeeded. Exact-head main CI push
   https://github.com/rwrife/aios/actions/runs/37764085908 completed success.
-- New docs-only state PR: pending creation on
-  `docs/executor-verify-20261008-1600`; no issue linkage intended. Its final
-  CI/merge disposition requires a later readback, not a claim at this snapshot.
-- No self-removal; other agents' worktrees remain untouched.
+- New docs-only state PR: https://github.com/rwrife/aios/pull/197, OPEN on
+  `docs/executor-verify-20261008-1600`; no issue linkage intended. Initial-head
+  Validate runs were in progress at readback: push
+  https://github.com/rwrife/aios/actions/runs/37801022128 and pull_request
+  https://github.com/rwrife/aios/actions/runs/37801033250. This final snapshot
+  changes the head; refreshed exact-head runs must pass before merging.
+  Current disposition: CI pending, not merged. One open PR, 35 open issues.
+- Post-edit canonical suite on the state tree also passed: 1172 tests in
+  70.128s, OK (18 skipped), exit 0; whitespace check passed. This snapshot
+  receives another canonical run before push. No QEMU, Xvfb or qmltestrunner
+  is installed on the host; no native/VM acceptance claimed.
+- No self-removal; other agents' worktrees remain untouched. Only this
+  run-created worktree will be removed after push; the open PR branch remains.
 
 ## 2026-10-08 10:15 UTC (verification-only pass; state PR pending snapshot)
 
