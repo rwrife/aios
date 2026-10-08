@@ -28,19 +28,22 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   scripts/test.sh` exited 0, 1172 tests in 70.560s, OK (18 skipped);
   shell syntax and Openbox XML checks succeeded. Exact-head main CI push
   https://github.com/rwrife/aios/actions/runs/37764085908 completed success.
-- New docs-only state PR: https://github.com/rwrife/aios/pull/197, OPEN on
-  `docs/executor-verify-20261008-1600`; no issue linkage intended. Initial-head
-  Validate runs were in progress at readback: push
-  https://github.com/rwrife/aios/actions/runs/37801022128 and pull_request
-  https://github.com/rwrife/aios/actions/runs/37801033250. This final snapshot
-  changes the head; refreshed exact-head runs must pass before merging.
-  Current disposition: CI pending, not merged. One open PR, 35 open issues.
-- Post-edit canonical suite on the state tree also passed: 1172 tests in
-  70.128s, OK (18 skipped), exit 0; whitespace check passed. This snapshot
-  receives another canonical run before push. No QEMU, Xvfb or qmltestrunner
-  is installed on the host; no native/VM acceptance claimed.
-- No self-removal; other agents' worktrees remain untouched. Only this
-  run-created worktree will be removed after push; the open PR branch remains.
+- New docs-only state PR https://github.com/rwrife/aios/pull/197 MERGED
+  at 2026-10-08T15:35:54Z as `810921d88a5b19012b25065c77ed91f46bedac39`.
+  Exact head `084dcde7e829051fa7ce624fa1a31d4b5f752c3c` passed both events:
+  push https://github.com/rwrife/aios/actions/runs/37801356055 and pull_request
+  https://github.com/rwrife/aios/actions/runs/37801378360. Remote branch
+  deletion and run-created worktree removal verified. Refreshed queue was
+  empty immediately after this merge; 35 open issues remain.
+- Final post-edit canonical suite: 1172 tests in 68.481s, OK (18 skipped),
+  exit 0; whitespace check passed. No QEMU, Xvfb or qmltestrunner installed;
+  no native/VM acceptance claimed.
+- This final-state sync is a separate docs-only PR on
+  `docs/executor-final-20261008-1530`. Its own disposition is pending as of
+  writing and excluded from the historical zero-PR snapshot above; no issue
+  linkage intended. Final remote readback is reported separately rather than
+  asserted as an unverified future merge.
+- No self-removal; other agents' worktrees remain untouched.
 
 ## 2026-10-08 10:15 UTC (verification-only pass; state PR pending snapshot)
 
