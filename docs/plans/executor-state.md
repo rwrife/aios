@@ -2,6 +2,50 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-08 04:50 UTC (implementation snapshot; final CI disposition pending)
+
+- Preflight: NFS share mounted; GraphQL/REST repo reads and ref write probe
+  (create+delete `hermes-write-probe-164-20261008`) succeeded under stored gh
+  OAuth (`rwrife`). `git ls-remote origin` matches `origin/main`.
+- PR lane: opened with one PR, https://github.com/rwrife/aios/pull/192
+  (docs-only, green exact-head push+pull_request runs, CLEAN/MERGEABLE, not a
+  draft). Squash-merged at 04:08:22 UTC as `bb75cc6cf356175032c13f48870881d5d9299cfa`;
+  remote branch deleted and verified absent. Post-merge `main` push run
+  https://github.com/rwrife/aios/actions/runs/37726037940 completed success.
+  Freshness re-query after merge: zero open PRs before issue selection.
+- Issue lane: 16 issues assigned elsewhere skipped (#169/#167/#166/#165/#163/
+  #162/#160/#101/#100/#98/#97/#96/#84/#81/#79/#77). Hardware-skipped: #102,
+  #99, #83, #85-#90 (physical x86_64/webcam/mic/speaker acceptance).
+  Interaction/integration-gated: #170, #168, #161, #159, #82, #75, #74, #70
+  (last four have merged code halves #118/#116/#114 with only in-VM/human QA
+  remaining). Selected #164: unwritten evidence-grading core beneath its
+  VM-gated acceptance, headless unit-verifiable; claimed via assignment with
+  readback `[rwrife]` before any branch.
+- https://github.com/rwrife/aios/pull/193 adds `apps/aios/project_verification.py`
+  (`Progresses #164`, no closing keyword; scrubbed): grades observed functional
+  results against the current bundle digest and separately declared examples;
+  blank/`ready`/missing observations can never yield `tested`; reports echo no
+  inputs, observations or untrusted status text. Repair loop and sandbox
+  execution deliberately NOT stubbed (no #162 executor exists yet).
+- Verification: RED (ImportError) then 9/9 targeted tests GREEN; canonical
+  `PATH=/tmp/aios-venv-162/bin:$PATH bash scripts/test.sh` 1172 OK (18
+  skipped) on the final head; two mutation canaries (equality check, digest
+  binding) each forced FAILED then byte-identical restore (`cmp` clean).
+  Independent Codex review of the complete diff: PASS with one hygiene
+  finding (unbounded status echo) fixed in `9fd1fb2` with a regression test;
+  re-review confirmed the fix but could not run the full suite in its
+  read-only sandbox — full-suite truth here is the local 1172-OK run above;
+  CI on the final head remains a separate gate.
+- As-of snapshot: PR #193 OPEN. Validate runs for implementation commit
+  `9fd1fb2` (push https://github.com/rwrife/aios/actions/runs/37729116825,
+  pull_request https://github.com/rwrife/aios/actions/runs/37729118914) were
+  in progress at write time; this entry adds a docs commit, so the final
+  head's run-level result and PR disposition are recorded by the next run,
+  not claimed here. #164 remains OPEN with retained self-assignment
+  (Progresses linkage; the retained claim blocks other lanes until the
+  remaining #162-gated slices land).
+- No self-removal (job runs indefinitely).
+
 ## 2026-10-07 16:40 UTC (final implementation disposition; docs sync snapshot)
 
 - https://github.com/rwrife/aios/pull/191 merged at 16:37:19 UTC, squash
