@@ -82,6 +82,15 @@ class ProjectVerificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify({**self.evidence, 'built': True})
 
+    def test_invalid_status_does_not_echo_unbounded_caller_text(self):
+        invalid = 'secret=' + 'x' * 5000
+        evidence = {**self.evidence, 'results': [
+            {**self.evidence['results'][0], 'status': invalid}]}
+        with self.assertRaises(ValueError) as caught:
+            self.verify(evidence)
+        self.assertNotIn('secret=', str(caught.exception))
+        self.assertLess(len(str(caught.exception)), 200)
+
     def test_report_does_not_echo_input_or_diagnostics(self):
         evidence = copy.deepcopy(self.evidence)
         evidence['results'][0].update(status='failed', observed='secret=do-not-log')

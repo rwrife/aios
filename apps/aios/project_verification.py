@@ -96,7 +96,8 @@ def _canonical_results(results: Any, expected_names: set[str]) -> dict[str, dict
             raise ValueError(f'Duplicate observations for acceptance example {name!r}')
         status = result['status']
         if not isinstance(status, str) or status not in _RESULT_STATUSES:
-            raise ValueError(f'Invalid observation status: {status!r}')
+            # Never echo the caller-supplied value: it is untrusted and unbounded here.
+            raise ValueError('Invalid observation status for a bounded acceptance example')
         observed = result['observed']
         _encode(observed, f'observed output for {name!r}')
         by_name[name] = {'name': name, 'status': status, 'observed': observed}
