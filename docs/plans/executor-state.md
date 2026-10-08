@@ -35,10 +35,21 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   syntax and Openbox XML checks passed. Main exact-head Validate push run
   https://github.com/rwrife/aios/actions/runs/37731040681 completed success.
   No ISO built or GitHub ISO workflow dispatched.
-- New PR: docs-only state sync on `docs/executor-verify-20261008-1000`;
-  URL/disposition and its own exact-head CI are pending at write time.
-  The zero-PR count above is an entry snapshot, not a final queue prediction.
-  This PR has intentionally no issue linkage or closing keyword.
+- New state PR https://github.com/rwrife/aios/pull/195 MERGED at
+  2026-10-08T10:22:39Z as `caf5638af07fdeca987f5ec52f1206a4af011da8`.
+  Exact head `17d3856e895de30d100e1f0d6c6b68a238c81c56` passed both
+  Validate events: push https://github.com/rwrife/aios/actions/runs/37762602421
+  and pull_request https://github.com/rwrife/aios/actions/runs/37762833243.
+  Post-merge push https://github.com/rwrife/aios/actions/runs/37763064063
+  also succeeded. Remote branch deletion verified; run-created worktree removed.
+  Canonical suite also passed on the state PR tree: 1172 tests in 78.796s,
+  OK (18 skipped). Local force-delete branch cleanup was approval-blocked;
+  dormant local branch retained, no bypass attempted.
+- Final disposition snapshot: zero open PRs and 35 open issues after #195
+  merge; no claimed issue, no released claim, no blocked implementation PR.
+  This final-state sync is a separate docs-only PR on
+  `docs/executor-final-20261008`; its own disposition is pending as of writing,
+  not included in the historical zero-PR count. No issue linkage intended.
 - No self-removal: this job runs indefinitely. Existing unrelated worktrees
   left untouched; only this run-created worktree is eligible for cleanup.
 
