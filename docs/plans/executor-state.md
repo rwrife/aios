@@ -2,6 +2,37 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-08 15:21 UTC (verification-only; state PR pending snapshot)
+
+- Preflight: Halo NFS repository share mounted; stored gh OAuth `rwrife` resolved
+  GraphQL/REST repo and git refs; temporary ref create/delete succeeded. Clean
+  `main` synced to `6cb57e713a5b996902e480eb7029e238ec5a1f80`.
+- Entry PR queue and pre-selection freshness check: empty. Merged PRs this
+  run: none at this snapshot. Blocked PRs: none. Since the preceding pass,
+  only state PR #196 was merged; no new issue comments or issue events.
+- Re-read unassigned issue acceptance against the prior screening and current
+  repo/CI: #70/#75 browser lifecycle, #74 native chrome, #82 model-driven
+  choice still need real Alpine/visual/interactive acceptance. #159 needs
+  real two-user login, reboot and VM isolation; #161 needs real-model fresh
+  install results; #168 depends on #159/#160/#162 and native connection;
+  #170 depends on the unfinished account/runtime/release journeys.
+  None has a distinct unwritten, independently testable core established by
+  this pass. No duplicate issue created.
+- Assigned/locked issues skipped without churn: #71, #77, #79, #81, #84,
+  #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169.
+  Hardware-skipped: #83, #85-#90 (physical mic/speaker and wake metrics),
+  #96 (Brio/cohort), #99/#102 (physical x86_64 certification).
+- Claimed issue: none; assignment readback not applicable. Claims released:
+  none. No implementation PR. No ISO or VM/physical acceptance asserted.
+- Verification on synced `main`: `PATH=/tmp/aios-venv-162/bin:$PATH bash
+  scripts/test.sh` exited 0, 1172 tests in 70.560s, OK (18 skipped);
+  shell syntax and Openbox XML checks succeeded. Exact-head main CI push
+  https://github.com/rwrife/aios/actions/runs/37764085908 completed success.
+- New docs-only state PR: pending creation on
+  `docs/executor-verify-20261008-1600`; no issue linkage intended. Its final
+  CI/merge disposition requires a later readback, not a claim at this snapshot.
+- No self-removal; other agents' worktrees remain untouched.
+
 ## 2026-10-08 10:15 UTC (verification-only pass; state PR pending snapshot)
 
 - Preflight: Halo `amd-halo`; NFS repository share mounted. Stored gh OAuth
