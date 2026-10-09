@@ -34,10 +34,17 @@ Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
   Exact-head main push run
   https://github.com/rwrife/aios/actions/runs/37803654320 completed success.
   Host lacks qemu, Xvfb and qmltestrunner; no native/VM acceptance claimed.
-- New docs-only state PR on `docs/executor-state-20261009` with no
-  issue-closing keyword. Its own number, head SHA, CI runs and disposition
-  are recorded by this entry's final sync below rather than asserted as an
-  unverified future merge.
+- New state PR https://github.com/rwrife/aios/pull/199 MERGED at
+  2026-10-09T04:19:39Z as `bf05c224116c7c1a9b24cd69d3d0be04085e1cda`.
+  Exact head `14c560906803ca6dfdf533e121de9a1a3dd9f048` passed both events:
+  push https://github.com/rwrife/aios/actions/runs/37883142982 and pull_request
+  https://github.com/rwrife/aios/actions/runs/37883153792. Post-merge main
+  push https://github.com/rwrife/aios/actions/runs/37883349154 succeeded.
+  Remote branch deletion verified; queue refreshed: zero open PRs, 35 issues.
+- This final-state sync uses `docs/executor-final-20261009`, a separate
+  docs-only PR without issue linkage. Its own disposition is pending as of
+  writing; the zero-PR count above is a post-#199 historical snapshot, not
+  a claim about this follow-up PR. Final readback is reported separately.
 - No self-removal (job runs indefinitely). Orphan worktrees from prior runs
   left untouched; only this run-created worktree is eligible for cleanup.
 
