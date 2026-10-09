@@ -2,6 +2,41 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-09 15:40 UTC (verification-only; state PR pending snapshot)
+
+- Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`) mounted.
+  Stored gh OAuth identity `rwrife` validated: GraphQL `gh repo view`, REST
+  `gh api repos/rwrife/aios` (`permissions.push=true`) and `git ls-remote --heads origin main`
+  resolved. Temporary ref write probe `hermes-write-probe-20261009153332` created and
+  cleaned; 0 refs remaining. Clean `main` synced to `7482d443841517ae781ae897c42d471a3b263680`.
+- Entry PR queue and pre-selection freshness check: zero open PRs. No merges
+  occurred since the preceding pass other than state PR #202 merge/close/branch-delete
+  events. Queue remained clear. Blocked PRs: none. Issue count (`--limit 100`): 35 open.
+- Issue backlog screening against headless-only policy:
+  - Assigned elsewhere/work-locked: 17 issues (#71, #77, #79, #81, #84, #97, #98, #100,
+    #101, #160, #162, #163, #164, #165, #166, #167, #169). All pre-existing assignments
+    remain active mutual-exclusion locks, including same-account assignments; zero churn.
+  - Skipped hardware (10 issues): #83, #85-#90 (physical microphone/speaker audio journeys,
+    wake-word, VAD benchmarks and speech hardware), #96 (Brio webcam occasional recognition),
+    #99 and #102 (physical x86_64 PC hardware certification and compatibility matrix).
+  - Skipped user interaction/integration gates (8 issues):
+    - #70 and #75: browser process lifecycle software halves landed in #114 and #116; remaining
+      acceptance requires running Alpine Chromium sandbox GUI journeys.
+    - #74: native app title bar consistency requires manual visual sign-off across surfaces.
+    - #82: multi-choice prompt UX landed in #118; remaining acceptance requires in-guest GUI validation.
+    - #159: account binding requires native PIN/broker authentication and real two-user Linux VM reboot evidence.
+    - #161: first-run model setup requires real capable model execution on fresh installation.
+    - #168: external service connection depends on unfinished #159, #160, and #162 plus native credentials.
+    - #170: release gating depends on unfinished runtime/account/recovery journeys and multi-journey release matrix.
+- No issue claimed; claim readback not applicable; no claims released; no implementation PR or duplicate issue.
+- Verification on synced `main`: canonical `PATH=/tmp/aios-venv-162/bin:$PATH bash scripts/test.sh`
+  exited 0 with 1172 tests passed in 65.947s (18 skipped); shell syntax and Openbox XML checks passed.
+  Preceding main push CI https://github.com/rwrife/aios/actions/runs/37917880455 completed success.
+  Host lacks QEMU, Xvfb, and qmltestrunner; no native/VM/ISO acceptance asserted.
+- State PR: opened on `docs/executor-state-20261009-1535` without issue linkage; final disposition
+  tracked separately.
+- Retention: job runs indefinitely every 6 hours; no self-delete. Unrelated worktrees left untouched.
+
 ## 2026-10-09 10:20 UTC (final-state sync; PR #201 merged)
 
 - State PR https://github.com/rwrife/aios/pull/201 MERGED at
