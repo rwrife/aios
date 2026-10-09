@@ -2,6 +2,45 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-09 04:15 UTC (verification-only pass; state PR pending snapshot)
+
+- Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`)
+  mounted. Stored gh OAuth identity `rwrife` resolved GraphQL repo view, REST
+  repo read (`permissions.push=true`) and `git ls-remote --heads origin`.
+  Temporary ref create/delete probe `hermes-write-probe-20261009040818`
+  succeeded; no credential blocker. Clean `main` synced to
+  `e8ade7b8aeca8ea1816a0f500722df6e9be808b4`.
+- Entry PR queue: zero open PRs. No merges occurred since the preceding pass
+  other than the two prior state PRs #197/#198. Pre-selection freshness
+  re-query (issues `since=2026-10-08T15:00:00Z`): only PR #197/#198 events;
+  no new issue comments, no new PRs. Queue remained empty.
+- Delta screen of unassigned issues against the prior screening: #70/#75
+  browser lifecycle retain merged code halves (#114/#116) with real-Alpine
+  release QA remaining; #74 native chrome still needs visual sign-off;
+  #82 choice-prompt UX landed in #118 with in-guest QA remaining;
+  #159 needs two real Linux users, reboot and VM isolation evidence; #161
+  needs real-model fresh-install results; #168 depends on #159/#160/#162 and
+  a native credential connection; #170 depends on the unfinished
+  account/runtime/release journeys. No issue presents a distinct unwritten,
+  independently testable software core this pass. No duplicate issue created.
+- Assigned/locked issues skipped without churn: #71, #77, #79, #81, #84,
+  #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169.
+  Hardware-skipped: #83, #85-#90 (physical mic/speaker and wake metrics),
+  #96 (Brio/cohort evidence), #99/#102 (physical x86_64 certification).
+- Claimed issue: none; assignment readback not applicable. Claims released:
+  none. No implementation PR. No ISO, VM, or physical acceptance asserted.
+- Verification on synced `main` `e8ade7b`: `PATH=/tmp/aios-venv-162/bin:$PATH
+  bash scripts/test.sh` exited 0, 1172 tests in 67.701s, OK (18 skipped).
+  Exact-head main push run
+  https://github.com/rwrife/aios/actions/runs/37803654320 completed success.
+  Host lacks qemu, Xvfb and qmltestrunner; no native/VM acceptance claimed.
+- New docs-only state PR on `docs/executor-state-20261009` with no
+  issue-closing keyword. Its own number, head SHA, CI runs and disposition
+  are recorded by this entry's final sync below rather than asserted as an
+  unverified future merge.
+- No self-removal (job runs indefinitely). Orphan worktrees from prior runs
+  left untouched; only this run-created worktree is eligible for cleanup.
+
 ## 2026-10-08 15:21 UTC (verification-only; state PR pending snapshot)
 
 - Preflight: Halo NFS repository share mounted; stored gh OAuth `rwrife` resolved
