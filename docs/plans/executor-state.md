@@ -2,7 +2,22 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
-## 2026-10-09 15:40 UTC (verification-only; state PR pending snapshot)
+## 2026-10-09 15:55 UTC (final-state sync; PR #203 merged)
+
+- State PR https://github.com/rwrife/aios/pull/203 MERGED at
+  2026-10-09T15:52:33Z as `0c46acd53fe836efe020b4f017f60c77b171bbaf`.
+  Exact head `e5e68f7a53b2be76c0d6a35928ab43b5b8cc9be8` passed both events:
+  push https://github.com/rwrife/aios/actions/runs/37954190981 and
+  pull_request https://github.com/rwrife/aios/actions/runs/37954240321.
+  Remote branch deletion verified. Post-merge queue was empty; 35 issues
+  remain open. No implementation PR, issue claim or claim release.
+- Post-edit canonical suite on the state PR tree: 1172 tests run in
+  70.356s, OK (18 skipped), exit 0; whitespace check passed.
+- This separate docs-only final sync uses `docs/executor-final-20261009-1555`.
+  Its own disposition is excluded from the historical post-#203 queue snapshot;
+  final readback is reported separately. No issue linkage or self-removal.
+
+## 2026-10-09 15:40 UTC (verification-only; entry snapshot)
 
 - Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`) mounted.
   Stored gh OAuth identity `rwrife` validated: GraphQL `gh repo view`, REST
