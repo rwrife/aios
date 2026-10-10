@@ -2,6 +2,40 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-10 10:38 UTC (software issue selected after CI race evidence)
+
+- Primary state PR https://github.com/rwrife/aios/pull/207 MERGED at
+  2026-10-10T10:21:29Z as `e72eb6893cbb6910a289a17fa909c30c68a0b52c`.
+  Exact head `d19ca778933a232e28091760896cae36cb407b58` passed push
+  https://github.com/rwrife/aios/actions/runs/38044057608 and pull_request
+  https://github.com/rwrife/aios/actions/runs/38044165472 (attempt 2).
+  Attempt 1 failed at `tests/test_toolhost.py:638` with
+  `ConnectionRefusedError: [Errno 111] Connection refused`. This new
+  evidence supersedes the entry verdict of no actionable software issue.
+  Remote branch deletion and run-created worktree removal verified.
+- PR lane refreshed after merge: zero open PRs; 35 prior issues unchanged.
+  Deduplication searches across open and closed issues for `socket readiness`
+  and `drip` returned empty. Filed and claimed software-only issue
+  https://github.com/rwrife/aios/issues/208; assignment readback `["rwrife"]`.
+  Selection rationale: deterministic tool-host test readiness protects the
+  AI chat tool protocol and its release checks without hardware or interaction.
+- Root cause: raw-client tests treated Unix socket path existence after
+  `bind()` as readiness before `listen()`. Production clients already retry
+  this window. Reused the existing bounded protocol readiness helper in the
+  two affected tests; production behavior and measured deadlines unchanged.
+- Verification: race canary delayed the post-bind/pre-listen identity check
+  by 0.3s. Both old journeys reproduced `ConnectionRefusedError`; both fixed
+  journeys passed. Committed regression invokes both real socket journeys
+  under the same delay (1 test, 2 subtests, OK); two normal journeys also OK.
+  Canonical post-edit suite and exact-head CI are recorded in the PR/report.
+- Implementation PR on `fix/issue-208-socket-ready` is pending creation as of
+  this snapshot and uses completion linkage for #208. No claims released;
+  assignment retained until closure. No outstanding blocked PR at this
+  snapshot. Skipped prior issues unchanged from the entry list below.
+- No VM/ISO/physical/human acceptance asserted. No self-removal. This entry
+  records #207's settled outcome and the issue-selection snapshot, not an
+  unverified claim about its own PR's future merge.
+
 ## 2026-10-10 10:11 UTC (verification-only; entry snapshot)
 
 - Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`)
