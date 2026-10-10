@@ -2,6 +2,27 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-10 04:20 UTC (final-state sync; PR #205 merged)
+
+- New state PR https://github.com/rwrife/aios/pull/205 MERGED at
+  2026-10-10T04:18:29Z as `fb9faf2d9dc358575a5ad0b8da50fc5765934506`.
+  Exact head `52cbe9caa05ebeeaa48eab198e70ae78d51e9cab` passed both events:
+  push https://github.com/rwrife/aios/actions/runs/38023386063 and
+  pull_request https://github.com/rwrife/aios/actions/runs/38023408138.
+  Remote branch deletion verified; run-created worktree removed.
+- Final PR #205 branch verification: canonical `PATH=/tmp/aios-venv-162/bin:$PATH
+  bash scripts/test.sh`, 1172 tests in 70.053s, OK (18 skipped), exit 0;
+  whitespace check passed. No tracked changes after verification.
+- Post-#205 snapshot: zero open PRs, 35 open issues. Blocked PRs: none.
+  No issue claim/readback or released claim; no implementation PR. No
+  self-removal. Assigned/hardware/interaction skipped issues unchanged from
+  the entry snapshot below. Unrelated worktrees left untouched.
+- This separate docs-only final sync is on `docs/executor-final-20261010-0420`
+  without issue linkage. Its own PR/checks/disposition are pending as of
+  writing and excluded from the historical post-#205 queue count above;
+  final remote readback is reported separately. This avoids an unverified
+  future merge claim and does not recursively open another sync PR.
+
 ## 2026-10-10 04:15 UTC (verification-only; entry snapshot)
 
 - Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`)
