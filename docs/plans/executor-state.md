@@ -2,6 +2,56 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-10 04:15 UTC (verification-only; entry snapshot)
+
+- Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`)
+  mounted on `amd-halo`. Stored gh OAuth identity `rwrife` validated via
+  GraphQL `gh repo view`, REST `gh api repos/rwrife/aios`
+  (`permissions.push=true`) and `git ls-remote --heads origin`. Temporary
+  ref write probe `hermes-write-probe-202610100410` created and deleted;
+  post-delete `git ls-remote` empty. Clean `main` synced to
+  `3474194a91ecca2797bf9886dc94aaf5a1efd386`.
+- Entry PR queue and pre-selection freshness re-query: zero open PRs.
+  Delta scan since the 2026-10-09 15:55 UTC pass: issue comments API
+  (`since=2026-10-09T15:00:00Z`) empty; issue events show only state PRs
+  #203/#204 merged/closed/head_ref_deleted. No new PRs, no new issue
+  evidence. Merged PRs this run: none. Blocked PRs: none.
+- Issue lane: 35 open issues (`--limit 200` full query), list identical to
+  the prior screening. Carry-forward verdicts (no acceptance change since
+  the delta scan is empty):
+  - Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98,
+    #100, #101, #160, #162, #163, #164, #165, #166, #167, #169. Assignments
+    are mutual-exclusion locks, including same-account retained
+    `Progresses` claims; zero churn.
+  - Skipped hardware (10): #83, #85-#90 (physical microphone/speaker audio,
+    wake-word/VAD benchmarks), #96 (Brio webcam recognition cohort), #99
+    and #102 (physical x86_64 certification).
+  - Skipped user interaction/integration gates (8): #70/#75 (code halves
+    #114/#116 landed; remaining acceptance is in-guest Alpine Chromium
+    sandbox journeys), #74 (visual sign-off), #82 (choice UX landed in
+    #118; in-guest acceptance remains), #159 (native PIN/broker login plus
+    two-real-Linux-user/reboot isolation evidence), #161 (real capable-model
+    fresh-install run), #168 (depends on #159/#160/#162 and native
+    credentials), #170 (release matrix on unfinished journeys).
+  - No issue presents a distinct unwritten, independently testable software
+    core this pass; no duplicate issue created.
+- Claimed issue: none; claim readback not applicable. Claims released:
+  none. No implementation PR.
+- Verification on synced `main` `3474194`: canonical
+  `PATH=/tmp/aios-venv-162/bin:$PATH bash scripts/test.sh` exited 0 with
+  1172 tests in 69.028s, OK (18 skipped), including shell syntax and
+  Openbox XML checks. Exact-head main push Validate run
+  https://github.com/rwrife/aios/actions/runs/37955910543 completed
+  success. Host lacks QEMU, Xvfb and qmltestrunner; no native/VM/ISO,
+  physical hardware or human acceptance asserted.
+- State PR opened on `docs/executor-state-20261010-0410` with no issue
+  linkage (intentionally no closing keyword). As-of this snapshot the PR
+  is OPEN; its own merge disposition and exact-head CI are read back by
+  this run's report and the next run's entry, not asserted here.
+- Retention: job runs indefinitely every 6 hours; no self-delete. Other
+  agents' worktrees under `/home/rwrife/repos/aios-wt/` left untouched;
+  only this run-created worktree is eligible for cleanup.
+
 ## 2026-10-09 15:55 UTC (final-state sync; PR #203 merged)
 
 - State PR https://github.com/rwrife/aios/pull/203 MERGED at
