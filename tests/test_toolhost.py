@@ -621,6 +621,22 @@ class ToolHostTests(unittest.TestCase):
             self.assertTrue(accepted.is_set())
             self.assertLess(elapsed, 0.8)
 
+    def test_raw_client_journeys_wait_for_listen_after_bind(self):
+        original = toolhost._socket_identity
+
+        def delayed_identity(path):
+            # Widen the bind-before-listen window without changing production code.
+            time.sleep(0.3)
+            return original(path)
+
+        with mock.patch.object(toolhost, "_socket_identity", side_effect=delayed_identity):
+            for journey in (
+                self.test_drip_fed_request_does_not_block_second_client_past_one_deadline,
+                self.test_response_and_request_boundary_frames_pass,
+            ):
+                with self.subTest(journey=journey.__name__):
+                    journey()
+
     def test_drip_fed_request_does_not_block_second_client_past_one_deadline(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "drip-request.sock"
@@ -630,7 +646,8 @@ class ToolHostTests(unittest.TestCase):
 
             thread = threading.Thread(target=serve, args=(path, host), kwargs={"connection_timeout": 0.35}, daemon=True)
             thread.start()
-            self.assertTrue(_wait_until(path.exists), "socket was not created")
+            ready, _ = _wait_for_request_success(path, lambda target: list_tools(target, timeout=0.1))
+            self.assertTrue(ready, "tool host did not become ready")
 
             client = socket.socket(socket.AF_UNIX)
             self.addCleanup(client.close)
@@ -695,7 +712,8 @@ class ToolHostTests(unittest.TestCase):
             host = FakeSocketHost()
             request_thread = threading.Thread(target=serve, args=(request_path, host), kwargs={"connection_timeout": 0.5}, daemon=True)
             request_thread.start()
-            self.assertTrue(_wait_until(request_path.exists), "request boundary socket was not created")
+            ready, _ = _wait_for_request_success(request_path, lambda target: list_tools(target, timeout=0.1))
+            self.assertTrue(ready, "request boundary socket did not become ready")
 
             request_value, request_payload = _frame_payload_with_exact_size(
                 {"action": "call", "name": "browser", "arguments": {"blob": ""}},
