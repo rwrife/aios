@@ -2,6 +2,27 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-11 04:15 UTC (final-state sync; PR #210 merged)
+
+- Primary state PR https://github.com/rwrife/aios/pull/210 MERGED at
+  2026-10-11T04:12:32Z as `5fbf848f9dedbad11a551775eaaa050844632423`.
+  Exact head `e084bec1d698eebdfbda5023ae968cd05c5dd49f` passed both events:
+  push https://github.com/rwrife/aios/actions/runs/38110734702 and
+  pull_request https://github.com/rwrife/aios/actions/runs/38110748441.
+  Remote branch deletion verified.
+- PR lane refreshed after merge: zero open PRs; 35 open issues unchanged.
+  Merged PRs this run: #210 (docs-only state snapshot). Blocked PRs: none.
+  No issue claims were made, held, or released. No implementation PR.
+- Verification: entry canonical suite ran 1173 tests, OK (18 skipped),
+  exit 0; exact-head #210 CI passed all three Validate jobs on both events.
+  This sync changes documentation only; branch verification is recorded in
+  the sync PR's checks.
+- This separate docs-only sync branch `docs/executor-final-20261011-0415`
+  records the settled #210 outcome. Its own PR/disposition is pending as of
+  writing and excluded from the post-#210 queue snapshot above; final
+  remote readback is reported separately, without recursively adding another
+  sync PR. No issue linkage or self-removal.
+
 ## 2026-10-11 04:10 UTC (verification-only; entry snapshot)
 
 - Preflight: Halo NFS repository share (`100.96.164.114:/home/rwrife/repos`)
