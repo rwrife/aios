@@ -2,6 +2,46 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-11 10:10 UTC (verification-only; entry snapshot)
+
+- Preflight: repository NFS share `100.96.164.114:/home/rwrife/repos`
+  mounted; GraphQL repository resolution, REST permissions and git remote
+  transport succeeded. gh identity `rwrife`. Clean main updated to
+  `180aac6d588f8768ed975c7c58995cad24c057f2`.
+- Entry and pre-selection PR queue: zero open PRs. Previous state sync
+  https://github.com/rwrife/aios/pull/211 merged at 2026-10-11T04:17:10Z;
+  its main push https://github.com/rwrife/aios/actions/runs/38111096672
+  completed successfully. Merged PRs this run at entry: none. Blocked PRs: none.
+- Delta scan since 04:15 UTC: no issue comments; events only record #211
+  merge/closure/deletion and its reference to #210. No changed issue evidence.
+  Complete issue query (`--limit 200`) returned 35 open issues.
+- Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97,
+  #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169.
+  Same-account retained assignments remain locks; no changes or comments.
+- Skipped hardware (10): #83, #85, #86, #87, #88, #89, #90 (physical
+  microphone/speaker and audio benchmarks), #96 (Brio camera cohort),
+  #99/#102 (physical x86_64 certification).
+- Skipped user interaction/integration gates (8): #70/#75 (landed code,
+  remaining shipped-Alpine browser journeys), #74 (visual sign-off), #82
+  (landed choice UX, guest acceptance), #159 (native PIN and real-user/reboot
+  isolation), #161 (fresh-install capable-model evidence), #168 (native
+  credentials and unfinished #159/#160/#162 dependencies), #170 (release
+  matrix on unfinished journeys). Unassigned software issue bodies reread;
+  prior landed-software-half screening remains unchanged.
+- No distinct software-only gap or canonical failure found; no duplicate
+  issue created. Claimed issue: none; claim readback not applicable.
+  Claims released: none. Implementation PR: none.
+- Canonical verification on main: `PATH=/tmp/aios-venv-162/bin:$PATH bash
+  scripts/test.sh` exited 0; 1173 tests in 79.147s, OK (18 skipped), with
+  shell syntax and Openbox XML checks. Host probes found no QEMU, Xvfb or
+  qmltestrunner. No VM/ISO/native visual, physical or human acceptance claimed.
+- New docs-only state PR on `docs/executor-state-20261011-1010` pending
+  creation as of this entry; no issue linkage intended. This is an entry
+  snapshot, not a claim about its own future merge. Exact PR/checks/final
+  queue are read back separately before reporting.
+- Other worktrees left untouched. This run's worktree alone will be removed.
+  Job retention unchanged; self-removal not triggered or configured.
+
 ## 2026-10-11 04:15 UTC (final-state sync; PR #210 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/210 MERGED at
