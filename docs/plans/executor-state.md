@@ -2,6 +2,40 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-12 15:35 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view`, REST repo read (admin/push permission), and
+  `git ls-remote --heads origin` succeeded with stored OAuth; identity
+  `rwrife`. Clean `main` at `25b2344` matches `origin/main` after fetch and
+  fast-forward pull. Existing worktrees left untouched.
+- Complete open PR query (`--limit 200`): zero at entry and immediately before
+  issue selection. Merged this run: none. Blocked: none.
+- Complete open issue query (`--limit 300`): 35. Assigned elsewhere/work-locked
+  (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162,
+  #163, #164, #165, #166, #167, #169. Same-account assignments remain locks.
+- Skipped hardware (10): #83 (real microphone/speaker corpus and benchmarks),
+  #85–#90 (live audio and wake/speech acceptance), #96 (physical camera),
+  #99/#102 (multi-machine wireless/GPU certification). Skipped user
+  interaction or unavailable target acceptance (8): #70/#75 (live browser
+  clicks/windows), #74 (native window visual sign-off), #82 (multi-choice UI
+  click), #159 (two real users and real Alpine VM; QEMU absent on runner),
+  #161 (fresh-install real-model journeys), #168 (native credential connection
+  plus service account flow), #170 (real-model/VM release matrix and update
+  recovery). No untouched software half independently clears these issues'
+  current remaining acceptance; prior `Progresses` slices cover foundations.
+- No new issue fabricated: backlog already describes software and gated
+  follow-ups. No issue claimed, released, or commented; no implementation PR.
+- Verification on clean `main`: initial `bash scripts/test.sh` failed with
+  missing host `numpy` and `cronsim` (11 errors). Rebuilt scratch Python 3.14.7
+  venv with `numpy`, `cronsim`, `cryptography`; reran canonical
+  `PATH=<scratch-venv>/bin:$PATH bash scripts/test.sh` successfully:
+  1174 tests, 17 skipped, exit 0; shell syntax and XML gates passed.
+  No ISO build or QEMU guest validation (QEMU unavailable). This is host
+  suite evidence, not hardware/guest/real-model acceptance.
+- State-only PR `docs/executor-state-20261012-1535` pending as-of this snapshot;
+  its own CI and final disposition must be read back before reporting. No
+  closing-keyword linkage. Self-removal not configured.
+
 ## 2026-10-12 04:30 UTC (issue lane: #214 filed, implemented, merged via #215)
 
 - Preflight: repository resolution, REST admin permissions and git remote
