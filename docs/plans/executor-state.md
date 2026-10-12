@@ -2,6 +2,50 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-12 04:30 UTC (issue lane: #214 filed, implemented, merged via #215)
+
+- Preflight: repository resolution, REST admin permissions and git remote
+  transport succeeded. gh identity `rwrife`. Clean main `ee3d4e9` →
+  updated; worktrees of other lanes left untouched.
+- Entry and post-merge PR queue: zero open PRs both times. Delta scan since
+  2026-10-11 10:20 UTC found only the #213 merge events; no issue comments
+  or assignment changes. Prior per-issue screens carried forward.
+- Environment drift found and repaired locally: the prior `/tmp/aios-venv-162`
+  was pruned, and host Python moved to 3.14.7. First canonical run on
+  `ee3d4e9` failed with 11 import errors (missing numpy/cronsim) plus one
+  genuine behavioral failure. Rebuilt a scratch venv (numpy 2.4.6,
+  cronsim 2.6, cryptography) → 1173 tests OK on Python 3.11.
+- Genuine defect (new issue #214): Python 3.14 `datetime.fromisoformat`
+  accepts ISO 8601 `T24:00:00` (next-day rollover), so `machine_clock`
+  `parse_datetime` and the `os_settings` tool schema (built from
+  `DATETIME_PATTERN`, hours `[0-9]{2}`) stopped rejecting hours ≥ 24 on
+  3.14+. Reproduced deterministically: `test_dates_and_offsets`
+  (value `2026-09-11T24:00:00Z`) fails `AssertionError: ValueError not
+  raised` under Python 3.14.7.
+- Claimed issue https://github.com/rwrife/aios/issues/214 (created this run,
+  software-only validation hardening). Claim readback: assignees = [rwrife]
+  before any branch or code. Re-checked assignee immediately before push:
+  still rwrife; open PR count 0.
+- Implementation https://github.com/rwrife/aios/pull/215 constrained the
+  `DATETIME_PATTERN` hour group to `(?:[01][0-9]|2[0-3])` and added a
+  regression test for hours 24/25/29/99 plus schema-boundary cases.
+- Verification: RED/GREEN on Python 3.14.7 via targeted module (rc=1 with
+  the old pattern stashed, rc=0 with fix). Canonical `bash scripts/test.sh`
+  on the branch: `Ran 1174 tests ... OK (skipped=17)`, exit 0. Exact-head
+  CI `cf6cb7bb`: push run 38203815350 success, pull_request run
+  38203822893 success. Not verified (not claimed): in-VM clock set on the
+  AIOS guest image; pure validation logic covered by the unit suite.
+- Merged #215 (squash) at 2026-10-12T04:29:57Z as `10837a6e`; remote branch
+  deletion verified; issue #214 auto-closed via `Closes` linkage with
+  assignment retained as work record. Main updated to `10837a6`.
+- Issues skipped as assigned elsewhere (17): #71, #77, #79, #81, #84, #97,
+  #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169.
+  Skipped hardware (10): #83, #85–#90, #96, #99, #102. Skipped user
+  interaction/integration (8): #70, #74, #75, #82, #159, #161, #168, #170.
+- Claims released: none (the one claim closed with its merged PR). This
+  docs-only state PR has no issue linkage intended; that is deliberate.
+  Job retention unchanged; self-removal not configured.
+
 ## 2026-10-11 10:20 UTC (final-state sync; PR #212 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/212 MERGED at
