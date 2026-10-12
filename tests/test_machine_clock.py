@@ -2,6 +2,7 @@ import datetime
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import unittest
@@ -26,6 +27,24 @@ class MachineClockTests(unittest.TestCase):
                       "2026-09-11T12:00:00Z\n", "$(date)", "x" * 10000):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 machine_clock.parse_datetime(value)
+
+    def test_invalid_hours_rejected_by_parser_and_tool_schema(self):
+        # Python 3.14 fromisoformat accepts T24:00:00 (next-day rollover), so the
+        # pattern itself must reject hours above 23 on every Python version.
+        pattern = re.compile("^" + machine_clock.DATETIME_PATTERN + "$")
+        for hour in ("24", "25", "29", "99"):
+            value = f"2026-09-11T{hour}:00:00Z"
+            with self.subTest(value=value):
+                self.assertIsNone(pattern.fullmatch(value))
+                with self.assertRaises(ValueError):
+                    machine_clock.parse_datetime(value)
+        for hour in ("00", "09", "19", "23"):
+            with self.subTest(hour=hour):
+                self.assertIsNotNone(pattern.fullmatch(f"2026-09-11T{hour}:59:59+00:00"))
+        schema = os_settings.TOOL["function"]["parameters"]["properties"]["value"]["oneOf"]
+        schema_pattern = next(item["pattern"] for item in schema if item.get("pattern", "").startswith("^20"))
+        self.assertIsNone(re.fullmatch(schema_pattern, "2026-09-11T24:00:00Z"))
+        self.assertIsNotNone(re.fullmatch(schema_pattern, "2026-09-11T23:59:59Z"))
 
     def test_invalid_requests_never_launch_helper(self):
         with mock.patch.object(machine_clock.subprocess, "run") as run:
