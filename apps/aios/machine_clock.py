@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 
-DATETIME_PATTERN = r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})"
+DATETIME_PATTERN = r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})"
 HELPER = "/usr/local/sbin/aios-clock"
 
 
