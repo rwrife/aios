@@ -2,6 +2,34 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-13 15:50 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read (admin/push), and
+  `git ls-remote --heads https://github.com/rwrife/aios.git` succeeded with
+  stored OAuth; identity `rwrife`. Clean `main` at `2f73468` equals
+  `origin/main`. Existing unrelated worktrees left untouched.
+- Complete open PR query (`--limit 200`): zero at entry and immediately before
+  issue selection; merged this run before this snapshot: none; blocked: none.
+- Complete open issue query (`--limit 300`): 35. Assigned elsewhere/work-locked
+  (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163,
+  #164, #165, #166, #167, #169. Same-account assignments remain locks.
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102 (microphone, camera,
+  audio or physical device certification). Skipped interaction/target
+  acceptance (8): #70/#75 (real browser/guest validation), #74 (native
+  chrome visual sign-off), #82 (choice click UX), #159 (two real Linux users
+  and real Alpine VM; QEMU absent), #161 (fresh-install real-model journeys),
+  #168 (native credentials with live service account), #170 (real-model/VM
+  release and rollback matrix). Existing `Progresses` slices cover software
+  halves; no new independently verifiable slice found. No issue fabricated,
+  claimed or released; no implementation PR.
+- Canonical host verification: `PATH=/home/rwrife/.hermes/cache/scratch/aios-venv-20261013/bin:$PATH bash scripts/test.sh`
+  ran 1174 tests, OK (17 skipped), exit 0 on clean `main`. No ISO build or
+  real guest validation: `qemu-system-x86_64` unavailable. Host suite is not
+  physical/VM/real-model acceptance.
+- This state-only PR is pending as of this snapshot; its own disposition
+  requires remote readback before reporting. No issue closing linkage.
+  Self-removal is not configured.
+
 ## 2026-10-13 10:55 UTC (final-state sync; PR #220 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/220 MERGED at
