@@ -2,6 +2,23 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-13 04:20 UTC (final-state sync; PR #218 merged)
+
+- Primary state PR https://github.com/rwrife/aios/pull/218 MERGED at
+  2026-10-13T04:18:28Z as `c5b66eaaa1dea065a1d84f987a914caa049c0a1a`.
+  Exact head `48c099837810c338e496e43a3ae9182b4da81796` passed both
+  https://github.com/rwrife/aios/actions/runs/38345627686 (push) and
+  https://github.com/rwrife/aios/actions/runs/38345651774 (pull_request).
+  Remote branch deletion verified via `git ls-remote --heads`.
+- PR lane refreshed after merge: zero open PRs; 35 open issues unchanged.
+  Merged PRs this run: #218 (state snapshot). Blocked PRs: none.
+- No issue claims, releases, or implementation PR. Assigned/hardware/user-
+  interaction skips and canonical verification are in entry snapshot below.
+- This docs-only sync branch `docs/executor-final-20261013-0420` records #218
+  settled outcome. Its own PR/disposition is pending as of writing; final
+  remote readback belongs in report without recursive state PR. No issue
+  linkage or self-removal.
+
 ## 2026-10-13 04:07 UTC (verification-only; entry snapshot)
 
 - Preflight: `gh repo view`, REST repo read (admin/push), and
