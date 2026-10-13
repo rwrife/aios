@@ -2,6 +2,37 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-13 04:07 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view`, REST repo read (admin/push), and
+  `git ls-remote --heads origin` succeeded with stored OAuth; identity
+  `rwrife`. Clean `main` at `cefae05` matches `origin/main`. Prior #217 merge
+  push run 38278015573 succeeded. Existing worktrees left untouched.
+- Complete open PR query: zero at entry and immediately before issue
+  selection. Merged this run: none. Blocked: none.
+- Complete open issue query (`--limit 300`): 35, unchanged. Delta scan since
+  2026-10-12 15:30 UTC: no issue comments; only #217 PR events.
+- Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98,
+  #100, #101, #160, #162, #163, #164, #165, #166, #167, #169.
+- Skipped hardware (10): #83, #85–#90, #96, #99, #102. Skipped user
+  interaction or unavailable target acceptance (8): #70, #74, #75, #82,
+  #159 (two real Linux users plus real Alpine VM), #161 (fresh-install
+  real-model journeys), #168 (native credential flow plus live service
+  account), #170 (real-model/VM release matrix). Re-read #159, #161, #168,
+  #170 bodies: no untouched software-only half clears remaining acceptance;
+  #163/#165 are held by retained same-account assignments.
+- No new issue fabricated; no issue claimed, released, or commented; no
+  implementation PR.
+- Verification on clean `main`: scratch venv rebuilt (Python 3.11.15, numpy
+  2.4.6, cronsim 2.7, cryptography 50.0.2) because the earlier scratch venv
+  was pruned. Canonical `PATH=<scratch-venv>/bin:$PATH bash scripts/test.sh`
+  run twice: `Ran 1174 tests ... OK (skipped=17)`, exit 0. No ISO build or
+  QEMU guest validation (`qemu-system-x86_64` absent on runner). This is host
+  suite evidence, not hardware/guest/real-model acceptance.
+- State-only PR `docs/executor-state-20261013-0415` pending as of this
+  snapshot; its CI and disposition are read back separately. No
+  closing-keyword linkage. Self-removal not configured.
+
 ## 2026-10-12 15:35 UTC (verification-only; entry snapshot)
 
 - Preflight: `gh repo view`, REST repo read (admin/push permission), and
