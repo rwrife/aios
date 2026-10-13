@@ -2,6 +2,37 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-13 10:30 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view`, REST repo read (admin/push), and
+  `git ls-remote --heads origin` succeeded with stored OAuth; identity
+  `rwrife`. Write probe (create + delete temp ref) succeeded. Clean `main` at
+  `10e94d8` matches `origin/main`; its push run 38346043262 succeeded.
+  Existing worktrees left untouched.
+- Complete open PR query (`--limit 200`): zero at entry and immediately before
+  issue selection. Merged this run: none. Blocked: none.
+- Complete open issue query (`--limit 300`): 35, unchanged. Assigned
+  elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101,
+  #160, #162, #163, #164, #165, #166, #167, #169 (same-account assignments
+  remain locks).
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102. Skipped user
+  interaction or unavailable target acceptance (8): #70, #74, #75, #82, #159
+  (two real Linux users plus real Alpine VM; QEMU absent), #161 (fresh-install
+  real-model journeys), #168 (native credential flow plus live service
+  account), #170 (real-model/VM release matrix). Re-read #159, #161, #168,
+  #170 bodies: no untouched software-only half clears remaining acceptance.
+- No new issue fabricated; no issue claimed, released, or commented; no
+  implementation PR.
+- Verification on clean `main`: bare `bash scripts/test.sh` failed with 11
+  import errors (missing host `numpy`/`cronsim`; host Python 3.14.7).
+  Rebuilt scratch venv (Python 3.11.15, numpy 2.4.6, cronsim 2.7,
+  cryptography 50.0.2); `PATH=<scratch-venv>/bin:$PATH bash scripts/test.sh`:
+  `Ran 1174 tests ... OK (skipped=17)`, exit 0. No ISO build or QEMU guest
+  validation (`qemu-system-x86_64` absent). Host suite evidence only, not
+  hardware/guest/real-model acceptance.
+- This docs-only state PR carries no closing keyword. Self-removal not
+  configured.
+
 ## 2026-10-13 04:20 UTC (final-state sync; PR #218 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/218 MERGED at
