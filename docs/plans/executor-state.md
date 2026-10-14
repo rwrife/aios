@@ -2,6 +2,45 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-14 11:19 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read (admin/push), and
+  `git ls-remote --heads https://github.com/rwrife/aios.git main` passed via
+  stored OAuth; identity `rwrife`. Clean `main` at `db921ed0f07d42dcb904ade4998def2deef08ee0`
+  equals `origin/main`. Other agents' worktrees left untouched.
+- Complete open PR query (`--limit 200`): zero at entry and before issue
+  selection; merged this run: none; blocked: none. Prior state PR #225 is
+  MERGED as `db921ed` and its `main` push run
+  https://github.com/rwrife/aios/actions/runs/38512545343 succeeded.
+  No new issue comments since that merge; issue events only #225 branch
+  deletion and reference to #224. No fresh software-only acceptance slice.
+- Complete open issue query (`--limit 200`): 35, unchanged. Assigned
+  elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101,
+  #160, #162, #163, #164, #165, #166, #167, #169; same-account assignment
+  remains a work lock. Skipped hardware (10): #83, #85-#90, #96, #99, #102
+  (audio, microphone, camera or physical certification). Skipped interaction
+  or target-guest acceptance (8): #70/#75 (browser GUI in Alpine guest),
+  #74 (native chrome visual sign-off), #82 (choice-click UX), #159 (two real
+  users and reboot in Alpine VM), #161 (fresh-install real-model journeys),
+  #168 (native connection to live service, depends on #159/#160/#162), #170
+  (end-to-end release, update rollback and real-model/guest matrix).
+  Prior `Progresses` PRs already shipped software halves; no issue claimed,
+  commented or fabricated. Claims released: none; new implementation PR: none.
+- Canonical host suite on `main` at `db921ed`:
+  `PATH=/home/rwrife/.hermes/cache/scratch/aios-venv-test/bin:$PATH bash scripts/test.sh`
+  returned `Ran 1174 tests in 75.614s ... OK (skipped=17)`, exit 0.
+  That scratch interpreter symlink later vanished; a first branch retry used
+  system Python without `cronsim` and failed 11 imports/capture tests
+  (`Ran 1091 ... FAILED (errors=11)`). Rebuilt scratch venv with Python
+  3.11.15, `cronsim==2.6`, `numpy==2.4.6`, `cryptography==50.0.2`; fresh
+  branch run: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261014/bin:$PATH bash scripts/test.sh`
+  returned `Ran 1174 tests in 75.029s ... OK (skipped=17)`, exit 0.
+  `qemu-system-x86_64` and `qmltestrunner` absent; no ISO build, VM GUI,
+  real-model or physical evidence claimed. Verification is host-only.
+- This state-only PR carries no issue linkage or closing keyword. Its own
+  CI/disposition is pending in this entry snapshot; read back before final
+  reporting. Self-removal is not configured.
+
 ## 2026-10-14 04:34 UTC (final-state sync; PR #224 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/224 MERGED at
