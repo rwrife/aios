@@ -2,6 +2,14 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-14 15:44 UTC (verification-only; entry snapshot)
+
+- Preflight passed: `gh repo view rwrife/aios`, REST repo read (admin/push), `git ls-remote --heads origin main`. Stored OAuth identity `rwrife`; no env token. Clean `main`/`origin/main` at `1e857611c05a067bc9056fddd69dbcff986a4350` (prior state PR #227 merged at 14:05:08 UTC). Other agents' worktrees untouched.
+- Complete PR queue (`--limit 200`) empty at entry and immediately before issue selection; no merges or blocked PRs. No issue comments since prior pass and no issue changes evident in recent repo events. Complete issue queue: 35 open.
+- Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169. Skipped hardware (10): #83, #85-#90, #96, #99, #102 (real audio/camera or physical certification). Skipped interaction/target guest (8): #70/#75 (browser GUI in Alpine), #74 (native chrome visual review), #82 (click-choice UX), #159 (two Linux users and Alpine reboot), #161 (real-model fresh-install journeys), #168 (native live-service credentials, dependent on unfinished user isolation), #170 (real-model/guest release and rollback matrix). Previously merged `Progresses` slices cover headless software halves. No new non-duplicate software-only issue found; no claim, release, or implementation PR.
+- Canonical host suite on clean `main` at `1e85761`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261014/bin:$PATH bash scripts/test.sh` exited 0: `Ran 1174 tests in 75.181s`, `OK (skipped=17)`. The same canonical suite on this docs-only worktree returned `Ran 1174 tests in 74.649s`, `OK (skipped=17)`; `git diff --check` passed. `qemu-system-x86_64` and `qmltestrunner` absent; no ISO/VM, physical, real-model or visual acceptance claimed.
+- This state-only PR has no issue linkage or closing keyword by design. Its CI/disposition remain pending in this entry snapshot; read back before final reporting. Self-removal not configured.
+
 ## 2026-10-14 13:12 UTC (final-state sync; PR #226 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/226 MERGED at
