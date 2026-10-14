@@ -2,6 +2,24 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-14 13:12 UTC (final-state sync; PR #226 merged)
+
+- Primary state PR https://github.com/rwrife/aios/pull/226 MERGED at
+  2026-10-14T13:11:59Z as `828b7c494d3ee1ae4f689c7fc23886a48f816c3d`.
+  Exact head `b451034b2d048713c451a451ffd486e70c5421d2` passed
+  https://github.com/rwrife/aios/actions/runs/38568398543 (push) and
+  https://github.com/rwrife/aios/actions/runs/38568406983 (pull_request).
+  Remote branch deletion verified. PR lane refreshed: zero open PRs;
+  35 open issues. Merged this run: #226 (state snapshot); blocked: none.
+- No issue claimed, released or implemented; selection skips remain in entry
+  snapshot below. Canonical host suite on `828b7c4` in this sync worktree:
+  `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261014/bin:$PATH bash scripts/test.sh`
+  returned `Ran 1174 tests in 73.941s ... OK (skipped=17)`, exit 0.
+  No ISO/QEMU validation. Self-removal not configured.
+- This final-state sync is a separate docs-only PR. Its own CI/disposition
+  require remote readback; record them in the final report or next run,
+  without recursive state PRs. No issue linkage or closing keyword.
+
 ## 2026-10-14 11:19 UTC (verification-only; entry snapshot)
 
 - Preflight: `gh repo view rwrife/aios`, REST repo read (admin/push), and
