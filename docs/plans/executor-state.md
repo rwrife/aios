@@ -2,6 +2,43 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-14 04:25 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read (admin/push),
+  `git ls-remote --heads origin` succeeded with stored OAuth; identity
+  `rwrife`. Clean `main` at `262252c` (PR #223 merge) equals `origin/main`.
+  Existing unrelated worktrees left untouched.
+- Complete open PR query (`--limit 200`): zero at entry and immediately
+  before issue selection. Merged this run: none. Blocked: none.
+- Delta scan since 2026-10-13T16:40Z: no issue comments; only PR #223
+  merge/closure events (prior final-state sync, merged as `262252c`). No
+  assignment changes.
+- Complete open issue query (`--limit 300`): 35, unchanged. Assigned
+  elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101,
+  #160, #162, #163, #164, #165, #166, #167, #169 (same-account assignments
+  remain locks).
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102 (microphone, camera,
+  audio, wake/TTS corpora, physical x86_64 certification). Skipped user
+  interaction or unavailable target acceptance (8): #70/#75 (real guest
+  browser journeys), #74 (native chrome visual sign-off), #82 (choice-click
+  UX acceptance), #159 (two real Linux users, reboot, real Alpine VM;
+  `qemu-system-x86_64` absent on runner), #161 (fresh-install real-model
+  journeys), #168 (native credentials with live service account; depends on
+  unfinished #159/#160/#162), #170 (real-model/VM release and rollback
+  matrix). Bodies re-read this run; no untouched, independently testable
+  software-only half clears remaining acceptance. No issue fabricated,
+  claimed, released, or commented; no implementation PR.
+- Canonical host verification on clean `main`: rebuilt nothing (existing
+  scratch venv Python 3.11.15 with numpy 2.4.6/cronsim 2.7/cryptography
+  50.0.2 intact); `PATH=<scratch-venv>/bin:$PATH bash scripts/test.sh`:
+  `Ran 1174 tests in 75.764s ... OK (skipped=17)`, exit 0. Host probes:
+  `qemu-system-x86_64` and `qmltestrunner` absent (`xvfb-run` present but
+  no Qt test runner). No ISO build or real guest validation. Host suite is
+  host-suite evidence only, not physical/VM/real-model acceptance.
+- This state-only PR carries no closing keyword; its own CI and disposition
+  are read back by this run's report and the next run's entry, not asserted
+  here. Self-removal not configured.
+
 ## 2026-10-13 16:56 UTC (final-state sync; PR #222 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/222 MERGED at
