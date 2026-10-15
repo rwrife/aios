@@ -2,6 +2,14 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-15 15:26 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read, `git ls-remote --heads origin main`, and create/delete write probe passed under stored OAuth identity `rwrife`; clean `main` and `origin/main` equal `3703411e151dd79871dd217b262826a614b714a2`. Prior state PR #233 merged at 2026-10-15T11:36:43Z; exact-main push https://github.com/rwrife/aios/actions/runs/38728571228 succeeded. Other agents' worktrees untouched.
+- Complete PR queue (`--limit 200`) empty at entry and again before issue selection. Merged: none; blocked: none. No issue comments or assignment changes since 11:36Z (only prior PR #233 branch deletion in issue events).
+- Complete open issue queue (`--limit 200`): 35, unchanged from preceding screening. Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169 (same-account assignments remain work locks). Skipped hardware (10): #83, #85-#90, #96, #99, #102 (real audio/camera, physical wireless/GPU machines and disks). Skipped user interaction / target guest acceptance (8): #70, #74, #75, #82, #159, #161, #168, #170 (browser/choice/title-bar journeys, two Linux users and VM reboot, real-model/native-credential/release matrix). Prior merged `Progresses` slices cover headless software halves; no newly actionable independent software-only slice or non-duplicate software-only gap. No issue claimed, commented or released; no implementation PR.
+- Canonical host suite on `3703411`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261015/bin:$PATH bash scripts/test.sh` exited 0: `Ran 1174 tests in 76.145s`, `OK (skipped=17)`; shell syntax and Openbox XML checks completed. Scratch venv: Python 3.11.15, cronsim 2.6, numpy 2.4.6, cryptography 50.0.2. `qemu-system-x86_64` and `qmltestrunner` absent; no ISO/QEMU guest, physical-hardware, real-model or visual validation claimed.
+- State-only PR carries no issue linkage or closing keyword. Its own CI/disposition is pending in this entry snapshot; final report or next run reads it back rather than claiming a future outcome. Self-removal not configured.
+
 ## 2026-10-15 11:16 UTC (final-state sync; PR #232 merged)
 
 - Primary state PR https://github.com/rwrife/aios/pull/232 MERGED at 2026-10-15T11:09:18Z as `e00f7d6fad97941cc0375153ddb0f5b02967c20f`; exact head `48768a7f6192911c34c46b5e119a8054eff092f8` passed https://github.com/rwrife/aios/actions/runs/38724143283 (push) and https://github.com/rwrife/aios/actions/runs/38724149681 (pull_request). Post-merge `main` push https://github.com/rwrife/aios/actions/runs/38725318740 succeeded. Remote branch deleted, worktree removed; open PR queue refreshed to zero and 35 issues remain open. Merged this run: #232 (state snapshot); blocked: none.
