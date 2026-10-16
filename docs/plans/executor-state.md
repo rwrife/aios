@@ -2,6 +2,18 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-16 04:12 UTC (verification-only; entry snapshot)
+
+- Preflight passed: `gh repo view rwrife/aios` (`defaultBranchRef=main`), REST repo read, `git ls-remote --heads origin main` = `106394153840735552bd01fd11b985f35f83f7d5` (equals clean local `main`; prior final-state sync PR #235 merged 2026-10-15T15:58:52Z and its `main` push run https://github.com/rwrife/aios/actions/runs/38765073978 succeeded). Stored OAuth identity `rwrife`, no env token; create/delete write probe (`hermes-write-probe-20261016`) passed and the probe ref was verified absent. Other agents' worktrees untouched.
+- Complete PR queue (`--limit 200`): zero at entry and again immediately before issue selection. Merged this run: none. Blocked: none. Delta scan since 2026-10-15T15:38:01Z: zero issue comments; repo events only the #234/#235 merges, pushes and branch deletes. No assignment changes.
+- Complete open issue query (`--limit 300`): 35 open, unchanged.
+  - Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169 (same-account assignment remains the mutual-exclusion lock).
+  - Skipped hardware (10): #83, #85-#90, #96, #99, #102. Bodies re-read this run: #83 needs named-reference-CPU plus microphone/speaker benchmark corpus gates; #85/#86/#87/#88/#89 continue the same physically-gated wake-word stack (#85 is sole-microphone ownership, #87 requires physical built-in/wired microphones and speakers in the real guest, #89 needs audible playback validation); #96 needs the physical Brio camera; #99/#102 need physical Intel/Qualcomm/MediaTek Wi-Fi machines, iGPU/dGPU targets and sacrificial disks.
+  - Skipped user interaction / target-guest acceptance (8): #70 and #75 (browser click/reopen journeys in the Alpine guest; prior code halves already merged, issues stay open pending the guest run), #74 (native title-bar visual sign-off), #82 (click-choice UX acceptance), #159 (two real Linux users, PIN auth and reboot in the real Alpine VM), #161 (fresh-install journeys with a real capable model), #168 (live native service credentials; depends on unfinished #159/#160/#162), #170 (release matrix across real models, guest isolation and failed-update recovery).
+  - All 18 unassigned bodies re-read; no unwritten, independently testable software-only half found, and no non-duplicate software-only issue worth filing. No issue fabricated, claimed, commented or released; no implementation PR. Claims released: none.
+- Canonical host suite on `1063941`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261015/bin:$PATH bash scripts/test.sh` exited 0: `Ran 1174 tests in 71.273s`, `OK (skipped=17)`, with shell-syntax and Openbox XML gates. Scratch venv: Python 3.11.15 (cronsim/numpy/cryptography present). `qemu-system-x86_64` and `qmltestrunner` absent; no ISO/QEMU guest, physical-hardware, real-model or visual validation claimed. Evidence is host-suite only.
+- This state-only PR carries no issue linkage and no closing keyword by design. Its own CI/disposition are pending in this entry snapshot and are read back by the report or the next run rather than asserted here. Self-removal is not configured for this job.
+
 ## 2026-10-15 15:43 UTC (final-state sync; PR #234 merged)
 
 - State entry PR https://github.com/rwrife/aios/pull/234 merged via squash at 2026-10-15T15:38:01Z as `dd0b20df9f028d05541d36698cea5fd938bfdee1`. Exact-head `push` run 38761443578 and `pull_request` run 38761453482 each completed success; post-merge `main` push https://github.com/rwrife/aios/actions/runs/38762052111 succeeded.
