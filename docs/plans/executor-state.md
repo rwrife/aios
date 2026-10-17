@@ -2,6 +2,18 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-17 04:05 UTC (verification-only; entry snapshot)
+
+- Preflight passed: `gh repo view rwrife/aios` (`defaultBranchRef=main`), REST `GET /repos/rwrife/aios` (`admin`/`push` true), `git ls-remote --heads origin main` = `6897c93f6a32d3f4b1c7954f0c1a25d7fb2577b4` (equals clean local `main`; prior final-state sync PR #241 merged 2026-10-16T17:32:55Z as `6897c93`, remote branch deletion verified). Stored OAuth identity `rwrife`, no env token override. Other agents' worktrees untouched.
+- Complete PR queue (`--limit 200`): zero at entry and again immediately before issue selection. Merged this run before this snapshot: none. Blocked: none. Delta scan since 2026-10-16T17:32:55Z: zero issue comments; issue events only prior PR #241 merge/close/head_ref_deleted. No assignment changes.
+- Complete open issue query (`--limit 300`): 35 open, unchanged.
+  - Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169 (same-account assignment remains the mutual-exclusion lock).
+  - Skipped hardware (10): #83, #85-#90, #96, #99, #102. Carried verdicts from the 2026-10-16 screens (microphone/speaker/reference-CPU benchmark gates for #83/#85-#90, physical Brio camera for #96, physical Wi-Fi/GPU machines and sacrificial disks for #99/#102); queue delta scan proves no body or assignment changed since those re-reads.
+  - Skipped user interaction / target-guest acceptance (8): #70 and #75 (browser click/reopen journeys in the real Alpine guest; prior code halves already merged), #74 (native title-bar visual sign-off), #82 (click-choice UX acceptance; code half merged), #159 (two real Linux users, PIN auth and reboot in the real Alpine VM), #161 (fresh-install journeys with a real capable model), #168 (live native service credentials; depends on unfinished #159/#160/#162), #170 (release matrix across real models, guest isolation and failed-update recovery). Bodies of #70/#74/#75/#82/#159 re-read this pass and confirm the same gates.
+  - All 18 unassigned issue verdicts current; no unwritten, independently testable software-only half found, and no non-duplicate software-only issue worth filing. No issue fabricated, claimed, commented or released; no implementation PR. Claims released: none.
+- Canonical host suite on `6897c93`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261016/bin:$PATH bash scripts/test.sh` exited 0: `Ran 1174 tests in 70.652s`, `OK (skipped=17)`, with shell-syntax and Openbox XML gates. Scratch venv: Python 3.11.15 (cronsim/numpy/cryptography present). `qemu-system-x86_64` and `qmltestrunner` absent; no ISO/QEMU guest, physical-hardware, real-model or visual validation claimed. Evidence is host-suite only.
+- This state-only PR carries no issue linkage and no closing keyword by design — no issue linkage intended. Its own CI/disposition are pending in this entry snapshot and are read back by the report or the next run rather than asserted here. Self-removal is not configured for this job.
+
 ## 2026-10-16 17:13 UTC (final-state sync; PR #240 merged)
 
 - State entry PR https://github.com/rwrife/aios/pull/240 merged via squash at 2026-10-16T17:08:09Z as `1222cc8743cc1934dcead0c870fae2008417e099`. Exact-head `push` run https://github.com/rwrife/aios/actions/runs/38934891869 and `pull_request` run https://github.com/rwrife/aios/actions/runs/38936194975 completed success; post-merge `main` push https://github.com/rwrife/aios/actions/runs/38937345749 completed success. Remote branch deleted and complete PR queue refreshed to zero.
