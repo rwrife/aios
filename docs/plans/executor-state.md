@@ -2,6 +2,12 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-18 11:18 UTC (final-state sync; PR #250 merged)
+
+- State entry PR https://github.com/rwrife/aios/pull/250 merged via squash at 2026-10-18T11:16:40Z as `ec4aebb50e518b986f7de27f461d5836b15bd82b`. Exact-head `push` https://github.com/rwrife/aios/actions/runs/39121596261 and `pull_request` https://github.com/rwrife/aios/actions/runs/39121616237 both completed success before merge (no branch protection, so explicit merge only after both completed). Post-merge `main` push run https://github.com/rwrife/aios/actions/runs/39122586673 completed success. Remote branch deleted; complete open PR queue refreshed to zero. No blocked PRs.
+- Complete open issue count remains 35. No claim, assignment, close or comment; claims released: none. Skipped groups/evidence remain in the entry snapshot below. Canonical host suite on `main` and state branch: `Ran 1174 tests in 74.968s` / `76.210s`, `OK (skipped=17)`. No hardware/guest/model acceptance claimed; self-removal not configured.
+- This final-state sync PR carries no issue linkage. Its own CI/disposition remain pending as-of this snapshot and require readback; no recursive state PRs needed.
+
 ## 2026-10-18 10:25 UTC (verification-only; entry snapshot)
 
 - Preflight passed: `gh repo view rwrife/aios`, REST repo read (`admin`/`push` true), `git ls-remote --heads origin main` = `6d8c2e96393b9fa729ff506f02cdb1b88b54f591` (equals clean local `main`; prior final-state sync PR #249 merged 2026-10-18T04:20:54Z as `6d8c2e9`, post-merge `main` push run https://github.com/rwrife/aios/actions/runs/39096771014 completed success). Stored OAuth identity `rwrife`, no env-token override. Create/delete ref write probe `hermes-write-probe-20261018-1015` succeeded at `6d8c2e9`; remote ref verified absent afterward. Other agents' worktrees untouched.
