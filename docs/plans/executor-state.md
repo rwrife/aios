@@ -2,6 +2,19 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-19 10:38 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read, `git ls-remote --heads origin main`, and create/delete ref probe passed. Identity `rwrife`; clean `main` at `6af67bc060837810cc5ed768b9afc5dec39cd5d4`. Prior state PR https://github.com/rwrife/aios/pull/254 merged 2026-10-19T04:16:25Z; post-merge main push runs https://github.com/rwrife/aios/actions/runs/39198644728 and https://github.com/rwrife/aios/actions/runs/39235636533 completed success. Since prior snapshot: no issue comments, assignment changes, or code changes.
+- Complete open PR queue (`--limit 200`): zero at entry and immediately before issue selection. Merged this run before snapshot: none; blocked PRs: none. Open issues (`--limit 200`): 35, unchanged.
+- Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169; none touched.
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102 (physical microphones/speakers/reference CPU, camera, Wi-Fi/GPU machines and disks). Skipped user interaction or real-guest acceptance (8): #70/#75 in-guest browser click/reopen; #74 visual title-bar sign-off; #82 click-choice UX; #159 two Linux users/PIN/reboot in Alpine VM; #161 real-model first run; #168 native credentials and unfinished prerequisites; #170 real-model/guest/rollback matrix. All 18 unassigned bodies re-read; independent headless software halves for browser/choice already merged. No unblocked non-duplicate software-only issue found. No issue claimed; assignee readback not applicable; claims released: none; no implementation PR.
+- Canonical host suite on clean `main` at `6af67bc`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261018/bin:$PATH bash scripts/test.sh` exited 0; `Ran 1174 tests in 74.848s`, `OK (skipped=17)`. `qemu-system-x86_64` and `qmltestrunner` unavailable; no guest, physical, visual or real-model acceptance claimed.
+- This state-only PR carries no issue linkage. Its own CI/disposition pending as-of entry snapshot; re-query before report. Self-removal not configured.
+
+## 2026-10-19 10:38 UTC (final-state sync; PR #254 merged)
+
+- Entry state PR https://github.com/rwrife/aios/pull/254 merged via squash at 2026-10-19T04:16:25Z as `6af67bc060837810cc5ed768b9afc5dec39cd5d4`; exact-head push https://github.com/rwrife/aios/actions/runs/39198437577 and pull_request https://github.com/rwrife/aios/actions/runs/39198456847, plus post-merge main push https://github.com/rwrife/aios/actions/runs/39198644728, all completed success. Remote branch deleted; current open PR queue zero. Issue count remains 35. No claim or assignment changes. This docs-only sync has no issue linkage; its own CI/disposition pending as-of snapshot.
+
 ## 2026-10-19 04:12 UTC (verification-only; entry snapshot)
 
 - Preflight passed: `gh repo view rwrife/aios`, REST repo read (`admin`/`push` true), `git ls-remote --heads origin main` = `96ea5f994cf12cf1045925c2be8f9e6e3b5cc30a` (equals clean local `main`). Stored OAuth identity `rwrife`, no env-token override. Prior state PR https://github.com/rwrife/aios/pull/253 merged 2026-10-18T16:46:23Z; its post-merge `main` push run https://github.com/rwrife/aios/actions/runs/39146531579 completed success. Create/delete ref probe `hermes-write-probe-20261019-0410` passed; remote ref verified absent.
