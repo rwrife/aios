@@ -2,6 +2,16 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-21 10:42 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repo read and `git ls-remote --heads origin main` passed; clean local `main` equals `origin/main` at `167a1a2d93bdf2d2afb26a6f30ab9ab7d660e3b8`. Stored OAuth identity `rwrife`; create/delete ref `hermes-write-probe-20261021-1031` succeeded and remote ref is absent. Prior state PR #261 is merged; its `main` push https://github.com/rwrife/aios/actions/runs/39544783734 completed success. Other agents' worktrees untouched.
+- Complete open PR queue (`--limit 200`): zero at entry, before issue selection, and after host verification. Merged this run: none; blocked PRs: none. Open issues (`--limit 200`): 35.
+- Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169. Same-account assignments remain locks; none touched.
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102. Wake/audio stack requires physical microphone, speaker and reference-CPU measurements; Brio requires camera; hardware certification requires Wi-Fi/GPU devices and sacrificial disks.
+- Skipped user interaction or real-guest/credential acceptance (8): #70/#75 browser click/reopen in Alpine guest (software halves already merged), #74 title-bar visual sign-off, #82 click-choice UX (software half merged), #159 two actual Linux users/PIN/reboot, #161 real-capable-model fresh-install journey, #168 native live credentials and unfinished identity dependencies, #170 real-model/guest/update release matrix. All 18 unassigned issue bodies re-read; unchanged since last screen. No unwritten independent software-only slice or non-duplicate issue worth filing. Selected/claimed issue: none; claim readback not applicable; claims released: none; no implementation PR.
+- Canonical host suite on clean `main` at `167a1a2`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261020/bin:$PATH bash scripts/test.sh` exited 0; `Ran 1174 tests in 76.614s`, `OK (skipped=17)` including shell syntax/Openbox XML. `qemu-system-x86_64` and `qmltestrunner` unavailable; no ISO, guest, physical, real-model or visual acceptance claimed.
+- This state-only PR carries no issue linkage. Its own exact-head CI/disposition remain pending as-of this entry snapshot; re-query before merge/report. Self-removal not configured.
+
 ## 2026-10-21 04:26 UTC (final-state sync; PR #260 merged)
 
 - Entry state PR https://github.com/rwrife/aios/pull/260 merged via squash at 2026-10-21T04:25:07Z as `4f487ae7efd978c4c5c71935cfeec78645498e14`. Exact-head `push` https://github.com/rwrife/aios/actions/runs/39543085848 and `pull_request` https://github.com/rwrife/aios/actions/runs/39543092764 both completed success before merge (branch protection absent — `404 Branch not protected` — so explicit merge only after both completed). Remote branch deleted; complete open PR queue refreshed to zero. Post-merge `main` push run https://github.com/rwrife/aios/actions/runs/39543926741 was in progress at this snapshot. No blocked PRs.
