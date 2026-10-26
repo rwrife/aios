@@ -9,11 +9,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
       - run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements.txt"
-      # CI-only: the recognition capture/biometrics suites exercise the real
-      # numpy-backed worker code paths. numpy ships in the AIOS image via the
-      # py3-opencv apk dependency, so the pin lives in a CI-only requirements
-      # file and never enters apps/requirements.txt (the image-stage list).
-      - name: Install the pinned numpy wheel for the recognition suites
+      # CI-only: isolated recognition tests need numpy and cryptography.
+      # The image supplies them via apk (py3-opencv and optional py3-cryptography).
+      - name: Install pinned test dependencies for recognition suites
         run: "python3 -m pip install --only-binary=:all: --require-hashes -r apps/requirements-test.txt"
       - run: bash scripts/test.sh
       - name: Check pinned ChatGPT runtime without account credentials
