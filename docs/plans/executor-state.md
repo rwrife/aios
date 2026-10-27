@@ -2,6 +2,13 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-27 10:10 UTC (verification-only; as-of snapshot)
+
+- Preflight: GraphQL and REST repo reads passed; stored OAuth identity `rwrife` with `push/admin=true`. Clean updated `main` at `f93a200805e3f490b152f9bcf80f3f915f22128e`; `git ls-remote --heads origin main` agreed. Create/delete ref write probe `hermes-write-probe-20261027-1110` passed; remote ref absent. Other agents' existing worktrees untouched.
+- Complete open PR queue (`--limit 300`) zero at entry and before state worktree. Merged PRs: none; blocked PRs: none. Open issues (`--limit 300`): 35, with no issue updates since previous run. Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169; none touched.
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102 (physical audio/camera or compatibility machines/disks). Skipped user interaction or unavailable target acceptance (8): #70/#75 guest browser click/reopen (software halves landed), #74 native title-bar visual sign-off, #82 clickable choice UX (software half landed), #159 two-user PIN/reboot/isolation, #161 real-model fresh-install journey, #168 native credentials and unfinished identity prerequisites, #170 guest/model/update release matrix. Issue bodies and assignments unchanged since previous full screen; no independent unblocked software-only work or non-duplicate issue found. Selected/claimed issue: none; assignee readback not applicable; claims released: none; no implementation PR.
+- Canonical host suite on clean `main`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261026-1100b/bin:$PATH bash scripts/test.sh` exited 0 (`Ran 1174 tests in 68.821s`, `OK (skipped=17)`); shell/XML checks passed. `qemu-system-x86_64` and `qmltestrunner` absent; no ISO, guest, physical, visual or real-model acceptance claimed. This state-only PR has no issue linkage; its own CI/disposition pending as of snapshot. Self-removal not configured.
+
 ## 2026-10-27 04:14 UTC (final-state sync)
 
 - State PR https://github.com/rwrife/aios/pull/292 squash merged at 2026-10-27T04:12:49Z as `a6db2128cb0c21b75ebea0291b0a5de1b9970467`; readback `state=MERGED`, remote head ref absent. Exact-head `push` https://github.com/rwrife/aios/actions/runs/40448277312 and `pull_request` https://github.com/rwrife/aios/actions/runs/40448296433 both completed success before explicit merge. Post-merge `main` push https://github.com/rwrife/aios/actions/runs/40448489633 completed success.
