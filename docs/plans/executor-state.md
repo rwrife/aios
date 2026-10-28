@@ -2,6 +2,13 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-28 04:24 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repository read and `git ls-remote --heads origin` passed; stored OAuth identity `rwrife`, clean updated `main` at `da6ec231dbcd22da08d33067e656c5bfd1df04e0`. Ref create/delete probe `hermes-write-probe-20261028-0408` passed and remote ref is absent. Previous state PR https://github.com/rwrife/aios/pull/297 merged at 2026-10-27T15:14:03Z; current `main` push https://github.com/rwrife/aios/actions/runs/40528937736 succeeded.
+- Complete open PR queue (`--limit 200`): zero at entry and immediately before state worktree. Merged PRs: none; blocked PRs: none. Complete open issues (`--limit 200`): 35, with no issue updates since prior snapshot. Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169; none touched.
+- Skipped hardware (10): #83, #85-#90, #96, #99, #102 (physical audio, camera, compatibility machines or disks). Skipped user interaction/target acceptance (8): #70/#75 Alpine browser click/reopen (software halves landed), #74 title-bar visual sign-off, #82 clickable choice UX (software half landed), #159 two-user PIN/reboot/isolation, #161 real-model fresh-install journey, #168 live credentials and identity prerequisites, #170 guest/model/update release matrix. Eight unassigned non-hardware bodies re-read; no independent headless-verifiable slice or non-duplicate software-only issue found. Selected/claimed issue: none; assignee readback not applicable; claims released: none; no implementation PR.
+- Fresh isolated Python 3.12 venv with `uv pip install --require-hashes -r apps/requirements.txt -r apps/requirements-test.txt`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261028-0400/bin:$PATH bash scripts/test.sh` exited 0 (`Ran 1174 tests in 68.345s`, `OK (skipped=17)`; shell syntax and Openbox XML checks passed). `qemu-system-x86_64` and `qmltestrunner` absent; no ISO, guest, physical, visual or real-model acceptance claimed. State-only PR has no issue linkage; its own exact-head CI/disposition pending as-of entry snapshot. Self-removal not configured.
+
 ## 2026-10-27 15:12 UTC (final-state sync)
 
 - State PR https://github.com/rwrife/aios/pull/296 squash merged at 2026-10-27T15:11:18Z as `721128d494742c750b844958d44f02a9d81b9444`; readback `state=MERGED`, remote head ref absent. Exact-head `push` https://github.com/rwrife/aios/actions/runs/40528127986 and `pull_request` https://github.com/rwrife/aios/actions/runs/40528162206 both completed success before explicit merge.
