@@ -2,6 +2,12 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-28 15:09 UTC (verification-only; entry snapshot)
+
+- Preflight: `gh repo view rwrife/aios`, REST repository read, `git ls-remote --heads origin main`, clean `git fetch origin && git checkout main && git pull --ff-only origin main` all passed at `21a85bae8f8725082f5834457be2aa4a1f0d0f49`. Stored OAuth identity `rwrife`; ref create/delete probe `hermes-write-probe-20261028-150839` passed and remote ref is absent. Exact-head `main` push https://github.com/rwrife/aios/actions/runs/40672995209 completed success.
+- Complete open PR queue (`--limit 200`): zero at entry, after canonical verification and before state worktree; merged PRs: none; blocked PRs: none. Open issues: 35. Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169; none touched. Skipped hardware (10): #83, #85-#90, #96, #99, #102 (physical audio, camera, compatibility machines/disks). Skipped user interaction/target acceptance (8): #70/#75 Alpine browser click/reopen (software halves landed), #74 title-bar visual sign-off, #82 clickable choice UX (software half landed), #159 two-user PIN/reboot/isolation, #161 real-model fresh-install journey, #168 live credentials and identity prerequisites, #170 guest/model/update release matrix. No new independently headless-verifiable slice or non-duplicate software-only issue found. Selected/claimed issue: none; assignee readback not applicable; claims released: none; no implementation PR.
+- Canonical host suite on clean `main`: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261028-0400/bin:$PATH bash scripts/test.sh` exited 0 (`Ran 1174 tests in 69.832s`, `OK (skipped=17)`; shell syntax and Openbox XML checks passed). `qemu-system-x86_64` and `qmltestrunner` absent; no ISO, guest, physical, visual or real-model acceptance claimed. State-only PR has no issue linkage; own exact-head CI/disposition pending as-of entry snapshot. Self-removal not configured.
+
 ## 2026-10-28 10:35 UTC (final-state sync)
 
 - State PR https://github.com/rwrife/aios/pull/300 squash merged at 2026-10-28T10:28:26Z as `360ac622fca7101d9618cebe199adf95c7ad853c`; readback `state=MERGED`, remote head ref absent. Exact-head `push` https://github.com/rwrife/aios/actions/runs/40672124725 and `pull_request` https://github.com/rwrife/aios/actions/runs/40672135433 both completed success before explicit merge. Branch protection absent (`404 Branch not protected`).
