@@ -2,6 +2,12 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-29 15:09 UTC (verification-only; entry snapshot)
+
+- Preflight: GraphQL/REST repository reads, `git ls-remote --heads https://github.com/rwrife/aios.git`, clean updated `main` at `140f5bac5f32850d2daa8647f4d9b1a5358b1fd1`, stored OAuth identity `rwrife` and create/delete ref probe `hermes-write-probe-20261029-150638` passed; remote probe ref absent. Exact-head `main` push https://github.com/rwrife/aios/actions/runs/40856550970 completed success.
+- Full open PR queue (`--limit 200`): zero at entry, after verification and before state worktree. Merged PRs: none; blocked PRs: none. Open issues (`--limit 200`): 35. Assigned elsewhere/work-locked (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169; none touched. Skipped hardware (10): #83, #85-#90, #96, #99, #102 (physical audio, camera, reference machines/disks). Skipped user interaction/target acceptance (8): #70/#75 Alpine browser click/reopen (software halves already landed), #74 title-bar visual sign-off, #82 clickable-choice UX (software half landed), #159 two-user PIN/reboot/isolation, #161 real-model fresh-install journey, #168 live credentials plus identity dependencies, #170 guest/model/update release matrix. No independent headless-verifiable remaining slice or non-duplicate software-only issue found. Selected/claimed issue: none; assignee readback not applicable; claims released: none; no implementation PR.
+- Fresh isolated Python 3.12 virtualenv: `uv pip install --python <venv>/bin/python --require-hashes -r apps/requirements.txt -r apps/requirements-test.txt` succeeded; `PATH=<venv>/bin:$PATH bash scripts/test.sh` exited 0 (`Ran 1174 tests in 68.188s`, `OK (skipped=17)`; shell syntax/Openbox XML checks passed). `qemu-system-x86_64` and `qmltestrunner` absent; no ISO, guest, physical, visual or real-model acceptance claimed. State-only PR has no issue linkage; its own exact-head CI/disposition pending as-of entry snapshot. Self-removal not configured.
+
 ## 2026-10-29 10:15 UTC (final-state sync)
 
 - State PR https://github.com/rwrife/aios/pull/306 squash merged at 2026-10-29T10:13:51Z as `17f01beaa97a06e6f833e47c9dd30627a35fc99e`; readback `state=MERGED`, remote head ref absent. Exact-head push https://github.com/rwrife/aios/actions/runs/40855537252 and pull_request https://github.com/rwrife/aios/actions/runs/40855573231 both completed success before explicit merge. Branch protection absent (`404 Branch not protected`).
