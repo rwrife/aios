@@ -2,6 +2,11 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-30 10:29 UTC (final-state sync)
+
+- State PR https://github.com/rwrife/aios/pull/312 squash merged at 2026-10-30T10:27:48Z as `dd4eee3d8798c3196957ed114649cc139d77b659`; readback `state=MERGED`, remote head ref absent. Exact-head push https://github.com/rwrife/aios/actions/runs/41040401439 and pull_request https://github.com/rwrife/aios/actions/runs/41040680108 both completed success before explicit merge. Branch protection absent (`404 Branch not protected`).
+- Final re-query: open PRs `0`, open issues `35`; blocked PRs: none. Selected/claimed issue: none; assignee readback not applicable; claims released: none; no implementation PR. Skips and host verification remain in entry snapshot below. This follow-up state-only PR has no issue linkage; its own exact-head CI/disposition pending as-of snapshot. Self-removal not configured.
+
 ## 2026-10-30 10:23 UTC (verification-only entry snapshot)
 
 - Preflight: repository GraphQL/REST and git ref reads passed; clean main `945c59653b1aa377960232991cc5ed4e04f9a25c`; stored OAuth `rwrife`. Open PRs: 0. Open issues: 35. Merged PRs: none; blocked PRs: none.
