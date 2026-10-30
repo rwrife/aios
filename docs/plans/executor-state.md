@@ -2,6 +2,12 @@
 
 Run-state artifact for the every-6-hours PR-first executor (repo: rwrife/aios).
 
+## 2026-10-30 10:23 UTC (verification-only entry snapshot)
+
+- Preflight: repository GraphQL/REST and git ref reads passed; clean main `945c59653b1aa377960232991cc5ed4e04f9a25c`; stored OAuth `rwrife`. Open PRs: 0. Open issues: 35. Merged PRs: none; blocked PRs: none.
+- Assigned elsewhere (17): #71, #77, #79, #81, #84, #97, #98, #100, #101, #160, #162, #163, #164, #165, #166, #167, #169. Skipped hardware (10): #83, #85-#90, #96, #99, #102 (audio, camera, machines and disks). Skipped user interaction/target acceptance (8): #70, #75 (browser journeys); #74 (visual sign-off); #82 (choice UX); #159 (PIN/reboot/two-user isolation); #161 (real-model setup); #168 (live credentials and identity prerequisites); #170 (release matrix). Existing software halves or blockers unchanged; no independent headless-only issue found. Selected/claimed: none; assignee readback: not applicable; claims released: none; implementation PR: none.
+- Verification: `PATH=/home/rwrife/.hermes/cache/scratch/aios-verify-20261030-0406/bin:$PATH bash scripts/test.sh` on clean main exited 0; 1174 tests, 17 skipped; shell and Openbox XML checks passed. QEMU and qmltestrunner absent; ISO, guest, visual, physical and real-model acceptance unverified. State-only PR has no issue linkage; its own CI/disposition pending as-of snapshot. Self-removal not configured.
+
 ## 2026-10-30 04:12 UTC (final-state sync)
 
 - State PR https://github.com/rwrife/aios/pull/310 squash merged at 2026-10-30T04:10:32Z as `bf87af23b8f8e761cc5aa802edb5b07bacb72d18`; readback `state=MERGED`, remote head ref absent. Exact-head push https://github.com/rwrife/aios/actions/runs/41001223054 and pull_request https://github.com/rwrife/aios/actions/runs/41001253153 both completed success before explicit merge. Branch protection absent (`404 Branch not protected`).
