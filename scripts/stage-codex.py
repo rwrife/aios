@@ -7,6 +7,8 @@ import platform
 import shutil
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 
 VERSION = '0.153.4'
@@ -26,9 +28,20 @@ def main():
     build.mkdir(parents=True, exist_ok=True)
     if not archive.exists():
         partial = archive.with_suffix('.part')
-        with urllib.request.urlopen(f'https://github.com/openai/codex/releases/download/rust-v{VERSION}/{name}.tar.gz', timeout=120) as response, partial.open('wb') as stream:
-            shutil.copyfileobj(response, stream)
-        partial.replace(archive)
+        url = f'https://github.com/openai/codex/releases/download/rust-v{VERSION}/{name}.tar.gz'
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(url, timeout=120) as response, partial.open('wb') as stream:
+                    shutil.copyfileobj(response, stream)
+                partial.replace(archive)
+                break
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+                last_error = error
+                if partial.exists():
+                    partial.unlink()
+                if attempt == 3:
+                    raise SystemExit(f'Failed downloading {url} after 4 attempts: {error}')
+                time.sleep(2 ** attempt)
     with archive.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     if digest != CHECKSUMS[arch]:
